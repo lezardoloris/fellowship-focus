@@ -6,6 +6,7 @@ type TrustMember = {
   proof_count_7d: number;
   screen_count_7d: number;
   webcam_count_7d: number;
+  activity_score_7d: number;
   last_app: string | null;
   last_proof_at: string | null;
   trust_score: number;
@@ -25,7 +26,7 @@ export function TrustPanel({ members, myId }: { members: TrustMember[]; myId?: s
     <div className="glass-card p-6">
       <h2 className="font-display mb-1 text-xl font-semibold">Guild Trust</h2>
       <p className="mb-5 text-sm text-stone-500">
-        Privacy-first accountability — signal mode shares app name only, not your screen.
+        Privacy-first accountability — signal mode shares app name + mouse activity (no keylogging).
       </p>
       <ul className="space-y-3">
         {members.map((m) => (
@@ -43,6 +44,7 @@ export function TrustPanel({ members, myId }: { members: TrustMember[]; myId?: s
               <p className="text-xs text-stone-500">
                 {m.proof_count_7d} proofs · {m.screen_count_7d} screens
                 {m.webcam_count_7d > 0 ? ` · ${m.webcam_count_7d} presence` : ""}
+                {m.activity_score_7d > 0 ? ` · mouse ${m.activity_score_7d.toLocaleString()}px` : ""}
                 {m.last_app ? ` · last: ${m.last_app}` : ""}
               </p>
             </div>

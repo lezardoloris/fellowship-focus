@@ -6,43 +6,57 @@ APPLICATION_NAME = "Fellowship Focus"
 MITMDUMP_SHUTDOWN_URL = "http://shutdown.fellowshipfocus.internal/"
 MITMDUMP_CHECK_URL = "http://check.fellowshipfocus.internal/"
 
-BLOCK_HTML_MESSAGE = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Blocked</title>
-<style>
-body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
-background:radial-gradient(ellipse,#1a2418,#0c0f0a);color:#e8e4d9;font-family:Georgia,serif;text-align:center;padding:2rem}}
-h1{{color:#c9a227}}p{{color:#888;max-width:420px;line-height:1.6}}
-</style></head><body>
-<h1>You cannot pass.</h1>
-<p>This site is blocked during your focus quest. The Fellowship is counting on you.</p>
-<p style="color:#c45c26;margin-top:1rem">Return to your work.</p>
-</body></html>"""
-
 _BLOCKLIST_PATH = Path(__file__).resolve().parents[2] / "blocklist.json"
+_DESKTOP_BLOCKLIST = Path(__file__).resolve().parents[1].parent / "blocklist.json"
 
 _FALLBACK_BLOCKED_SITES = [
     "twitter.com",
     "x.com",
     "reddit.com",
-    "youtube.com",
-    "youtu.be",
-    "instagram.com",
-    "facebook.com",
     "tiktok.com",
+    "facebook.com",
     "pornhub.com",
     "netflix.com",
 ]
 
+_FALLBACK_PATH_RULES = [
+    {"host": "youtube.com", "paths": ["/shorts", "/feed/trending"]},
+    {"host": "m.youtube.com", "paths": ["/shorts"]},
+    {"host": "instagram.com", "paths": ["/reels", "/explore", "/stories"]},
+]
 
-def _load_blocklist() -> list[str]:
-    try:
-        data = json.loads(_BLOCKLIST_PATH.read_text(encoding="utf-8"))
-        return list(data.get("sites", _FALLBACK_BLOCKED_SITES))
-    except Exception:
-        return _FALLBACK_BLOCKED_SITES.copy()
+_FALLBACK_REDIRECTS = {
+    "default": [
+        {"label": "Back to work", "url": "https://notion.so"},
+        {"label": "Deep work timer", "url": "https://pomofocus.io"},
+    ],
+    "nsfw": [
+        {"label": "Breathing", "url": "https://www.calm.com/breathe"},
+        {"label": "TED", "url": "https://www.ted.com"},
+    ],
+    "social": [
+        {"label": "Write instead", "url": "https://docs.google.com"},
+        {"label": "Ship something", "url": "https://github.com"},
+    ],
+}
 
 
-DEFAULT_BLOCKED_SITES = _load_blocklist()
+def _load_blocklist_data() -> dict:
+    for path in (_BLOCKLIST_PATH, _DESKTOP_BLOCKLIST):
+        try:
+            if path.exists():
+                return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+    return {}
+
+
+_DATA = _load_blocklist_data()
+
+DEFAULT_BLOCKED_SITES = list(_DATA.get("sites") or _FALLBACK_BLOCKED_SITES)
+DEFAULT_PATH_RULES = list(_DATA.get("path_rules") or _FALLBACK_PATH_RULES)
+DEFAULT_REDIRECTS = dict(_DATA.get("redirects") or _FALLBACK_REDIRECTS)
+HARD_HOSTS_OPTIONAL = list(_DATA.get("hard_hosts_optional") or [])
 
 PROXY_PORT = 8080
 MITMDUMP_PORT = 8080

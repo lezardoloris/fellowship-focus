@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fellowship Focus — Design System</title>
+  <link rel="stylesheet" href="colors_and_type.css" />
+  <style>
+    .gallery { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; }
+    .gallery-head { margin-bottom: 32px; }
+    .gallery-head h1 { font-size: 24px; font-weight: 600; margin: 0 0 8px; }
+    .gallery-head p { color: var(--muted); margin: 0; max-width: 640px; line-height: 1.6; }
+    .gallery-head a { color: var(--accent); }
+    .section { margin-top: 28px; }
+    .section h2 {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--muted); margin: 0 0 12px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .tile {
+      display: block;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px 18px;
+      text-decoration: none;
+      color: var(--fg);
+      transition: border-color 0.15s;
+    }
+    .tile:hover { border-color: var(--accent); }
+    .tile strong { display: block; font-size: 14px; margin-bottom: 4px; }
+    .tile span { font-size: 12px; color: var(--muted); line-height: 1.45; }
+    .tile.is-primary { border-color: rgba(184, 66, 46, 0.45); }
+    .badge {
+      display: inline-block; margin-top: 8px;
+      font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <div class="gallery">
+    <header class="gallery-head">
+      <div class="ff-display" style="margin-bottom:12px">Fellowship Focus</div>
+      <h1>Design System — Heritage Dark</h1>
+      <p>
+        Package local Open Design pour
+        <a href="https://github.com/lezardoloris/fellowship-focus">fellowship-focus</a>.
+        Charcoal <code>#1A1C1E</code>, accent terracotta <code>#B8422E</code>, Public Sans UI.
+        Linear × Opal — pas de gold, pas de JSON visible.
+      </p>
+    </header>
+
+    <section class="section">
+      <h2>Product — shipping prototypes</h2>
+      <div class="grid">
+        <a class="tile is-primary" href="desktop-overview.html">
+          <strong>Desktop app (6 écrans)</strong>
+          <span>Overview · Tasks · Focus · Blocker · Settings — shell 1180×780, nav 200px</span>
+          <span class="badge">Start here</span>
+        </a>
+        <a class="tile is-primary" href="ui_kits/app/index.html">
+          <strong>UI kit React</strong>
+          <span>Sidebar, KPI, OKR, FocusRing, Guild, Chat — composants modulaires</span>
+        </a>
+        <a class="tile" href="brand.html">
+          <strong>Brand kit (Open Design)</strong>
+          <span>Extraction GitHub originale + tokens algorithmiques</span>
+        </a>
+        <a class="tile" href="system/kit.dark.html">
+          <strong>Component kit dark</strong>
+          <span>Boutons, inputs, cards — tokens seed</span>
+        </a>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Preview cards</h2>
+      <div class="grid">
+        <a class="tile" href="preview/colors-primary.html"><strong>Colors</strong><span>7 rôles sémantiques</span></a>
+        <a class="tile" href="preview/typography-specimens.html"><strong>Typography</strong><span>Cinzel logo · Public Sans scale</span></a>
+        <a class="tile" href="preview/spacing-tokens.html"><strong>Spacing</strong><span>4px base · radius · shell</span></a>
+        <a class="tile" href="preview/components-buttons.html"><strong>Buttons</strong><span>Primary · ghost · pills · nav</span></a>
+        <a class="tile" href="preview/components-kpi.html"><strong>KPI cards</strong><span>Dashboard metrics</span></a>
+        <a class="tile" href="preview/components-habits.html"><strong>Habits grid</strong><span>HabitTracker parity</span></a>
+        <a class="tile" href="preview/brand-assets.html"><strong>Brand assets</strong><span>Icons · logos</span></a>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Docs & tokens</h2>
+      <div class="grid">
+        <a class="tile" href="DESIGN.md"><strong>DESIGN.md</strong><span>Règles canoniques produit</span></a>
+        <a class="tile" href="context/input-DESIGN.md"><strong>input-DESIGN.md</strong><span>Brief Heritage + composants</span></a>
+        <a class="tile" href="system/tokens.dark.json"><strong>tokens.dark.json</strong><span>Tokens machine-readable</span></a>
+        <a class="tile" href="system/variables.dark.css"><strong>variables.dark.css</strong><span>CSS custom properties</span></a>
+        <a class="tile" href="colors_and_type.css"><strong>colors_and_type.css</strong><span>Tokens produit + utilities</span></a>
+        <a class="tile" href="README.md"><strong>README.md</strong><span>Manifest complet du package</span></a>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Marketing artifacts</h2>
+      <div class="grid">
+        <a class="tile" href="system/artifacts/landing.html"><strong>Landing</strong><span>Web marketing page</span></a>
+        <a class="tile" href="system/artifacts/deck.html"><strong>Pitch deck</strong><span>16:9 slides</span></a>
+        <a class="tile" href="system/artifacts/form.html"><strong>Form</strong><span>Signup / contact</span></a>
+        <a class="tile" href="system/index.html"><strong>System gallery</strong><span>Tous les artifacts brand engine</span></a>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

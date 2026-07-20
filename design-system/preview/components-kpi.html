@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fellowship Focus — KPI · FellowshipDashboard</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { padding: 32px; max-width: 920px; }
+    h1 { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--muted); }
+    .src { font-size: 12px; color: var(--muted); margin: 0 0 20px; }
+    .row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .kpi .ff-value { margin: 8px 0 4px; }
+    .kpi .ff-progress { margin-top: 12px; }
+    @media (max-width: 720px) { .row { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+  <h1 data-od-id="kpi-preview-title">KPI row · source FellowshipDashboard / DashboardPage</h1>
+  <p class="src">Modules source : <code>FellowshipDashboard.tsx</code>, <code>dashboard.py</code> — restylés sans gold.</p>
+  <div class="row" data-od-id="kpi-row">
+    <div class="ff-card kpi" data-od-id="kpi-focus"><div class="ff-label">Focus today</div><div class="ff-value">2h 14</div><div class="ff-hint">minutes</div><div class="ff-progress"><span style="width:62%"></span></div></div>
+    <div class="ff-card kpi" data-od-id="kpi-xp"><div class="ff-label">Weekly XP</div><div class="ff-value">840</div><div class="ff-hint">score ladder</div><div class="ff-progress is-success"><span style="width:48%"></span></div></div>
+    <div class="ff-card kpi" data-od-id="kpi-habits"><div class="ff-label">Habits</div><div class="ff-value">78%</div><div class="ff-hint">HabitTracker</div><div class="ff-progress is-success"><span style="width:78%"></span></div></div>
+    <div class="ff-card kpi" data-od-id="kpi-streak"><div class="ff-label">Streak</div><div class="ff-value">12</div><div class="ff-hint">jours</div><div class="ff-progress"><span style="width:40%"></span></div></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fellowship Focus — HabitTracker</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { padding: 32px; max-width: 640px; }
+    h1 { font-size: 14px; font-weight: 600; margin: 0 0 8px; color: var(--muted); }
+    .src { font-size: 12px; color: var(--muted); margin: 0 0 16px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .row:last-child { border-bottom: 0; }
+    .check { width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); }
+    .check.on { background: var(--success); border-color: var(--success); }
+    .days { display: flex; gap: 4px; }
+    .day { width: 10px; height: 10px; border-radius: 2px; background: var(--border); }
+    .day.on { background: var(--accent); }
+  </style>
+</head>
+<body>
+  <h1 data-od-id="habits-title">HabitTracker</h1>
+  <p class="src">Source : <code>HabitTracker.tsx</code></p>
+  <div class="ff-card" data-od-id="habit-tracker">
+    <div class="row" data-od-id="habit-deep-work">
+      <div style="display:flex;align-items:center;gap:10px"><span class="check on"></span><span>Deep work AM</span></div>
+      <div class="days"><span class="day on"></span><span class="day on"></span><span class="day on"></span><span class="day"></span><span class="day on"></span><span class="day on"></span><span class="day"></span></div>
+    </div>
+    <div class="row" data-od-id="habit-sport">
+      <div style="display:flex;align-items:center;gap:10px"><span class="check"></span><span>Sport</span></div>
+      <div class="days"><span class="day on"></span><span class="day"></span><span class="day on"></span><span class="day on"></span><span class="day"></span><span class="day"></span><span class="day"></span></div>
+    </div>
+    <div class="row" data-od-id="habit-no-scroll">
+      <div style="display:flex;align-items:center;gap:10px"><span class="check on"></span><span>No doomscroll</span></div>
+      <div class="days"><span class="day on"></span><span class="day on"></span><span class="day on"></span><span class="day on"></span><span class="day on"></span><span class="day on"></span><span class="day on"></span></div>
+    </div>
+  </div>
+</body>
+</html>

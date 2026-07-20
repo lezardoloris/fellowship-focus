@@ -1,0 +1,233 @@
+/* Fellowship Focus — canonical tokens (dark productivity) */
+@font-face {
+  font-family: "Cinzel";
+  src: url("fonts/Cinzel-Regular.ttf") format("truetype");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Public Sans";
+  src: url("fonts/PublicSans-Regular.ttf") format("truetype");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --bg: #1a1c1e;
+  --surface: #242628;
+  --fg: #f4f4f5;
+  --muted: #9ca3af;
+  --border: #3a3d40;
+  --accent: #b8422e;
+  --success: #2d6a4f;
+
+  --font-display: "Cinzel", system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Public Sans", system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --border-w: 1px;
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+
+  --sidebar-w: 200px;
+  --topbar-h: 48px;
+  --content-max: 960px;
+
+  --text-display: 11px;
+  --text-h1: 20px;
+  --text-h2: 16px;
+  --text-body: 14px;
+  --text-kpi: 28px;
+  --text-caption: 12px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.ff-display {
+  font-family: var(--font-display);
+  font-size: var(--text-display);
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ff-h1 {
+  font-family: var(--font-body);
+  font-size: var(--text-h1);
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--fg);
+  margin: 0;
+}
+
+.ff-h2 {
+  font-family: var(--font-body);
+  font-size: var(--text-h2);
+  font-weight: 600;
+  color: var(--fg);
+  margin: 0;
+}
+
+.ff-label {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ff-value {
+  font-family: var(--font-body);
+  font-size: var(--text-kpi);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  letter-spacing: -0.02em;
+}
+
+.ff-hint {
+  font-family: var(--font-body);
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+
+.ff-card {
+  background: var(--surface);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+}
+
+.ff-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  padding: 10px 20px;
+  cursor: pointer;
+  border: var(--border-w) solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.ff-btn-primary {
+  background: var(--accent);
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+.ff-btn-primary:hover {
+  opacity: 0.92;
+}
+
+.ff-btn-ghost {
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--border);
+}
+
+.ff-btn-ghost:hover {
+  background: var(--surface);
+}
+
+.ff-progress {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.ff-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.ff-progress.is-success > span {
+  background: var(--success);
+}
+
+.ff-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: var(--border-w) solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+
+.ff-pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.ff-pill.is-success {
+  color: var(--fg);
+}
+
+.ff-pill.is-success .dot {
+  background: var(--success);
+}
+
+.ff-pill.is-accent .dot {
+  background: var(--accent);
+}
+
+.ff-input {
+  width: 100%;
+  background: var(--bg);
+  border: var(--border-w) solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  outline: none;
+}
+
+.ff-input:focus {
+  border-color: var(--accent);
+}
+
+.ff-input::placeholder {
+  color: var(--muted);
+}

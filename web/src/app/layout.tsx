@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Cinzel, DM_Sans } from "next/font/google";
+import { Cinzel, Public_Sans } from "next/font/google";
 import "./globals.css";
 
 const cinzel = Cinzel({
@@ -8,15 +8,15 @@ const cinzel = Cinzel({
   weight: ["400", "600", "700"],
 });
 
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
+const publicSans = Public_Sans({
+  variable: "--font-public-sans",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "Fellowship Focus — March to Mordor",
-  description: "Premium focus app. Block distractions, march with friends from the Shire to Mount Doom.",
+  title: "Fellowship Focus",
+  description: "Block distractions, track focus sessions, and stay accountable with your guild.",
 };
 
 export default function RootLayout({
@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${cinzel.variable} ${dmSans.variable} h-full antialiased`}>
+    <html lang="en" className={`${cinzel.variable} ${publicSans.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );

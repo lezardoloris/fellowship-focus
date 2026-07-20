@@ -6,8 +6,9 @@ import { useEffect, useState } from "react";
 
 type DownloadInfo = {
   version: string | null;
+  available: boolean;
   windowsUrl: string | null;
-  releasesPage: string;
+  filename: string | null;
 };
 
 export default function DownloadPage() {
@@ -17,17 +18,15 @@ export default function DownloadPage() {
     fetch("/api/download/latest")
       .then((r) => r.json())
       .then(setInfo)
-      .catch(() =>
-        setInfo({
-          version: null,
-          windowsUrl: null,
-          releasesPage: "https://github.com/lezardoloris/fellowship-focus/releases/latest",
-        })
-      );
+      .catch(() => setInfo({ version: null, available: false, windowsUrl: null, filename: null }));
   }, []);
 
-  const downloadHref = info?.windowsUrl ?? info?.releasesPage;
-  const hasExe = Boolean(info?.windowsUrl);
+  const ready = Boolean(info?.windowsUrl);
+  const label = ready
+    ? `Download for Windows${info?.version ? ` · ${info.version}` : ""}`
+    : info === null
+      ? "Checking build…"
+      : "Build coming soon";
 
   return (
     <main className="relative min-h-screen overflow-hidden">
@@ -47,24 +46,28 @@ export default function DownloadPage() {
         </h1>
         <p className="mb-10 text-lg text-stone-400">
           Block Twitter, YouTube, TikTok system-wide. Focus timer with Windows notifications.
-          Sync XP with your Fellowship on the web.
+          Sync XP with your Fellowship on the web — no GitHub account needed.
         </p>
 
         <div className="glass-card mb-8 p-8 text-center">
-          <a
-            href={downloadHref ?? "#"}
-            className="btn-primary inline-block min-w-[280px]"
-            target={hasExe ? undefined : "_blank"}
-            rel={hasExe ? undefined : "noopener noreferrer"}
-          >
-            {hasExe ? `Download v${info?.version}` : "Get Windows build (GitHub)"}
-          </a>
-          {!hasExe && (
+          {ready ? (
+            <a href="/api/download/windows" className="btn-primary inline-block min-w-[280px]" download>
+              {label}
+            </a>
+          ) : (
+            <button type="button" disabled className="btn-primary inline-block min-w-[280px] opacity-50">
+              {label}
+            </button>
+          )}
+          {!ready && info !== null && (
             <p className="mt-4 text-sm text-stone-500">
-              First release building — meanwhile use GitHub Releases or run from source below.
+              The Windows installer is not published yet. Use the web app for now, or run the desktop
+              source locally if you develop.
             </p>
           )}
-          <p className="mt-3 text-xs text-stone-600">Windows 10/11 · ~80 MB · No account required to install</p>
+          <p className="mt-3 text-xs text-stone-600">
+            Windows 10/11 · direct download · no account required
+          </p>
         </div>
 
         <ol className="glass-card space-y-6 p-8">

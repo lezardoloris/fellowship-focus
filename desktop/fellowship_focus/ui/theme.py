@@ -1,4 +1,4 @@
-"""Premium theme — matches web dashboard (Cinzel + DM Sans, glass, gold)."""
+"""Heritage dark theme — Public Sans UI, Cinzel logo only (Open Design tokens)."""
 
 from pathlib import Path
 
@@ -7,19 +7,30 @@ from PySide6.QtGui import QFont, QFontDatabase
 ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 FONTS_DIR = ASSETS_DIR / "fonts"
 
-# Web parity colors
-BG = "#060806"
-FG = "#f0ebe0"
-GOLD = "#d4af37"
-GOLD_LIGHT = "#f0d878"
-GOLD_DIM = "#8a7020"
-GLASS = "rgba(12, 18, 12, 0.85)"
-GLASS_BORDER = "rgba(212, 175, 55, 0.18)"
+# Heritage semantic tokens (system/tokens.dark.json)
+BG = "#1a1c1e"
+BG_SURFACE = "#242628"
+BG_ELEVATED = "#2e3134"
+FG = "#f4f4f5"
+MUTED = "#9ca3af"
+BORDER = "#3a3d40"
+ACCENT = "#b8422e"
+ACCENT_HOVER = "#c46551"
+ACCENT_ACTIVE = "#912a1d"
+SUCCESS = "#2d6a4f"
+WARNING = "#ca8a04"
 EMBER = "#c45c26"
-GREEN = "#2d6a4f"
 RED = "#9b2226"
 
-_font_display = "Georgia"
+# Back-compat aliases used by a few modules
+GOLD = ACCENT
+GOLD_LIGHT = ACCENT_HOVER
+GOLD_DIM = ACCENT_ACTIVE
+GREEN = SUCCESS
+GLASS = BG_SURFACE
+GLASS_BORDER = BORDER
+
+_font_display = "Cinzel"
 _font_sans = "Segoe UI"
 _fonts_loaded = False
 
@@ -32,9 +43,8 @@ def load_fonts() -> None:
     mapping = {
         "Cinzel-Regular.ttf": "display",
         "Cinzel-Bold.ttf": "display_bold",
-        "DMSans-Regular.ttf": "sans",
-        "DMSans-Medium.ttf": "sans_medium",
-        "DMSans-Bold.ttf": "sans_bold",
+        "DMSans-Variable.ttf": "sans",
+        "PublicSans-Variable.ttf": "sans",
     }
     loaded: dict[str, str] = {}
     for fname, role in mapping.items():
@@ -51,157 +61,291 @@ def load_fonts() -> None:
         _font_sans = loaded["sans"]
 
 
-def font_display(size: int = 14, bold: bool = False) -> QFont:
+def font_display(size: int = 11, bold: bool = False) -> QFont:
+    """Cinzel — logo wordmark only."""
     load_fonts()
     f = QFont(_font_display, size)
     f.setBold(bold)
+    f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 2)
     return f
 
 
-def font_sans(size: int = 13, weight: int = QFont.Weight.Normal) -> QFont:
+def font_sans(size: int = 14, weight: int = QFont.Weight.Normal) -> QFont:
+    """Public Sans / DM Sans / Segoe UI for all UI."""
     load_fonts()
     f = QFont(_font_sans, size)
     f.setWeight(weight)
     return f
 
 
-def font_timer(size: int = 56) -> QFont:
+def font_timer(size: int = 48) -> QFont:
     load_fonts()
-    f = QFont(_font_display, size)
-    f.setBold(True)
-    f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 2)
+    f = QFont(_font_sans, size)
+    f.setWeight(QFont.Weight.DemiBold)
     return f
 
 
 def app_stylesheet() -> str:
     return f"""
-QMainWindow {{ background: {BG}; color: {FG}; }}
-QWidget#contentArea {{ background: {BG}; color: {FG}; }}
+QMainWindow, QDialog {{
+    background: {BG};
+    color: {FG};
+}}
+QWidget#contentArea, QWidget#pageContent {{
+    background: {BG};
+    color: {FG};
+}}
+QScrollArea#pageScroll {{
+    background: transparent;
+    border: none;
+}}
+QScrollBar:vertical {{
+    background: transparent;
+    width: 8px;
+    margin: 4px 2px;
+}}
+QScrollBar::handle:vertical {{
+    background: {BORDER};
+    border-radius: 4px;
+    min-height: 32px;
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 0;
+}}
 QWidget#sidebarPanel {{
-    background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #0f150f, stop:1 {BG});
-    border-right: 1px solid {GLASS_BORDER};
+    background: {BG};
+    border-right: 1px solid {BORDER};
 }}
-QWidget#glassCard {{
-    background: rgba(12, 18, 12, 0.72);
-    border: 1px solid {GLASS_BORDER};
-    border-radius: 14px;
-}}
-QWidget#kpiCard {{
-    background: rgba(0, 0, 0, 0.28);
-    border: 1px solid rgba(212, 175, 55, 0.12);
-    border-radius: 12px;
-}}
-QLabel#goldTitle {{
-    color: {GOLD};
-    font-size: 22px;
-    font-weight: bold;
-}}
-QLabel#kpiValue {{
-    color: {GOLD_LIGHT};
-    font-size: 28px;
-    font-weight: bold;
-}}
-QLabel#kpiLabel {{
-    color: #888;
-    font-size: 11px;
-    letter-spacing: 1px;
-}}
-QLabel#phaseLabel {{
-    color: #888;
-    font-size: 12px;
-    letter-spacing: 3px;
+QWidget#brandWrap {{
+    border-bottom: 1px solid {BORDER};
 }}
 QLabel#brandTitle {{
-    color: {GOLD};
-    font-size: 10px;
-    letter-spacing: 4px;
+    color: {MUTED};
+    letter-spacing: 3px;
+}}
+QLabel#brandSub {{
+    color: {MUTED};
+    letter-spacing: 3px;
+}}
+QLabel#sidebarStatus {{
+    color: {MUTED};
+    padding-top: 8px;
+}}
+QPushButton#navItem {{
+    background: transparent;
+    border: none;
+    border-left: 2px solid transparent;
+    border-radius: 0;
+    color: {MUTED};
+    text-align: left;
+    padding: 12px 16px;
+}}
+QPushButton#navItem:hover {{
+    background: {BG_ELEVATED};
+    color: {FG};
+}}
+QPushButton#navItem:checked {{
+    background: {BG_ELEVATED};
+    color: {FG};
+    border-left: 2px solid {ACCENT};
+}}
+QWidget#topBar {{
+    background: {BG};
+    border-bottom: 1px solid {BORDER};
+}}
+QLabel#topBarTitle {{
+    color: {FG};
+}}
+QWidget#glassCard {{
+    background: {BG_SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 10px;
+}}
+QWidget#kpiCard {{
+    background: {BG_SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 10px;
+}}
+QLabel#pageTitle {{
+    color: {FG};
+}}
+QLabel#kpiValue {{
+    color: {FG};
+}}
+QLabel#kpiLabel {{
+    color: {MUTED};
+    letter-spacing: 1px;
+}}
+QLabel#mutedLabel {{
+    color: {MUTED};
+    font-size: 12px;
+}}
+QLabel#phaseLabel {{
+    color: {MUTED};
+    letter-spacing: 2px;
+}}
+QLabel#statusPill_active {{
+    background: rgba(45, 106, 79, 0.25);
+    color: #8fd4a8;
+    border: 1px solid rgba(45, 106, 79, 0.45);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+QLabel#statusPill_warn {{
+    background: rgba(202, 138, 4, 0.15);
+    color: #e8c35e;
+    border: 1px solid rgba(202, 138, 4, 0.35);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 11px;
+}}
+QLabel#statusPill_neutral {{
+    background: {BG_ELEVATED};
+    color: {MUTED};
+    border: 1px solid {BORDER};
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 11px;
+}}
+QWidget#webSetupBar {{
+    background: {BG_SURFACE};
+    border-bottom: 1px solid {BORDER};
 }}
 QPushButton {{
-    background: rgba(42, 53, 40, 0.9);
-    border: 1px solid {GLASS_BORDER};
+    background: {BG_ELEVATED};
+    border: 1px solid {BORDER};
     color: {FG};
-    padding: 10px 18px;
-    border-radius: 10px;
-    font-size: 13px;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
 }}
 QPushButton:hover {{
-    background: #2a3528;
-    border-color: {GOLD};
+    background: {BG_SURFACE};
+    border-color: {MUTED};
 }}
-QPushButton#goldBtn {{
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 {GOLD}, stop:0.5 {GOLD_DIM}, stop:1 {GOLD});
-    color: #0a0a08;
-    font-weight: bold;
+QPushButton:pressed {{
+    background: {BG};
+}}
+QPushButton#primaryBtn, QPushButton#goldBtn {{
+    background: {ACCENT};
+    color: #ffffff;
+    font-weight: 600;
     border: none;
-    padding: 11px 20px;
-    border-radius: 10px;
+    padding: 10px 20px;
+    border-radius: 6px;
+    min-width: 120px;
+    max-width: 280px;
 }}
-QPushButton#dangerBtn {{
-    background: #3d1f1f;
-    border-color: #a44;
-    color: #e8a0a0;
+QPushButton#primaryBtn:hover, QPushButton#goldBtn:hover {{
+    background: {ACCENT_HOVER};
 }}
-QLineEdit, QSpinBox, QTextEdit, QComboBox {{
-    background: rgba(0, 0, 0, 0.35);
-    border: 1px solid {GLASS_BORDER};
-    border-radius: 10px;
-    padding: 9px 12px;
+QPushButton#primaryBtn:pressed, QPushButton#goldBtn:pressed {{
+    background: {ACCENT_ACTIVE};
+}}
+QPushButton#ghostBtn {{
+    background: transparent;
+    border: 1px solid {BORDER};
     color: {FG};
 }}
-QLineEdit:focus, QSpinBox:focus, QTextEdit:focus {{
-    border-color: {GOLD};
+QPushButton#ghostBtn:hover {{
+    background: {BG_ELEVATED};
+    border-color: {MUTED};
+}}
+QPushButton#dangerBtn {{
+    background: rgba(61, 31, 31, 0.85);
+    border: 1px solid rgba(164, 68, 68, 0.5);
+    color: #e8a0a0;
+}}
+QPushButton#iconBtn {{
+    min-width: 40px;
+    max-width: 40px;
+    min-height: 40px;
+    max-height: 40px;
+    padding: 0;
+    border-radius: 6px;
+}}
+QLineEdit, QSpinBox, QTextEdit, QComboBox {{
+    background: {BG_ELEVATED};
+    border: 1px solid {BORDER};
+    border-radius: 6px;
+    padding: 10px 14px;
+    color: {FG};
+    selection-background-color: rgba(184, 66, 46, 0.35);
+}}
+QLineEdit:focus, QSpinBox:focus, QTextEdit:focus, QComboBox:focus {{
+    border-color: {ACCENT};
+}}
+QComboBox::drop-down {{
+    border: none;
+    width: 24px;
+}}
+QComboBox QAbstractItemView {{
+    background: {BG_ELEVATED};
+    border: 1px solid {BORDER};
+    selection-background-color: rgba(184, 66, 46, 0.2);
+    color: {FG};
 }}
 QListWidget {{
     background: transparent;
     border: none;
     outline: none;
-    font-size: 13px;
-}}
-QListWidget#navList::item {{
-    padding: 13px 18px;
-    color: #aaa;
-    border-left: 3px solid transparent;
-    border-radius: 0;
-}}
-QListWidget#navList::item:selected {{
-    background: rgba(212, 175, 55, 0.08);
-    color: {GOLD};
-    border-left: 3px solid {GOLD};
 }}
 QListWidget#taskList {{
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(212, 175, 55, 0.12);
-    border-radius: 12px;
+    background: {BG_ELEVATED};
+    border: 1px solid {BORDER};
+    border-radius: 10px;
+    padding: 6px;
 }}
 QListWidget#taskList::item {{
-    padding: 10px 14px;
-    border-radius: 8px;
+    padding: 12px 14px;
+    border-radius: 6px;
+    margin: 2px 4px;
+}}
+QListWidget#taskList::item:hover {{
+    background: {BG_SURFACE};
 }}
 QListWidget#taskList::item:selected {{
-    background: rgba(212, 175, 55, 0.12);
-    color: {GOLD};
+    background: rgba(184, 66, 46, 0.15);
+    color: {FG};
 }}
 QProgressBar {{
-    background: rgba(255, 255, 255, 0.06);
+    background: {BG_ELEVATED};
     border: none;
-    border-radius: 4px;
-    height: 8px;
+    border-radius: 2px;
+    height: 4px;
     text-align: center;
     color: transparent;
 }}
 QProgressBar::chunk {{
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {GOLD_DIM}, stop:0.5 {GOLD}, stop:1 {GOLD_LIGHT});
-    border-radius: 4px;
+    background: {ACCENT};
+    border-radius: 2px;
 }}
-QCheckBox {{ color: #ccc; spacing: 8px; }}
+QCheckBox {{
+    color: {FG};
+    spacing: 10px;
+}}
 QCheckBox::indicator {{
-    width: 18px; height: 18px;
+    width: 18px;
+    height: 18px;
     border-radius: 4px;
-    border: 1px solid {GLASS_BORDER};
-    background: rgba(0,0,0,0.3);
+    border: 1px solid {BORDER};
+    background: {BG_ELEVATED};
 }}
 QCheckBox::indicator:checked {{
-    background: {GOLD};
-    border-color: {GOLD};
+    background: {ACCENT};
+    border-color: {ACCENT};
+}}
+QLabel#formSection {{
+    color: {MUTED};
+    font-size: 10px;
+    letter-spacing: 2px;
+    padding-top: 8px;
+}}
+QFormLayout QLabel {{
+    color: {MUTED};
+    font-size: 12px;
 }}
 """

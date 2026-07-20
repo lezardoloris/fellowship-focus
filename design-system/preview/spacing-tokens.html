@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fellowship Focus — Espacements</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { padding: 32px; max-width: 640px; }
+    h1 { font-size: 14px; font-weight: 600; margin: 0 0 20px; color: var(--muted); }
+    .row { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+    .bar { background: var(--accent); border-radius: 2px; height: 12px; }
+    .label { width: 72px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .cards { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 28px; }
+    .demo { border: 1px solid var(--border); background: var(--surface); padding: 16px; }
+    .r-sm { border-radius: 6px; }
+    .r-md { border-radius: 10px; }
+    .r-lg { border-radius: 14px; }
+    .cap { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h1 data-od-id="spacing-title">Espacement · base 4px</h1>
+  <div class="row" data-od-id="space-xs"><span class="label">xs 4</span><div class="bar" style="width:4px"></div></div>
+  <div class="row" data-od-id="space-sm"><span class="label">sm 8</span><div class="bar" style="width:8px"></div></div>
+  <div class="row" data-od-id="space-md"><span class="label">md 16</span><div class="bar" style="width:16px"></div></div>
+  <div class="row" data-od-id="space-lg"><span class="label">lg 24</span><div class="bar" style="width:24px"></div></div>
+  <div class="row" data-od-id="space-xl"><span class="label">xl 32</span><div class="bar" style="width:32px"></div></div>
+
+  <h1 style="margin-top:32px">Radius</h1>
+  <div class="cards">
+    <div><div class="demo r-sm" data-od-id="radius-sm" style="width:100px;height:56px"></div><div class="cap">sm 6px · controls</div></div>
+    <div><div class="demo r-md" data-od-id="radius-md" style="width:100px;height:56px"></div><div class="cap">md 10px · cards</div></div>
+    <div><div class="demo r-lg" data-od-id="radius-lg" style="width:100px;height:56px"></div><div class="cap">lg 14px · rare</div></div>
+  </div>
+
+  <h1 style="margin-top:32px">Shell</h1>
+  <p class="ff-hint" data-od-id="shell-specs">Sidebar 200px · top bar 48px · content max 960px · border 1px</p>
+</body>
+</html>

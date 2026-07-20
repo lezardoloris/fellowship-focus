@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fellowship Focus — Composants</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { padding: 32px; max-width: 900px; }
+    h1 { font-size: 14px; font-weight: 600; margin: 0 0 16px; color: var(--muted); }
+    section { margin-bottom: 28px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .kpi { width: 180px; }
+    .kpi .ff-value { margin: 8px 0 4px; }
+    .kpi .ff-progress { margin-top: 12px; }
+    .nav-demo { width: 200px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px 0; }
+    .nav-item { padding: 12px 16px; color: var(--muted); border-left: 2px solid transparent; font-size: 14px; }
+    .nav-item.active { color: var(--fg); background: var(--surface); border-left-color: var(--accent); }
+    .ring-wrap { width: 160px; height: 160px; position: relative; }
+    .ring-wrap svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .ring-time { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <h1 data-od-id="comp-title">Composants · buttons / nav / timer</h1>
+  <p class="ff-hint" style="margin:0 0 20px">Source-backed: <code>main_window.py</code> nav · <code>theme.py</code> controls · Focus ring from Focus page</p>
+
+  <section data-od-id="comp-buttons">
+    <h1>Boutons</h1>
+    <div class="row">
+      <button class="ff-btn ff-btn-primary" type="button">Démarrer la session</button>
+      <button class="ff-btn ff-btn-ghost" type="button">Pause</button>
+    </div>
+  </section>
+
+  <section data-od-id="comp-pills">
+    <h1>Status pills</h1>
+    <div class="row">
+      <span class="ff-pill is-success"><span class="dot"></span>Guild · Nord</span>
+      <span class="ff-pill is-accent"><span class="dot"></span>Blocker actif</span>
+    </div>
+  </section>
+
+  <section data-od-id="comp-kpi">
+    <h1>KPI cards</h1>
+    <div class="row">
+      <div class="ff-card kpi">
+        <div class="ff-label">Focus today</div>
+        <div class="ff-value">2h 14</div>
+        <div class="ff-hint">minutes</div>
+        <div class="ff-progress"><span style="width:62%"></span></div>
+      </div>
+      <div class="ff-card kpi">
+        <div class="ff-label">Weekly XP</div>
+        <div class="ff-value">840</div>
+        <div class="ff-hint">score ladder</div>
+        <div class="ff-progress is-success"><span style="width:48%"></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section data-od-id="comp-nav">
+    <h1>Nav sidebar</h1>
+    <div class="nav-demo">
+      <div class="nav-item">Overview</div>
+      <div class="nav-item active">Tasks</div>
+      <div class="nav-item">Focus</div>
+      <div class="nav-item">Blocker</div>
+      <div class="nav-item">Settings</div>
+    </div>
+  </section>
+
+  <section data-od-id="comp-timer">
+    <h1>Focus timer ring</h1>
+    <div class="ring-wrap">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#3a3d40" stroke-width="4" />
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#b8422e" stroke-width="4" stroke-linecap="round" stroke-dasharray="327" stroke-dashoffset="98" />
+      </svg>
+      <div class="ring-center">
+        <div class="ff-label">Focus</div>
+        <div class="ring-time">32:14</div>
+      </div>
+    </div>
+  </section>
+
+  <section data-od-id="comp-input">
+    <h1>Input</h1>
+    <input class="ff-input" style="max-width:360px" placeholder="Nom de la tâche" />
+  </section>
+</body>
+</html>

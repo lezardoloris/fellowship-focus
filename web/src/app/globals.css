@@ -1,29 +1,39 @@
 @import "tailwindcss";
 
 :root {
-  --background: #060806;
-  --foreground: #f0ebe0;
-  --gold: #d4af37;
-  --gold-light: #f0d878;
-  --gold-dim: #8a7020;
-  --forest: #0f1a0f;
+  --background: #1a1c1e;
+  --foreground: #f4f4f5;
+  --surface: #242628;
+  --surface-elevated: #2e3134;
+  --border: #3a3d40;
+  --muted: #9ca3af;
+  --accent: #b8422e;
+  --accent-hover: #c46551;
+  --accent-active: #912a1d;
+  --success: #2d6a4f;
+  --warning: #ca8a04;
+  /* legacy aliases */
+  --gold: var(--accent);
+  --gold-light: var(--accent-hover);
+  --gold-dim: var(--accent-active);
+  --forest: #1a1c1e;
   --ember: #c45c26;
-  --mist: #1a2418;
-  --glass: rgba(12, 18, 12, 0.72);
-  --glass-border: rgba(212, 175, 55, 0.18);
+  --mist: #242628;
+  --glass: #242628;
+  --glass-border: #3a3d40;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-dm-sans);
+  --font-sans: var(--font-public-sans);
   --font-display: var(--font-cinzel);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  font-family: var(--font-public-sans), system-ui, sans-serif;
   min-height: 100vh;
 }
 
@@ -31,50 +41,35 @@ body {
   font-family: var(--font-cinzel), Georgia, serif;
 }
 
-.gold-text {
-  background: linear-gradient(135deg, var(--gold-light), var(--gold));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.gold-text,
+.accent-text {
+  color: var(--accent);
 }
 
 .glass-card {
-  background: var(--glass);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: none;
 }
 
 .glass-card:hover {
-  border-color: rgba(212, 175, 55, 0.35);
-  box-shadow:
-    0 8px 40px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(212, 175, 55, 0.08);
+  border-color: var(--muted);
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #d4af37 0%, #8a7020 50%, #d4af37 100%);
-  background-size: 200% auto;
-  color: #0a0a08;
-  font-weight: 700;
-  padding: 0.875rem 1.75rem;
-  border-radius: 10px;
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+  padding: 0.625rem 1.25rem;
+  border-radius: 6px;
   border: none;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-size: 0.8rem;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 20px rgba(212, 175, 55, 0.25);
+  font-size: 0.875rem;
+  transition: background 0.15s ease;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-position: right center;
-  box-shadow: 0 6px 28px rgba(212, 175, 55, 0.4);
-  transform: translateY(-1px);
+  background: var(--accent-hover);
 }
 
 .btn-primary:disabled {
@@ -84,74 +79,70 @@ body {
 
 .btn-secondary {
   background: transparent;
-  color: #d4af37;
-  font-weight: 600;
-  padding: 0.875rem 1.75rem;
-  border-radius: 10px;
-  border: 1px solid rgba(212, 175, 55, 0.45);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-size: 0.8rem;
-  transition: all 0.3s ease;
+  color: var(--foreground);
+  font-weight: 500;
+  padding: 0.625rem 1.25rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 0.875rem;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .btn-secondary:hover:not(:disabled) {
-  border-color: #d4af37;
-  background: rgba(212, 175, 55, 0.08);
+  border-color: var(--muted);
+  background: var(--surface-elevated);
 }
 
 .hero-overlay {
   background: linear-gradient(
     180deg,
-    rgba(6, 8, 6, 0.55) 0%,
-    rgba(6, 8, 6, 0.75) 50%,
-    rgba(6, 8, 6, 0.95) 100%
+    rgba(26, 28, 30, 0.55) 0%,
+    rgba(26, 28, 30, 0.85) 50%,
+    rgba(26, 28, 30, 0.98) 100%
   );
 }
 
 .input-premium {
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(212, 175, 55, 0.2);
-  border-radius: 10px;
-  padding: 0.875rem 1rem;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.625rem 0.875rem;
   color: var(--foreground);
   outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color 0.2s;
 }
 
 .input-premium:focus {
-  border-color: var(--gold);
-  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(184, 66, 46, 0.15);
 }
 
 .waypoint-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--gold-dim);
-  border: 2px solid rgba(212, 175, 55, 0.5);
+  background: var(--border);
+  border: 2px solid var(--muted);
   transition: all 0.3s ease;
 }
 
 .waypoint-dot.reached {
-  background: var(--gold);
-  border-color: var(--gold-light);
-  box-shadow: 0 0 12px rgba(212, 175, 55, 0.7);
+  background: var(--accent);
+  border-color: var(--accent-hover);
 }
 
 .progress-bar {
-  height: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 3px;
+  height: 4px;
+  background: var(--surface-elevated);
+  border-radius: 2px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #8a7020, #d4af37, #f0d878);
-  border-radius: 3px;
+  background: var(--accent);
+  border-radius: 2px;
   transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 0 12px rgba(212, 175, 55, 0.4);
 }
 
 @keyframes fade-up {
@@ -174,7 +165,7 @@ body {
 .stagger-3 { animation-delay: 0.3s; }
 
 .feed-session {
-  border-left: 3px solid #2d6a4f;
+  border-left: 3px solid var(--success);
   background: linear-gradient(90deg, rgba(45, 106, 79, 0.12), transparent);
 }
 
@@ -183,6 +174,6 @@ body {
   background: linear-gradient(90deg, rgba(155, 34, 38, 0.12), transparent);
 }
 
-.ladder-gold { background: linear-gradient(135deg, rgba(212, 175, 55, 0.2), rgba(138, 112, 32, 0.1)); }
-.ladder-silver { background: linear-gradient(135deg, rgba(192, 192, 192, 0.15), transparent); }
-.ladder-bronze { background: linear-gradient(135deg, rgba(205, 127, 50, 0.15), transparent); }
+.ladder-gold { background: rgba(184, 66, 46, 0.12); }
+.ladder-silver { background: rgba(156, 163, 175, 0.1); }
+.ladder-bronze { background: rgba(205, 127, 50, 0.1); }

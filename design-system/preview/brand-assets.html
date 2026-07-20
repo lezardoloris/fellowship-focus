@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fellowship Focus — Assets</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { padding: 32px; }
+    h1 { font-size: 14px; font-weight: 600; margin: 0 0 16px; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; max-width: 900px; }
+    .card { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); padding: 16px; text-align: center; }
+    .card img { max-width: 72px; max-height: 72px; object-fit: contain; }
+    .cap { margin-top: 10px; font-size: 12px; color: var(--muted); }
+    .word { padding: 28px 16px; }
+  </style>
+</head>
+<body>
+  <h1 data-od-id="assets-title">Brand assets</h1>
+  <div class="grid">
+    <div class="card" data-od-id="asset-icon-png">
+      <img src="../build/icon.png" alt="Icône app" />
+      <div class="cap">build/icon.png</div>
+    </div>
+    <div class="card" data-od-id="asset-logo-png">
+      <img src="../build/logo.png" alt="Logo" />
+      <div class="cap">build/logo.png</div>
+    </div>
+    <div class="card" data-od-id="asset-favicon">
+      <img src="../logos/favicon.png" alt="Favicon" />
+      <div class="cap">logos/favicon.png</div>
+    </div>
+    <div class="card word" data-od-id="asset-wordmark">
+      <div class="ff-display" style="line-height:1.6">Fellowship<br />Focus</div>
+      <div class="cap">Wordmark Cinzel</div>
+    </div>
+  </div>
+  <h1 style="margin-top:32px">Références UI (avant redesign)</h1>
+  <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))">
+    <div class="card" data-od-id="ref-overview"><img src="../assets/image-63b4e59b-9f50-46e9-9221-c27528f62001.png" alt="Overview legacy" style="max-width:100%;max-height:120px;border-radius:6px" /><div class="cap">Overview legacy gold</div></div>
+    <div class="card" data-od-id="ref-focus"><img src="../assets/image-7916f200-8d30-4d4f-bc91-48fd5722e638.png" alt="Focus legacy" style="max-width:100%;max-height:120px;border-radius:6px" /><div class="cap">Focus timer legacy</div></div>
+  </div>
+</body>
+</html>

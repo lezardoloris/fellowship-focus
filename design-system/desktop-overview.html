@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fellowship Focus — Desktop</title>
+  <link rel="stylesheet" href="colors_and_type.css" />
+  <style>
+    :root {
+      --sidebar-w: 200px;
+      --topbar-h: 48px;
+      --content-max: 960px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 14px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    .shell {
+      display: flex;
+      height: 100%;
+      min-height: 640px;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex: 0 0 var(--sidebar-w);
+      background: var(--bg);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand {
+      padding: 22px 16px 14px;
+      line-height: 1.55;
+    }
+
+    .brand span {
+      display: block;
+      font-family: var(--font-display);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .nav {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 8px 0;
+      flex: 1;
+    }
+
+    .nav button {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      font-family: var(--font-body);
+      font-size: 14px;
+      color: var(--muted);
+      padding: 12px 16px;
+      border-left: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.12s ease, background 0.12s ease;
+    }
+
+    .nav button:hover { color: var(--fg); }
+
+    .nav button.is-active {
+      color: var(--fg);
+      background: var(--surface);
+      border-left-color: var(--accent);
+    }
+
+    .sidebar-foot {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* Main */
+    .main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+    }
+
+    .topbar {
+      height: var(--topbar-h);
+      flex: 0 0 var(--topbar-h);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .topbar h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0;
+    }
+
+    .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .pill .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .pill.is-ok .dot { background: var(--success); }
+    .pill.is-ok { color: var(--fg); }
+    .pill.is-live .dot { background: var(--accent); }
+    .pill.is-live { color: var(--fg); }
+
+    .content {
+      flex: 1;
+      overflow: auto;
+      padding: 24px;
+    }
+
+    .content-inner {
+      max-width: var(--content-max);
+      width: 100%;
+    }
+
+    /* KPI */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+    }
+
+    .label {
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .value {
+      font-family: var(--font-body);
+      font-size: 28px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+      color: var(--fg);
+      margin: 8px 0 4px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .progress {
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+
+    .progress > span {
+      display: block;
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+
+    .progress.is-ok > span { background: var(--success); }
+
+    /* Split */
+    .split {
+      display: grid;
+      grid-template-columns: 1.35fr 0.95fr;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .stack { display: flex; flex-direction: column; gap: 16px; }
+
+    .card h2 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .card .sub {
+      margin: 6px 0 16px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .okr-row { margin-bottom: 14px; }
+    .okr-row:last-child { margin-bottom: 0; }
+
+    .okr-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .okr-head .meta {
+      font-size: 12px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    /* Focus ring */
+    .focus-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      min-height: 320px;
+    }
+
+    .ring-wrap {
+      position: relative;
+      width: 200px;
+      height: 200px;
+      margin: 24px 0 20px;
+    }
+
+    .ring-wrap svg { width: 100%; height: 100%; }
+
+    .ring-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      pointer-events: none;
+    }
+
+    .ring-time {
+      font-family: var(--font-body);
+      font-size: 36px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.03em;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-body);
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: var(--radius-sm);
+      padding: 10px 20px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: opacity 0.15s ease, background 0.15s ease;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--fg);
+      border-color: var(--accent);
+    }
+
+    .btn-primary:hover { opacity: 0.92; }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--fg);
+      border-color: var(--border);
+    }
+
+    .btn-ghost:hover { background: var(--bg); }
+
+    /* Ladder */
+    .ladder { list-style: none; margin: 0; padding: 0; }
+
+    .ladder li {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+
+    .ladder li:last-child { border-bottom: 0; }
+    .ladder .rank { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .ladder .xp { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+    .ladder li.is-you .name { font-weight: 600; }
+    .ladder li.is-you .xp { color: var(--accent); }
+
+    .panel[hidden] { display: none !important; }
+
+    @media (max-width: 980px) {
+      .kpi-row { grid-template-columns: repeat(2, 1fr); }
+      .split { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 640px) {
+      .shell { flex-direction: column; overflow: auto; }
+      .sidebar {
+        width: 100%;
+        flex: none;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .nav { flex-direction: row; overflow-x: auto; padding: 0 8px 8px; }
+      .nav button { border-left: 0; border-bottom: 2px solid transparent; white-space: nowrap; }
+      .nav button.is-active { border-bottom-color: var(--accent); border-left-color: transparent; }
+      .sidebar-foot { display: none; }
+      body { overflow: auto; }
+      .main { min-height: 70vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell" data-od-id="app-shell">
+    <aside class="sidebar" data-od-id="sidebar">
+      <div class="brand" data-od-id="sidebar-brand">
+        <span>Fellowship</span>
+        <span>Focus</span>
+      </div>
+      <nav class="nav" data-od-id="sidebar-nav" aria-label="Navigation principale">
+        <button type="button" class="is-active" data-nav="overview" data-od-id="nav-overview">Overview</button>
+        <button type="button" data-nav="tasks" data-od-id="nav-tasks">Tasks</button>
+        <button type="button" data-nav="focus" data-od-id="nav-focus">Focus</button>
+        <button type="button" data-nav="blocker" data-od-id="nav-blocker">Blocker</button>
+        <button type="button" data-nav="settings" data-od-id="nav-settings">Settings</button>
+      </nav>
+      <div class="sidebar-foot" data-od-id="sidebar-version">v1.3.0</div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar" data-od-id="topbar">
+        <h1 id="page-title" data-od-id="page-title">Overview</h1>
+        <div class="pills" data-od-id="status-pills">
+          <span class="pill is-ok" data-od-id="pill-guild"><span class="dot"></span>Guild · Nord</span>
+          <span class="pill is-live" data-od-id="pill-blocker"><span class="dot"></span>Blocker actif</span>
+        </div>
+      </header>
+
+      <div class="content">
+        <div class="content-inner">
+
+          <!-- OVERVIEW -->
+          <div class="panel" id="panel-overview" data-od-id="panel-overview">
+            <div class="kpi-row" data-od-id="kpi-row">
+              <article class="card" data-od-id="kpi-focus-today">
+                <div class="label">Focus today</div>
+                <div class="value">2h 14</div>
+                <div class="hint">minutes</div>
+                <div class="progress"><span style="width:62%"></span></div>
+              </article>
+              <article class="card" data-od-id="kpi-weekly-xp">
+                <div class="label">Weekly XP</div>
+                <div class="value">840</div>
+                <div class="hint">score ladder</div>
+                <div class="progress is-ok"><span style="width:48%"></span></div>
+              </article>
+              <article class="card" data-od-id="kpi-habits">
+                <div class="label">Habits</div>
+                <div class="value">78%</div>
+                <div class="hint">taux mensuel</div>
+                <div class="progress is-ok"><span style="width:78%"></span></div>
+              </article>
+              <article class="card" data-od-id="kpi-streak">
+                <div class="label">Streak</div>
+                <div class="value">12</div>
+                <div class="hint">jours</div>
+                <div class="progress"><span style="width:40%"></span></div>
+              </article>
+            </div>
+
+            <div class="split">
+              <div class="stack">
+                <section class="card" data-od-id="okr-panel">
+                  <h2>OKR de la semaine</h2>
+                  <p class="sub">Boucle freelance — focus, habits, revenu</p>
+                  <div class="okr-row" data-od-id="okr-focus">
+                    <div class="okr-head"><span>Heures focus</span><span class="meta">8,5h / 20h (43%)</span></div>
+                    <div class="progress"><span style="width:43%"></span></div>
+                  </div>
+                  <div class="okr-row" data-od-id="okr-habits">
+                    <div class="okr-head"><span>Complétion habits</span><span class="meta">62% / 80% (78%)</span></div>
+                    <div class="progress is-ok"><span style="width:78%"></span></div>
+                  </div>
+                  <div class="okr-row" data-od-id="okr-revenue">
+                    <div class="okr-head"><span>Revenu freelance</span><span class="meta">1 200€ / 3 000€ (40%)</span></div>
+                    <div class="progress"><span style="width:40%"></span></div>
+                  </div>
+                </section>
+
+                <section class="card" data-od-id="guild-panel">
+                  <h2>Classement guild</h2>
+                  <p class="sub">Top 5 cette semaine</p>
+                  <ul class="ladder" data-od-id="guild-ladder">
+                    <li data-od-id="ladder-1"><span class="rank">1</span><span class="name">Alex</span><span class="xp">1 240 XP</span></li>
+                    <li data-od-id="ladder-2"><span class="rank">2</span><span class="name">Sam</span><span class="xp">980 XP</span></li>
+                    <li class="is-you" data-od-id="ladder-3"><span class="rank">3</span><span class="name">Vous</span><span class="xp">840 XP</span></li>
+                    <li data-od-id="ladder-4"><span class="rank">4</span><span class="name">Jordan</span><span class="xp">610 XP</span></li>
+                    <li data-od-id="ladder-5"><span class="rank">5</span><span class="name">Riley</span><span class="xp">420 XP</span></li>
+                  </ul>
+                </section>
+              </div>
+
+              <section class="card focus-panel" data-od-id="focus-ring-panel">
+                <h2>Session en cours</h2>
+                <div class="ring-wrap" data-od-id="focus-ring">
+                  <svg viewBox="0 0 120 120" aria-hidden="true">
+                    <circle cx="60" cy="60" r="52" fill="none" stroke="#3a3d40" stroke-width="4" />
+                    <circle id="ring-arc" cx="60" cy="60" r="52" fill="none" stroke="#b8422e" stroke-width="4"
+                      stroke-linecap="round" stroke-dasharray="326.73" stroke-dashoffset="98"
+                      style="transform:rotate(-90deg);transform-origin:50% 50%" />
+                  </svg>
+                  <div class="ring-center">
+                    <div class="label" id="ring-phase">Focus</div>
+                    <div class="ring-time" id="ring-time" data-od-id="ring-time">32:14</div>
+                  </div>
+                </div>
+                <div class="actions">
+                  <button type="button" class="btn btn-primary" id="btn-toggle" data-od-id="btn-toggle">Pause</button>
+                  <button type="button" class="btn btn-ghost" id="btn-skip" data-od-id="btn-skip">Passer</button>
+                </div>
+              </section>
+            </div>
+          </div>
+
+          <!-- TASKS -->
+          <div class="panel" id="panel-tasks" hidden data-od-id="panel-tasks">
+            <section class="card">
+              <h2>À faire</h2>
+              <p class="sub">Double-clic pour lancer une session</p>
+              <div style="display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg);margin-bottom:8px" data-od-id="task-1">
+                <span>Spec landing client</span><span class="hint">01:20 / 02:00</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg);margin-bottom:8px" data-od-id="task-2">
+                <span>Revue PR dashboard</span><span class="hint">00:40 / 01:00</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg);margin-bottom:16px" data-od-id="task-3">
+                <span>Prep call guild</span><span class="hint">00:00 / 00:30</span>
+              </div>
+              <button type="button" class="btn btn-primary" data-od-id="btn-start-task">Démarrer le focus</button>
+            </section>
+          </div>
+
+          <!-- FOCUS -->
+          <div class="panel" id="panel-focus" hidden data-od-id="panel-focus">
+            <section class="card focus-panel" style="max-width:420px;margin:24px auto">
+              <h2>Focus</h2>
+              <p class="sub">Session 45 min · pause 10 min</p>
+              <div class="ring-wrap">
+                <svg viewBox="0 0 120 120" aria-hidden="true">
+                  <circle cx="60" cy="60" r="52" fill="none" stroke="#3a3d40" stroke-width="4" />
+                  <circle cx="60" cy="60" r="52" fill="none" stroke="#b8422e" stroke-width="4"
+                    stroke-linecap="round" stroke-dasharray="326.73" stroke-dashoffset="326.73"
+                    style="transform:rotate(-90deg);transform-origin:50% 50%" />
+                </svg>
+                <div class="ring-center">
+                  <div class="label">Prêt</div>
+                  <div class="ring-time">45:00</div>
+                </div>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn btn-primary" data-od-id="btn-start-focus">Démarrer</button>
+                <button type="button" class="btn btn-ghost" data-od-id="btn-reset-focus">Réinitialiser</button>
+              </div>
+            </section>
+          </div>
+
+          <!-- BLOCKER -->
+          <div class="panel" id="panel-blocker" hidden data-od-id="panel-blocker">
+            <section class="card" style="margin-bottom:16px" data-od-id="blocker-status">
+              <h2>Statut</h2>
+              <p class="sub">Certificat installé · proxy prêt</p>
+              <div class="pills" style="margin-bottom:16px">
+                <span class="pill is-ok"><span class="dot"></span>Certificat OK</span>
+                <span class="pill is-live"><span class="dot"></span>Standby</span>
+              </div>
+              <div class="actions" style="justify-content:flex-start">
+                <button type="button" class="btn btn-ghost" data-od-id="btn-gen-cert">Générer le certificat</button>
+                <button type="button" class="btn btn-primary" data-od-id="btn-install-cert">Installer</button>
+              </div>
+            </section>
+            <section class="card" data-od-id="blocker-rules">
+              <h2>Règles</h2>
+              <p class="sub">Bloqués pendant les sessions focus</p>
+              <div style="padding:14px;border:1px solid var(--border);border-radius:6px;background:var(--bg);font-family:var(--font-body);font-size:13px;line-height:1.7;color:var(--muted)" data-od-id="blocked-list">
+                twitter.com<br />x.com<br />youtube.com<br />tiktok.com<br />reddit.com<br />instagram.com<br />netflix.com
+              </div>
+              <button type="button" class="btn btn-primary" style="margin-top:16px" data-od-id="btn-save-blocker">Enregistrer</button>
+            </section>
+          </div>
+
+          <!-- SETTINGS -->
+          <div class="panel" id="panel-settings" hidden data-od-id="panel-settings">
+            <section class="card" style="margin-bottom:16px" data-od-id="settings-connection">
+              <h2>Connexion</h2>
+              <p class="sub">Identité guild (champs masqués côté UI)</p>
+              <label class="label" style="display:block;margin-bottom:6px" for="set-name">Nom d'affichage</label>
+              <input id="set-name" data-od-id="input-name" value="Vous" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;color:var(--fg);font-family:var(--font-body);font-size:14px;margin-bottom:14px;outline:none" />
+              <label class="label" style="display:block;margin-bottom:6px" for="set-guild">Guild</label>
+              <input id="set-guild" data-od-id="input-guild" value="Nord" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;color:var(--fg);font-family:var(--font-body);font-size:14px;outline:none" />
+            </section>
+            <section class="card" data-od-id="settings-okrs">
+              <h2>Cibles hebdo</h2>
+              <p class="sub">Synchronisées avec Overview</p>
+              <label class="label" style="display:block;margin-bottom:6px" for="set-focus">Objectif focus</label>
+              <input id="set-focus" data-od-id="input-focus-target" value="20 h / semaine" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;color:var(--fg);font-family:var(--font-body);font-size:14px;margin-bottom:14px;outline:none" />
+              <label class="label" style="display:block;margin-bottom:6px" for="set-habit">Objectif habits</label>
+              <input id="set-habit" data-od-id="input-habit-target" value="80 %" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;color:var(--fg);font-family:var(--font-body);font-size:14px;outline:none" />
+              <button type="button" class="btn btn-primary" style="margin-top:16px" data-od-id="btn-save-settings">Enregistrer</button>
+            </section>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var titles = {
+        overview: "Overview",
+        tasks: "Tasks",
+        focus: "Focus",
+        blocker: "Blocker",
+        settings: "Settings"
+      };
+      var navBtns = document.querySelectorAll("[data-nav]");
+      var titleEl = document.getElementById("page-title");
+      var panels = {
+        overview: document.getElementById("panel-overview"),
+        tasks: document.getElementById("panel-tasks"),
+        focus: document.getElementById("panel-focus"),
+        blocker: document.getElementById("panel-blocker"),
+        settings: document.getElementById("panel-settings")
+      };
+
+      function show(id) {
+        Object.keys(panels).forEach(function (k) {
+          panels[k].hidden = k !== id;
+        });
+        navBtns.forEach(function (b) {
+          b.classList.toggle("is-active", b.getAttribute("data-nav") === id);
+        });
+        titleEl.textContent = titles[id] || id;
+      }
+
+      navBtns.forEach(function (b) {
+        b.addEventListener("click", function () {
+          show(b.getAttribute("data-nav"));
+        });
+      });
+
+      /* Minimal timer demo on overview ring */
+      var total = 45 * 60;
+      var left = 32 * 60 + 14;
+      var running = true;
+      var timeEl = document.getElementById("ring-time");
+      var arc = document.getElementById("ring-arc");
+      var toggle = document.getElementById("btn-toggle");
+      var circ = 2 * Math.PI * 52;
+
+      function fmt(s) {
+        var m = Math.floor(s / 60);
+        var r = s % 60;
+        return (m < 10 ? "0" : "") + m + ":" + (r < 10 ? "0" : "") + r;
+      }
+
+      function paint() {
+        timeEl.textContent = fmt(left);
+        var p = 1 - left / total;
+        arc.setAttribute("stroke-dashoffset", String(circ * (1 - p)));
+      }
+
+      toggle.addEventListener("click", function () {
+        running = !running;
+        toggle.textContent = running ? "Pause" : "Reprendre";
+      });
+
+      document.getElementById("btn-skip").addEventListener("click", function () {
+        left = Math.max(0, left - 60);
+        paint();
+      });
+
+      setInterval(function () {
+        if (!running || left <= 0) return;
+        left -= 1;
+        paint();
+      }, 1000);
+
+      paint();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fellowship Focus — Typographie</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { padding: 32px; max-width: 720px; }
+    .row { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); padding: 20px; margin-bottom: 12px; }
+    .meta { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    .tag { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .spec { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    h1.page { font-size: 14px; font-weight: 600; margin: 0 0 20px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1 class="page" data-od-id="typo-title">Typographie · Fellowship Focus</h1>
+
+  <div class="row" data-od-id="specimen-display">
+    <div class="meta"><span class="tag">Display · Cinzel</span><span class="spec">11px / 600 / 0.2em</span></div>
+    <div class="ff-display">Fellowship<br />Focus</div>
+  </div>
+
+  <div class="row" data-od-id="specimen-h1">
+    <div class="meta"><span class="tag">H1 · Public Sans</span><span class="spec">20px / 600</span></div>
+    <div class="ff-h1">Vue d'ensemble</div>
+  </div>
+
+  <div class="row" data-od-id="specimen-h2">
+    <div class="meta"><span class="tag">H2 · Public Sans</span><span class="spec">16px / 600</span></div>
+    <div class="ff-h2">OKR de la semaine</div>
+  </div>
+
+  <div class="row" data-od-id="specimen-body">
+    <div class="meta"><span class="tag">Body · Public Sans</span><span class="spec">14px / 400</span></div>
+    <p style="margin:0;color:var(--fg)">Sessions focus 45 min, blocker système, accountability en guild — sans surveillance agressive.</p>
+  </div>
+
+  <div class="row" data-od-id="specimen-kpi">
+    <div class="meta"><span class="tag">KPI value · Public Sans</span><span class="spec">28px / 600 · jamais Cinzel</span></div>
+    <div class="ff-value">2h 14</div>
+    <div class="ff-hint" style="margin-top:6px">minutes aujourd'hui</div>
+  </div>
+
+  <div class="row" data-od-id="specimen-caption">
+    <div class="meta"><span class="tag">Caption / label</span><span class="spec">12px</span></div>
+    <div class="ff-label">Focus today</div>
+    <div class="ff-hint" style="margin-top:8px">v1.3.0 · premium focus</div>
+  </div>
+</body>
+</html>

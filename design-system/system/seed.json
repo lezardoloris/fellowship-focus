@@ -1,0 +1,22 @@
+{
+  "colorPrimary": "#b8422e",
+  "colorSuccess": "#2d6a4f",
+  "colorWarning": "#ca8a04",
+  "colorError": "#ff4d4f",
+  "colorInfo": "#b8422e",
+  "colorLink": "#2d6a4f",
+  "colorTextBase": "#1a1c1e",
+  "colorBgBase": "#f4f4f5",
+  "fontFamily": "'Public Sans', system-ui, -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
+  "fontFamilyCode": "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace",
+  "fontSize": 14,
+  "borderRadius": 6,
+  "sizeUnit": 4,
+  "sizeStep": 4,
+  "controlHeight": 32,
+  "lineWidth": 1,
+  "motionUnit": 0.1,
+  "motionBase": 0,
+  "wireframe": false,
+  "motion": true
+}

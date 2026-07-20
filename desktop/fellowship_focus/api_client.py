@@ -6,11 +6,18 @@ class FellowshipApi:
         self.api_url = api_url.rstrip("/")
         self.token = token
 
-    def log_session(self, minutes: int, completed: bool, session_id: str | None = None) -> dict | None:
+    def log_session(
+        self, minutes: int, completed: bool, session_id: str | None = None, activity_score: int = 0
+    ) -> dict | None:
         if not self.token:
             return None
         try:
-            payload: dict = {"token": self.token, "minutes": minutes, "completed": completed}
+            payload: dict = {
+                "token": self.token,
+                "minutes": minutes,
+                "completed": completed,
+                "activityScore": activity_score,
+            }
             if session_id:
                 payload["sessionId"] = session_id
             r = requests.post(
@@ -37,6 +44,20 @@ class FellowshipApi:
         except Exception:
             return None
 
+    def bypass_blocker(self, session_id: str) -> dict | None:
+        if not self.token:
+            return None
+        try:
+            r = requests.post(
+                f"{self.api_url}/api/sessions/bypass-blocker",
+                json={"token": self.token, "sessionId": session_id},
+                timeout=10,
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None
+
     def upload_proof(
         self,
         session_id: str,
@@ -44,6 +65,7 @@ class FellowshipApi:
         privacy_tier: str,
         active_app: str,
         image_b64: str | None,
+        activity_score: int | None = None,
     ) -> bool:
         if not self.token:
             return False
@@ -57,6 +79,8 @@ class FellowshipApi:
             }
             if image_b64:
                 payload["imageBase64"] = image_b64
+            if activity_score is not None:
+                payload["activityScore"] = activity_score
             r = requests.post(f"{self.api_url}/api/proofs", json=payload, timeout=30)
             r.raise_for_status()
             return True

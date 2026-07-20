@@ -1,14 +1,15 @@
-"""Embedded web dashboard — exact parity with localhost:3000 / Railway."""
+"""Embedded web dashboard — exact parity with Railway / localhost."""
 
 from __future__ import annotations
 
 import json
 
+from PySide6.QtGui import QFont
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from fellowship_focus.invite import apply_parsed_config, parse_invite_or_sync
-from fellowship_focus.ui.theme import font_display, font_sans
+from fellowship_focus.ui.theme import BG, BG_SURFACE, BORDER, FG, MUTED, font_sans
 
 try:
     from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -33,61 +34,59 @@ class WebDashboardPage(QWidget):
 
         self._setup = QWidget()
         self._setup.setObjectName("webSetupBar")
-        setup_layout = QVBoxLayout(self._setup)
-        setup_layout.setContentsMargins(16, 12, 16, 12)
+        setup_layout = QHBoxLayout(self._setup)
+        setup_layout.setContentsMargins(20, 14, 20, 14)
+        setup_layout.setSpacing(12)
 
-        self._title = QLabel("Connect your Fellowship")
-        self._title.setFont(font_display(14, bold=True))
-        self._title.setStyleSheet("color: #d4af37;")
-        setup_layout.addWidget(self._title)
-
-        self._hint = QLabel(
-            "Paste your invite link from the browser (e.g. http://localhost:3000/f/greer-…)\n"
-            "or use “Copy for desktop app” on the web dashboard."
-        )
-        self._hint.setWordWrap(True)
+        left = QVBoxLayout()
+        self._title = QLabel("Connect Fellowship")
+        self._title.setFont(font_sans(14, QFont.Weight.DemiBold))
+        self._title.setStyleSheet(f"color: {FG};")
+        self._hint = QLabel("Paste your invite link to load the guild dashboard")
         self._hint.setFont(font_sans(11))
-        self._hint.setStyleSheet("color: #888; margin-bottom: 6px;")
-        setup_layout.addWidget(self._hint)
+        self._hint.setStyleSheet(f"color: {MUTED};")
+        left.addWidget(self._title)
+        left.addWidget(self._hint)
+        setup_layout.addLayout(left, 1)
 
-        row = QHBoxLayout()
         self._invite_input = QLineEdit()
-        self._invite_input.setPlaceholderText("http://localhost:3000/f/your-fellowship-code")
+        self._invite_input.setPlaceholderText("https://fellowship-focus-production.up.railway.app/f/your-code")
         self._invite_input.returnPressed.connect(self._connect_from_input)
-        row.addWidget(self._invite_input, 1)
+        setup_layout.addWidget(self._invite_input, 3)
 
         self._connect_btn = QPushButton("Connect")
-        self._connect_btn.setObjectName("goldBtn")
+        self._connect_btn.setObjectName("primaryBtn")
         self._connect_btn.clicked.connect(self._connect_from_input)
-        row.addWidget(self._connect_btn)
+        setup_layout.addWidget(self._connect_btn)
 
-        self._open_btn = QPushButton("Open in browser")
+        self._open_btn = QPushButton("Browser")
+        self._open_btn.setObjectName("ghostBtn")
         self._open_btn.clicked.connect(self._on_open_external)
-        row.addWidget(self._open_btn)
-        setup_layout.addLayout(row)
+        setup_layout.addWidget(self._open_btn)
 
         self._status = QLabel("")
-        self._status.setFont(font_sans(11))
-        self._status.setStyleSheet("color: #6a8f6a; padding-top: 4px;")
+        self._status.setFont(font_sans(10))
+        self._status.setStyleSheet(f"color: {MUTED}; padding-left: 8px;")
         setup_layout.addWidget(self._status)
+
         layout.addWidget(self._setup)
 
         if not HAS_WEBENGINE:
             fallback = QLabel(
                 "Install PySide6-WebEngine for the full dashboard:\n"
                 "pip install PySide6-Addons\n\n"
-                "Then restart the app — same UI as localhost:3000."
+                "Then restart — same UI as the web app."
             )
             fallback.setWordWrap(True)
             fallback.setFont(font_sans(13))
-            fallback.setStyleSheet("color: #888; padding: 24px;")
+            fallback.setStyleSheet(f"color: {MUTED}; padding: 40px;")
             layout.addWidget(fallback)
             self._view = None
             return
 
         self._view = QWebEngineView()
         profile = QWebEngineProfile.defaultProfile()
-        profile.setHttpUserAgent(profile.httpUserAgent() + " FellowshipFocusDesktop/1.1")
+        profile.setHttpUserAgent(profile.httpUserAgent() + " FellowshipFocusDesktop/1.2")
         self._view.loadFinished.connect(self._on_load_finished)
         layout.addWidget(self._view, 1)
 
@@ -97,15 +96,15 @@ class WebDashboardPage(QWidget):
     def reload_dashboard(self) -> None:
         cfg = self._get_config()
         code = cfg.get("fellowship_code", "").strip()
-        api = cfg.get("api_url", "http://localhost:3000").rstrip("/")
+        api = cfg.get("api_url", "https://fellowship-focus-production.up.railway.app").rstrip("/")
 
         if code:
             invite = f"{api}/f/{code}"
             self._invite_input.setText(invite)
-            self._status.setText(f"Connected · {code}")
+            self._status.setText("")
             self._set_setup_compact(True)
         else:
-            self._status.setText("Not connected — paste your invite link above.")
+            self._status.setText("Not connected")
             self._set_setup_compact(False)
 
         if not self._view:
@@ -123,29 +122,32 @@ class WebDashboardPage(QWidget):
         else:
             self._pull_timer.stop()
             self._view.setHtml(
-                """<html><body style="background:#060806;color:#666;font-family:Georgia;
-                padding:60px;text-align:center">
-                <p>Paste your invite link above to load the same dashboard as in your browser.</p>
-                </body></html>"""
+                f"""<html><head><style>
+                body{{background:{BG};color:{MUTED};font-family:system-ui,sans-serif;
+                display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
+                .card{{max-width:420px;text-align:center;padding:40px;border:1px solid {BORDER};
+                border-radius:10px;background:{BG_SURFACE}}}
+                h1{{color:{FG};font-size:14px;font-weight:600;letter-spacing:.08em}}
+                p{{line-height:1.6;font-size:14px}}
+                </style></head><body><div class="card">
+                <h1>Fellowship Focus</h1>
+                <p>Paste your invite link above to load the guild dashboard.</p>
+                </div></body></html>"""
             )
 
     def _set_setup_compact(self, compact: bool) -> None:
-        self._title.setVisible(not compact)
-        self._hint.setVisible(not compact)
-        self._connect_btn.setVisible(not compact)
-        self._open_btn.setVisible(not compact)
-        self._invite_input.setReadOnly(compact)
+        self._setup.setVisible(not compact)
 
     def _connect_from_input(self) -> None:
         parsed = parse_invite_or_sync(self._invite_input.text())
         if not parsed:
-            self._status.setStyleSheet("color: #c45c26; padding-top: 4px;")
-            self._status.setText("Invalid link. Use http://localhost:3000/f/your-code or desktop sync JSON.")
+            self._status.setStyleSheet("color: #c45c26;")
+            self._status.setText("Invalid link")
             return
         cfg = self._get_config()
         if apply_parsed_config(cfg, parsed):
             self._on_config_updated(cfg)
-        self._status.setStyleSheet("color: #6a8f6a; padding-top: 4px;")
+        self._status.setStyleSheet(f"color: {MUTED};")
         self.reload_dashboard()
 
     def _on_load_finished(self, ok: bool) -> None:
@@ -184,7 +186,6 @@ class WebDashboardPage(QWidget):
         if updates:
             cfg.update(updates)
             self._on_config_updated(cfg)
-            self._status.setText(f"Synced · {cfg.get('member_name') or name} · {cfg.get('fellowship_code', '')}")
 
     def _push_credentials_to_web(self) -> None:
         if not self._view or self._injected:

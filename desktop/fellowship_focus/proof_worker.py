@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from fellowship_focus.api_client import FellowshipApi
@@ -12,9 +14,10 @@ class ProofWorker(QObject):
     proof_sent = Signal(str)
     proof_failed = Signal(str)
 
-    def __init__(self, get_config) -> None:
+    def __init__(self, get_config, get_activity: Callable | None = None) -> None:
         super().__init__()
         self._get_config = get_config
+        self._get_activity = get_activity
         self._session_id: str | None = None
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
@@ -48,15 +51,23 @@ class ProofWorker(QObject):
         mode = cfg.get("proof_mode", "signal")
         api = FellowshipApi(api_url, token)
         app = active_window_title()
+        activity_score = 0
+        activity_label = ""
+        if self._get_activity:
+            tracker = self._get_activity()
+            activity_score = tracker.snapshot()
+            activity_label = tracker.activity_label()
+            if activity_label != "idle":
+                app = f"{app} · mouse:{activity_label}"
 
         if mode == "signal":
             ok = api.upload_proof(
-                self._session_id, "signal", "signal", app, None
+                self._session_id, "signal", "signal", app, None, activity_score
             )
         else:
             img = capture_screen_jpeg(mode)
             ok = api.upload_proof(
-                self._session_id, "screen", mode, app, img
+                self._session_id, "screen", mode, app, img, activity_score
             )
 
         if ok:

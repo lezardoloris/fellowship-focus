@@ -20,6 +20,7 @@ export type Fellowship = {
   id: string;
   code: string;
   name: string;
+  blocker_bypass_penalty: number;
   created_at: string;
 };
 
@@ -266,6 +267,25 @@ function initSchema(database: Database.Database) {
   } catch {
     /* column exists */
   }
+  try {
+    database.exec(
+      `ALTER TABLE fellowships ADD COLUMN blocker_bypass_penalty INTEGER NOT NULL DEFAULT 0`
+    );
+  } catch {
+    /* column exists */
+  }
+  try {
+    database.exec(
+      `ALTER TABLE focus_sessions ADD COLUMN blocker_bypassed INTEGER NOT NULL DEFAULT 0`
+    );
+  } catch {
+    /* column exists */
+  }
+  try {
+    database.exec(`ALTER TABLE focus_sessions ADD COLUMN activity_score INTEGER NOT NULL DEFAULT 0`);
+  } catch {
+    /* column exists */
+  }
   purgeOldProofs(database);
 }
 
@@ -277,14 +297,24 @@ function slugify(name: string): string {
     .slice(0, 20);
 }
 
-export function createFellowship(name: string): Fellowship {
+export function createFellowship(
+  name: string,
+  blockerBypassPenalty = 0
+): Fellowship {
   const database = getDb();
   const id = nanoid();
   const code = `${slugify(name) || "fellowship"}-${nanoid(8)}`;
+  const penalty = Math.max(0, Math.min(100, blockerBypassPenalty));
   database
-    .prepare("INSERT INTO fellowships (id, code, name) VALUES (?, ?, ?)")
-    .run(id, code, name);
+    .prepare(
+      "INSERT INTO fellowships (id, code, name, blocker_bypass_penalty) VALUES (?, ?, ?, ?)"
+    )
+    .run(id, code, name, penalty);
   return database.prepare("SELECT * FROM fellowships WHERE id = ?").get(id) as Fellowship;
+}
+
+export function getFellowshipById(id: string): Fellowship | undefined {
+  return getDb().prepare("SELECT * FROM fellowships WHERE id = ?").get(id) as Fellowship | undefined;
 }
 
 export function getFellowshipByCode(code: string): Fellowship | undefined {
@@ -368,7 +398,8 @@ export function logSession(
   fellowshipId: string,
   minutes: number,
   completed: boolean,
-  existingSessionId?: string
+  existingSessionId?: string,
+  activityScore = 0
 ): { session: FocusSession; member: Member; xpEarned: number } {
   const database = getDb();
   const sessionId = existingSessionId || nanoid();
@@ -383,14 +414,23 @@ export function logSession(
   ).c;
   const hadBlocks = recentBlocks > 0;
 
-  const xpEarned = calcSessionXp(minutes, completed, hadBlocks);
+  let blockerBypassed = false;
+  if (existingSessionId) {
+    const row = database
+      .prepare("SELECT blocker_bypassed FROM focus_sessions WHERE id = ? AND member_id = ?")
+      .get(sessionId, memberId) as { blocker_bypassed: number } | undefined;
+    blockerBypassed = Boolean(row?.blocker_bypassed);
+  }
+
+  const xpEarned = calcSessionXp(minutes, completed, hadBlocks, blockerBypassed);
 
   if (existingSessionId) {
     database
       .prepare(
-        "UPDATE focus_sessions SET minutes = ?, xp_earned = ?, completed = ? WHERE id = ? AND member_id = ?"
+        `UPDATE focus_sessions SET minutes = ?, xp_earned = ?, completed = ?, activity_score = ?
+         WHERE id = ? AND member_id = ?`
       )
-      .run(minutes, xpEarned, completed ? 1 : 0, sessionId, memberId);
+      .run(minutes, xpEarned, completed ? 1 : 0, activityScore, sessionId, memberId);
   } else {
     database
       .prepare(
@@ -441,6 +481,44 @@ export function logSession(
   syncAutoHabits(memberId, fellowshipId);
 
   return { session, member: updatedMember, xpEarned: totalXpGain };
+}
+
+export function logBlockerBypass(
+  memberId: string,
+  fellowshipId: string,
+  sessionId: string
+): { penalty: number; member: Member } | null {
+  const database = getDb();
+  const fellowship = getFellowshipById(fellowshipId);
+  const penalty = fellowship?.blocker_bypass_penalty ?? 0;
+  if (penalty <= 0) {
+    database
+      .prepare(
+        "UPDATE focus_sessions SET blocker_bypassed = 1 WHERE id = ? AND member_id = ?"
+      )
+      .run(sessionId, memberId);
+    return null;
+  }
+
+  const member = database.prepare("SELECT * FROM members WHERE id = ?").get(memberId) as Member;
+  database
+    .prepare(
+      "UPDATE focus_sessions SET blocker_bypassed = 1 WHERE id = ? AND member_id = ?"
+    )
+    .run(sessionId, memberId);
+  database
+    .prepare(
+      "UPDATE members SET total_xp = CASE WHEN total_xp > ? THEN total_xp - ? ELSE 0 END WHERE id = ?"
+    )
+    .run(penalty, penalty, memberId);
+  addFeedEvent(
+    fellowshipId,
+    "block",
+    member.name,
+    `${member.name} disabled the blocker during focus (−${penalty} XP).`
+  );
+  const updated = database.prepare("SELECT * FROM members WHERE id = ?").get(memberId) as Member;
+  return { penalty, member: updated };
 }
 
 export function logBlock(
@@ -918,12 +996,24 @@ export function addFocusProof(
   return database.prepare("SELECT * FROM focus_proofs WHERE id = ?").get(id) as FocusProof;
 }
 
+export function bumpSessionActivity(sessionId: string, memberId: string, score: number) {
+  const database = getDb();
+  database
+    .prepare(
+      `UPDATE focus_sessions SET activity_score = CASE
+         WHEN activity_score > ? THEN activity_score ELSE ?
+       END WHERE id = ? AND member_id = ?`
+    )
+    .run(score, score, sessionId, memberId);
+}
+
 export type TrustMember = {
   member_id: string;
   name: string;
   proof_count_7d: number;
   screen_count_7d: number;
   webcam_count_7d: number;
+  activity_score_7d: number;
   last_app: string | null;
   last_proof_at: string | null;
   trust_score: number;
@@ -952,8 +1042,17 @@ export function getTrustLeaderboard(fellowshipId: string): TrustMember[] {
       )
       .get(m.id) as { active_app: string | null; created_at: string } | undefined;
 
+    const activity = database
+      .prepare(
+        `SELECT COALESCE(SUM(activity_score), 0) as total
+         FROM focus_sessions WHERE member_id = ? AND created_at >= ?`
+      )
+      .get(m.id, weekAgo) as { total: number };
+
     const proofCount = stats?.total ?? 0;
-    const trustScore = Math.min(100, proofCount * 8 + (stats?.screens ?? 0) * 2);
+    const activityScore = activity?.total ?? 0;
+    const activityBonus = Math.min(25, Math.floor(activityScore / 4000));
+    const trustScore = Math.min(100, proofCount * 8 + (stats?.screens ?? 0) * 2 + activityBonus);
 
     return {
       member_id: m.id,
@@ -961,6 +1060,7 @@ export function getTrustLeaderboard(fellowshipId: string): TrustMember[] {
       proof_count_7d: proofCount,
       screen_count_7d: stats?.screens ?? 0,
       webcam_count_7d: stats?.webcams ?? 0,
+      activity_score_7d: activityScore,
       last_app: last?.active_app ?? null,
       last_proof_at: last?.created_at ?? null,
       trust_score: trustScore,

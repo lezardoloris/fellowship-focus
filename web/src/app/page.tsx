@@ -8,6 +8,8 @@ import { FEATURE_IMAGES } from "@/lib/assets";
 
 export default function HomePage() {
   const [name, setName] = useState("");
+  const [penaltyEnabled, setPenaltyEnabled] = useState(false);
+  const [blockerPenalty, setBlockerPenalty] = useState(25);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
@@ -20,7 +22,10 @@ export default function HomePage() {
       const res = await fetch("/api/fellowship", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name || "The Fellowship" }),
+        body: JSON.stringify({
+          name: name || "The Fellowship",
+          blockerBypassPenalty: penaltyEnabled ? blockerPenalty : 0,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create");
@@ -81,6 +86,33 @@ export default function HomePage() {
             placeholder="The Nine Walkers"
             className="input-premium mb-5 w-full"
           />
+          <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-xl border border-stone-800/80 bg-black/20 p-4">
+            <input
+              type="checkbox"
+              checked={penaltyEnabled}
+              onChange={(e) => setPenaltyEnabled(e.target.checked)}
+              className="mt-1"
+            />
+            <span className="text-sm leading-relaxed text-stone-400">
+              <span className="font-medium text-stone-300">Optional guild rule</span> — penalize members who
+              turn off the site blocker <em>during</em> a focus session (not outside sessions).
+            </span>
+          </label>
+          {penaltyEnabled && (
+            <div className="mb-5">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-stone-500">
+                XP penalty on bypass
+              </label>
+              <input
+                type="number"
+                min={5}
+                max={100}
+                value={blockerPenalty}
+                onChange={(e) => setBlockerPenalty(Number(e.target.value) || 0)}
+                className="input-premium w-full"
+              />
+            </div>
+          )}
           {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
           <button type="submit" disabled={loading} className="btn-secondary w-full">
             {loading ? "Forging the Ring…" : "Create Fellowship (web)"}

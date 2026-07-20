@@ -17,11 +17,12 @@ export const POINTS = {
   BLOCK_REPEAT_BONUS: 5, // +5 per block in same hour
   BLOCK_MAX_PENALTY: 30,
   BLOCK_FELLOWSHIP_TAX: 3, // fellowship pool also loses this
+  DEFAULT_BLOCKER_BYPASS_PENALTY: 25, // guild-configurable; 0 = no penalty
 
   // ── Ladder leagues (weekly NET xp) ─────────────────
   LEAGUES: [
     { id: "mordor", name: "Mordor", minNetXp: 500, color: "#c45c26" },
-    { id: "gondor", name: "Gondor", minNetXp: 300, color: "#d4af37" },
+    { id: "gondor", name: "Gondor", minNetXp: 300, color: "#b8422e" },
     { id: "rohan", name: "Rohan", minNetXp: 150, color: "#c0c0c0" },
     { id: "shire", name: "Shire", minNetXp: 0, color: "#8b7355" },
   ],
@@ -33,11 +34,16 @@ export function calcBlockPenalty(recentBlockCount: number): number {
   return Math.min(penalty, POINTS.BLOCK_MAX_PENALTY);
 }
 
-export function calcSessionXp(minutes: number, completed: boolean, hadBlocks: boolean): number {
+export function calcSessionXp(
+  minutes: number,
+  completed: boolean,
+  hadBlocks: boolean,
+  blockerBypassed = false
+): number {
   let xp = completed ? minutes * POINTS.XP_PER_FOCUS_MINUTE : Math.floor(minutes / 2);
   if (completed) xp += POINTS.SESSION_COMPLETE_BONUS;
   if (completed && minutes >= POINTS.DAILY_QUEST_MINUTES) xp += POINTS.DAILY_QUEST_BONUS;
-  if (completed && !hadBlocks) xp += POINTS.ZERO_BLOCKS_SESSION_BONUS;
+  if (completed && !hadBlocks && !blockerBypassed) xp += POINTS.ZERO_BLOCKS_SESSION_BONUS;
   return xp;
 }
 

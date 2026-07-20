@@ -5,7 +5,8 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const name = (body.name as string)?.trim() || "The Fellowship";
-    const fellowship = createFellowship(name);
+    const penalty = Number(body.blockerBypassPenalty) || 0;
+    const fellowship = createFellowship(name, penalty);
     return NextResponse.json({ fellowship });
   } catch (error) {
     console.error(error);

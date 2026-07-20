@@ -4,14 +4,14 @@ from PySide6.QtGui import QFont
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QGraphicsOpacityEffect, QLabel, QVBoxLayout, QWidget
 
-from fellowship_focus.ui.theme import EMBER, GOLD, GREEN, font_sans
+from fellowship_focus.ui.theme import ACCENT, BG_ELEVATED, EMBER, GREEN, font_sans
 
 
 class Toast(QFrame):
   def __init__(self, parent: QWidget, title: str, message: str, kind: str = "info") -> None:
     super().__init__(parent)
     self.setObjectName("toast")
-    border = GOLD
+    border = ACCENT
     if kind == "success":
       border = GREEN
     elif kind == "warning":
@@ -21,12 +21,12 @@ class Toast(QFrame):
 
     self.setStyleSheet(f"""
       QFrame#toast {{
-        background: rgba(12, 18, 12, 0.95);
+        background: {BG_ELEVATED};
         border: 1px solid {border};
         border-left: 4px solid {border};
-        border-radius: 12px;
-        min-width: 280px;
-        max-width: 360px;
+        border-radius: 14px;
+        min-width: 300px;
+        max-width: 380px;
       }}
     """)
 
@@ -35,8 +35,9 @@ class Toast(QFrame):
     layout.setSpacing(4)
 
     title_lbl = QLabel(title)
+    title_lbl.setObjectName("toastTitle")
     title_lbl.setFont(font_sans(13, QFont.Weight.DemiBold))
-    title_lbl.setStyleSheet(f"color: {border}; border: none;")
+    title_lbl.setStyleSheet(f"color: {border}; border: none; background: transparent;")
     layout.addWidget(title_lbl)
 
     msg_lbl = QLabel(message)

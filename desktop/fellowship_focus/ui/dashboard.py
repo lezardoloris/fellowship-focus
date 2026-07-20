@@ -1,41 +1,18 @@
 """Dashboard — KPIs, OKRs, guild ladder preview (web parity)."""
 
 from PySide6.QtGui import QFont
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QProgressBar,
     QPushButton,
-    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
-from fellowship_focus.ui.theme import ASSETS_DIR, font_display, font_sans
-
-
-def _kpi_card(title: str, value: str, subtitle: str = "") -> QWidget:
-    card = QWidget()
-    card.setObjectName("kpiCard")
-    layout = QVBoxLayout(card)
-    layout.setContentsMargins(16, 14, 16, 14)
-    t = QLabel(title.upper())
-    t.setObjectName("kpiLabel")
-    t.setFont(font_sans(10))
-    v = QLabel(value)
-    v.setObjectName("kpiValue")
-    v.setFont(font_display(26, bold=True))
-    layout.addWidget(t)
-    layout.addWidget(v)
-    if subtitle:
-        s = QLabel(subtitle)
-        s.setStyleSheet("color: #666; font-size: 11px;")
-        s.setFont(font_sans(11))
-        layout.addWidget(s)
-    return card
+from fellowship_focus.ui.components import GlassCard, KpiCard, PageHeader, PageScaffold
+from fellowship_focus.ui.theme import font_display, font_sans
 
 
 def _okr_row(label: str, current: float, target: float, unit: str = "") -> QWidget:
@@ -44,16 +21,18 @@ def _okr_row(label: str, current: float, target: float, unit: str = "") -> QWidg
     layout.setContentsMargins(0, 0, 0, 8)
     pct = min(100, int((current / target) * 100)) if target > 0 else 0
     header = QHBoxLayout()
-    header.addWidget(QLabel(label))
+    lbl = QLabel(label)
+    lbl.setFont(font_sans(12, QFont.Weight.Medium))
+    header.addWidget(lbl)
     header.addStretch()
     val = QLabel(f"{current:g}{unit} / {target:g}{unit} ({pct}%)")
-    val.setStyleSheet("color: #d4af37; font-size: 11px;")
+    val.setStyleSheet("color: #9ca3af; font-size: 11px;")
     header.addWidget(val)
     layout.addLayout(header)
     bar = QProgressBar()
     bar.setRange(0, 100)
     bar.setValue(pct)
-    bar.setFixedHeight(8)
+    bar.setFixedHeight(4)
     layout.addWidget(bar)
     return row
 
@@ -64,124 +43,80 @@ class DashboardPage(QWidget):
         self._on_start_pomo = on_start_pomo
         self._on_open_web = on_open_web
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setStyleSheet("background: transparent; border: none;")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
 
-        content = QWidget()
-        root = QVBoxLayout(content)
-        root.setContentsMargins(20, 16, 20, 20)
-        root.setSpacing(16)
+        scaffold = PageScaffold()
 
-        # Hero banner
-        hero_wrap = QWidget()
-        hero_wrap.setFixedHeight(140)
-        hero_wrap.setStyleSheet("border-radius: 14px;")
-        hero_l = QVBoxLayout(hero_wrap)
-        hero_l.setContentsMargins(0, 0, 0, 0)
-        self.hero_label = QLabel()
-        self.hero_label.setScaledContents(True)
-        self.hero_label.setFixedHeight(140)
-        hero_path = ASSETS_DIR / "journey-map.jpg"
-        if hero_path.exists():
-            self.hero_label.setPixmap(QPixmap(str(hero_path)))
-        overlay = QLabel("Your Quest Dashboard", hero_wrap)
-        overlay.setFont(font_display(20, bold=True))
-        overlay.setStyleSheet(
-            "background: rgba(6,8,6,0.7); color: #f0d878; padding: 16px 20px; border: none;"
-        )
-        overlay.setGeometry(0, 90, 800, 50)
-        hero_l.addWidget(self.hero_label)
-        root.addWidget(hero_wrap)
-
-        # KPI grid
         kpi_grid = QGridLayout()
-        kpi_grid.setSpacing(12)
-        self.kpi_focus = _kpi_card("Focus today", "—", "minutes")
-        self.kpi_xp = _kpi_card("Weekly net XP", "—", "ladder score")
-        self.kpi_habits = _kpi_card("Habits", "—", "monthly rate")
-        self.kpi_streak = _kpi_card("Streak", "—", "days")
+        kpi_grid.setSpacing(14)
+        self.kpi_focus = KpiCard("Focus today", "—", "minutes")
+        self.kpi_xp = KpiCard("Weekly net XP", "—", "ladder score")
+        self.kpi_habits = KpiCard("Habits", "—", "monthly rate")
+        self.kpi_streak = KpiCard("Streak", "—", "days")
+        kpi_host = QWidget()
+        kpi_host.setLayout(kpi_grid)
         for i, w in enumerate([self.kpi_focus, self.kpi_xp, self.kpi_habits, self.kpi_streak]):
             kpi_grid.addWidget(w, 0, i)
-        root.addLayout(kpi_grid)
+        scaffold.add(kpi_host)
 
-        # OKRs
-        okr_card = QWidget()
-        okr_card.setObjectName("glassCard")
+        okr_card = GlassCard()
         okr_layout = QVBoxLayout(okr_card)
-        okr_layout.setContentsMargins(18, 16, 18, 16)
-        okr_title = QLabel("Weekly OKRs")
-        okr_title.setObjectName("goldTitle")
-        okr_title.setFont(font_display(16, bold=True))
-        okr_layout.addWidget(okr_title)
-        okr_sub = QLabel("Freelance productivity loop — track like PERSO.xlsx")
-        okr_sub.setStyleSheet("color: #666; font-size: 11px; margin-bottom: 8px;")
-        okr_layout.addWidget(okr_sub)
+        okr_layout.setContentsMargins(20, 18, 20, 18)
+        okr_layout.addWidget(PageHeader("Weekly OKRs", "Freelance productivity loop — track like PERSO.xlsx"))
         self.okr_focus = _okr_row("Focus hours", 0, 20, "h")
         self.okr_habits = _okr_row("Habit completion", 0, 80, "%")
         self.okr_revenue = _okr_row("Freelance revenue", 0, 3000, "€")
         okr_layout.addWidget(self.okr_focus)
         okr_layout.addWidget(self.okr_habits)
         okr_layout.addWidget(self.okr_revenue)
-        root.addWidget(okr_card)
+        scaffold.add(okr_card)
 
-        # Guild ladder preview
-        guild_card = QWidget()
-        guild_card.setObjectName("glassCard")
+        guild_card = GlassCard()
         guild_layout = QVBoxLayout(guild_card)
-        guild_layout.setContentsMargins(18, 16, 18, 16)
-        gtitle = QLabel("Guild Ladder")
-        gtitle.setObjectName("goldTitle")
-        gtitle.setFont(font_display(16, bold=True))
-        guild_layout.addWidget(gtitle)
+        guild_layout.setContentsMargins(20, 18, 20, 18)
+        guild_layout.addWidget(PageHeader("Guild Ladder", "Top 5 this week"))
         self.ladder_label = QLabel("Join a Fellowship to see your clan ranking.")
         self.ladder_label.setWordWrap(True)
         self.ladder_label.setFont(font_sans(12))
-        self.ladder_label.setStyleSheet("color: #aaa; line-height: 1.5;")
+        self.ladder_label.setObjectName("mutedLabel")
         guild_layout.addWidget(self.ladder_label)
         self.journey_label = QLabel("")
         self.journey_label.setWordWrap(True)
         self.journey_label.setFont(font_sans(11))
-        self.journey_label.setStyleSheet("color: #666;")
+        self.journey_label.setObjectName("mutedLabel")
         guild_layout.addWidget(self.journey_label)
-        root.addWidget(guild_card)
+        scaffold.add(guild_card)
 
-        # Stakes hint
-        stakes_card = QWidget()
-        stakes_card.setObjectName("glassCard")
+        stakes_card = GlassCard()
         stakes_layout = QVBoxLayout(stakes_card)
-        stakes_layout.setContentsMargins(18, 14, 18, 14)
-        st = QLabel("💰 Ring Deposit")
-        st.setFont(font_display(14, bold=True))
-        st.setStyleSheet("color: #d4af37;")
-        stakes_layout.addWidget(st)
+        stakes_layout.setContentsMargins(20, 16, 20, 16)
+        stakes_layout.addWidget(PageHeader("Ring Deposit", "Bet with your guild via Escrow — auto-verified focus + habits"))
         self.stakes_label = QLabel(
-            "Bet €5–50/week with your guild via Escrow. Auto-verified focus + habits."
+            "Configure stakes on the web dashboard. Winners split the pot each Sunday."
         )
         self.stakes_label.setWordWrap(True)
-        self.stakes_label.setStyleSheet("color: #888; font-size: 12px;")
+        self.stakes_label.setObjectName("mutedLabel")
         stakes_layout.addWidget(self.stakes_label)
-        root.addWidget(stakes_card)
+        scaffold.add(stakes_card)
 
-        # Quick actions
         actions = QHBoxLayout()
-        start_btn = QPushButton("▶  Start Focus Quest")
+        start_btn = QPushButton("Start Focus Quest")
         start_btn.setObjectName("goldBtn")
         start_btn.setFont(font_sans(13, QFont.Weight.DemiBold))
         start_btn.clicked.connect(self._on_start_pomo)
         web_btn = QPushButton("Open Web Dashboard")
+        web_btn.setObjectName("ghostBtn")
         web_btn.clicked.connect(self._on_open_web)
         actions.addWidget(start_btn)
         actions.addWidget(web_btn)
         actions.addStretch()
-        root.addLayout(actions)
-        root.addStretch()
+        action_host = QWidget()
+        action_host.setLayout(actions)
+        scaffold.add(action_host)
+        scaffold.add_stretch()
 
-        scroll.setWidget(content)
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(scroll)
+        root.addWidget(scaffold)
 
     def update_data(self, fellowship_data: dict | None, config: dict) -> None:
         if not fellowship_data:
@@ -193,17 +128,15 @@ class DashboardPage(QWidget):
         my_name = config.get("member_name", "")
         journey = fellowship_data.get("journey", {})
 
-        # KPIs
-        self._set_kpi(self.kpi_focus, str(stats.get("totalMinutes", 0) // max(1, len(leaderboard) or 1)))
+        self.kpi_focus.set_value(str(stats.get("totalMinutes", 0) // max(1, len(leaderboard) or 1)))
         me = next((m for m in leaderboard if m.get("name") == my_name), leaderboard[0] if leaderboard else None)
         if me:
-            self._set_kpi(self.kpi_xp, str(me.get("weekly_net", 0)), me.get("league", "Shire"))
-            self._set_kpi(self.kpi_streak, f"{me.get('streak', 0)}d")
+            self.kpi_xp.set_value(str(me.get("weekly_net", 0)), me.get("league", "Shire"))
+            self.kpi_streak.set_value(f"{me.get('streak', 0)}d")
         me_h = next((h for h in habit_board if h.get("name") == my_name), habit_board[0] if habit_board else None)
         if me_h:
-            self._set_kpi(self.kpi_habits, f"{me_h.get('completion_rate', 0)}%")
+            self.kpi_habits.set_value(f"{me_h.get('completion_rate', 0)}%")
 
-        # OKRs from config
         focus_target = config.get("okr_weekly_focus_hours", 20)
         habit_target = config.get("okr_habit_rate", 80)
         revenue_target = config.get("okr_freelance_revenue_eur", 3000)
@@ -214,29 +147,21 @@ class DashboardPage(QWidget):
         self._set_okr(self.okr_habits, habit_done, habit_target, "%")
         self._set_okr(self.okr_revenue, revenue_done, revenue_target, "€")
 
-        # Ladder
         if leaderboard:
             lines = []
             for i, m in enumerate(leaderboard[:5]):
-                medal = ["🥇", "🥈", "🥉", "4.", "5."][i]
+                rank = f"{i + 1}."
                 you = " (you)" if m.get("name") == my_name else ""
                 lines.append(
-                    f"{medal} {m['name']}{you} — {m.get('weekly_net', 0)} net XP · {m.get('league', '')}"
+                    f"{rank} {m['name']}{you} — {m.get('weekly_net', 0)} net XP · {m.get('league', '')}"
                 )
             self.ladder_label.setText("\n".join(lines))
 
         wp = journey.get("currentWaypoint", {})
         self.journey_label.setText(
-            f"📍 {wp.get('name', 'Bag End')} — {fellowship_data.get('totalXp', 0):,} XP · "
+            f"{wp.get('name', 'Bag End')} — {fellowship_data.get('totalXp', 0):,} XP · "
             f"{journey.get('progress', 0)}% to next waypoint"
         )
-
-    def _set_kpi(self, card: QWidget, value: str, subtitle: str = "") -> None:
-        labels = card.findChildren(QLabel)
-        if len(labels) >= 2:
-            labels[1].setText(value)
-        if subtitle and len(labels) >= 3:
-            labels[2].setText(subtitle)
 
     def _set_okr(self, row: QWidget, current: float, target: float, unit: str) -> None:
         labels = row.findChildren(QLabel)

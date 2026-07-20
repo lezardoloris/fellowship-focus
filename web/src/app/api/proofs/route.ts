@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { addFocusProof, getMemberByToken } from "@/lib/db";
+import { addFocusProof, bumpSessionActivity, getMemberByToken } from "@/lib/db";
 import type { ProofPrivacyTier, ProofType } from "@/lib/proofs";
 
 const corsHeaders = {
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
     const sessionId = (body.sessionId as string) || null;
     const activeApp = (body.activeApp as string) || null;
     const imageBase64 = body.imageBase64 as string | undefined;
+    const activityScore = Number(body.activityScore) || 0;
 
     if (privacyTier === "signal" && imageBase64) {
       return NextResponse.json({ error: "Signal tier cannot include images" }, { status: 400, headers: corsHeaders });
@@ -43,6 +44,10 @@ export async function POST(request: Request) {
       activeApp,
       imageBase64
     );
+
+    if (sessionId && activityScore > 0) {
+      bumpSessionActivity(sessionId, member.id, activityScore);
+    }
 
     return NextResponse.json({ proof: { id: proof.id, created_at: proof.created_at } }, { headers: corsHeaders });
   } catch (error) {

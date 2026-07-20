@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from fellowship_focus.constants import DEFAULT_BLOCKED_SITES
+from fellowship_focus.constants import DEFAULT_BLOCKED_SITES, DEFAULT_PATH_RULES, DEFAULT_REDIRECTS, HARD_HOSTS_OPTIONAL
 
 CONFIG_DIR = Path.home() / ".fellowship-focus"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -31,7 +31,7 @@ def save_config(config: dict) -> None:
 
 def default_config() -> dict:
     return {
-        "api_url": "http://localhost:3000",
+        "api_url": "https://fellowship-focus-production.up.railway.app",
         "member_token": "",
         "member_name": "",
         "fellowship_code": "",
@@ -42,6 +42,10 @@ def default_config() -> dict:
         "long_break_duration": 15,
         "work_intervals": 2,
         "enable_website_blocker": True,
+        "blocker_mode": "soft",
+        "blocked_path_rules": DEFAULT_PATH_RULES.copy(),
+        "block_redirects": DEFAULT_REDIRECTS.copy(),
+        "pause_blocker_minutes": 0,
         "minimize_to_tray": True,
         "cert_setup_done": False,
         "startup_on_boot": False,

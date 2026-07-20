@@ -18,6 +18,7 @@ export async function POST(request: Request) {
     const minutes = Number(body.minutes) || 0;
     const completed = body.completed !== false;
     const sessionId = body.sessionId as string | undefined;
+    const activityScore = Number(body.activityScore) || 0;
 
     if (!token) {
       return NextResponse.json({ error: "Token required" }, { status: 401, headers: corsHeaders });
@@ -28,7 +29,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401, headers: corsHeaders });
     }
 
-    const result = logSession(member.id, member.fellowship_id, minutes, completed, sessionId);
+    const result = logSession(
+      member.id,
+      member.fellowship_id,
+      minutes,
+      completed,
+      sessionId,
+      activityScore
+    );
     return NextResponse.json(result, { headers: corsHeaders });
   } catch (error) {
     console.error(error);

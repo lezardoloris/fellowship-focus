@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fellowship Focus — Couleurs</title>
+  <link rel="stylesheet" href="../colors_and_type.css" />
+  <style>
+    body { padding: 32px; }
+    h1 { font-size: 14px; font-weight: 600; margin: 0 0 20px; color: var(--muted); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; max-width: 900px; }
+    .swatch { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
+    .chip { height: 88px; }
+    .body { padding: 10px 12px 12px; }
+    .name { font-size: 13px; font-weight: 600; }
+    .hex { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .role { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1 data-od-id="colors-title">Palette · dark only</h1>
+  <div class="grid">
+    <div class="swatch" data-od-id="swatch-bg"><div class="chip" style="background:#1a1c1e"></div><div class="body"><div class="name">Background</div><div class="hex">#1A1C1E</div><div class="role">canvas · sidebar</div></div>
+    <div class="swatch" data-od-id="swatch-surface"><div class="chip" style="background:#242628"></div><div class="body"><div class="name">Surface</div><div class="hex">#242628</div><div class="role">cards · panels</div></div>
+    <div class="swatch" data-od-id="swatch-fg"><div class="chip" style="background:#f4f4f5"></div><div class="body"><div class="name">Text</div><div class="hex">#F4F4F5</div><div class="role">titres · valeurs</div></div>
+    <div class="swatch" data-od-id="swatch-muted"><div class="chip" style="background:#9ca3af"></div><div class="body"><div class="name">Muted</div><div class="hex">#9CA3AF</div><div class="role">meta · inactive</div></div>
+    <div class="swatch" data-od-id="swatch-border"><div class="chip" style="background:#3a3d40"></div><div class="body"><div class="name">Border</div><div class="hex">#3A3D40</div><div class="role">filets 1px</div></div>
+    <div class="swatch" data-od-id="swatch-accent"><div class="chip" style="background:#b8422e"></div><div class="body"><div class="name">Accent</div><div class="hex">#B8422E</div><div class="role">CTA · ring · active</div></div>
+    <div class="swatch" data-od-id="swatch-success"><div class="chip" style="background:#2d6a4f"></div><div class="body"><div class="name">Success</div><div class="hex">#2D6A4F</div><div class="role">états OK</div></div>
+  </div>
+</body>
+</html>

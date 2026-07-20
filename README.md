@@ -8,6 +8,9 @@
 |------|------|----------------|
 | **`web/`** | Fellowship dashboard, invite link, ladder, map | No |
 | **`desktop/`** | Koncentro-style system-wide blocker + Pomodoro | **No** |
+| **`design-system/`** | Heritage dark UI tokens, previews, desktop prototype | No |
+
+Open **`design-system/index.html`** in a browser for the full gallery (colors, components, 6-screen desktop prototype, React UI kit).
 
 The **desktop app** uses the same technique as Koncentro:
 - **mitmproxy certificate** (the "contract" you install once)

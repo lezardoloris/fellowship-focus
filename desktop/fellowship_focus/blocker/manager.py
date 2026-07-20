@@ -1,3 +1,5 @@
+import base64
+import json
 import os
 import shutil
 import ssl
@@ -55,6 +57,8 @@ def start_mitmdump(
     addresses: list[str],
     api_url: str = "",
     member_token: str = "",
+    path_rules: list | None = None,
+    redirects: dict | None = None,
 ) -> subprocess.Popen | None:
     mitmdump = find_mitmdump()
     if not mitmdump:
@@ -62,6 +66,8 @@ def start_mitmdump(
 
     block_script = Path(__file__).parent / "block.py"
     joined = ",".join(addresses)
+    rules_b64 = base64.b64encode(json.dumps(path_rules or []).encode()).decode("ascii")
+    redirects_b64 = base64.b64encode(json.dumps(redirects or {}).encode()).decode("ascii")
 
     args = [
         mitmdump,
@@ -74,6 +80,10 @@ def start_mitmdump(
         str(block_script),
         "--set",
         f"addresses_str={joined}",
+        "--set",
+        f"path_rules_b64={rules_b64}",
+        "--set",
+        f"redirects_b64={redirects_b64}",
         "--set",
         "block_type=blocklist",
         "--set",

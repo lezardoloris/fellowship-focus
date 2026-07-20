@@ -10,7 +10,7 @@ import { StakesPanel } from "@/components/StakesPanel";
 import { TrustPanel } from "@/components/TrustPanel";
 
 type FellowshipData = {
-  fellowship: { id: string; code: string; name: string };
+  fellowship: { id: string; code: string; name: string; blocker_bypass_penalty?: number };
   totalXp: number;
   stats: { totalXp: number; totalSessions: number; totalBlocks: number; totalMinutes: number };
   members: Array<{ id: string; name: string; total_xp: number; streak: number; token: string }>;
@@ -39,6 +39,7 @@ type FellowshipData = {
     proof_count_7d: number;
     screen_count_7d: number;
     webcam_count_7d: number;
+    activity_score_7d: number;
     last_app: string | null;
     last_proof_at: string | null;
     trust_score: number;
@@ -163,6 +164,12 @@ export function FellowshipDashboard({ code }: { code: string }) {
           {myName && (
             <p className="mt-1 text-stone-400">
               You march as <span className="gold-text font-medium">{myName}</span>
+            </p>
+          )}
+          {(fellowship.blocker_bypass_penalty ?? 0) > 0 && (
+            <p className="mt-2 max-w-xl text-sm text-amber-400/90">
+              Guild rule: −{fellowship.blocker_bypass_penalty} XP if the blocker is turned off during a focus
+              session. Outside sessions, no blocking — your choice.
             </p>
           )}
         </div>

@@ -3,18 +3,14 @@
     "social": "Feeds & social (Twitter/X, Insta, TikTok…)",
     "video": "Video & streaming",
     "nsfw": "Adult content",
-    "gaming": "Gaming & chat"
+    "gaming": "Gaming & chat",
+    "shorts": "Short-form dopamine (Curbox-style path blocks)"
   },
   "sites": [
     "twitter.com",
     "x.com",
     "reddit.com",
     "old.reddit.com",
-    "youtube.com",
-    "youtu.be",
-    "m.youtube.com",
-    "music.youtube.com",
-    "instagram.com",
     "facebook.com",
     "fb.com",
     "m.facebook.com",
@@ -23,7 +19,6 @@
     "snapchat.com",
     "pinterest.com",
     "tumblr.com",
-    "linkedin.com",
     "twitch.tv",
     "discord.com",
     "netflix.com",
@@ -37,5 +32,57 @@
     "redtube.com",
     "onlyfans.com",
     "chaturbate.com"
-  ]
+  ],
+  "path_rules": [
+    {
+      "host": "youtube.com",
+      "paths": ["/shorts", "/feed/trending", "/gaming"],
+      "note": "Allow tutorials; block Shorts (Curbox)"
+    },
+    {
+      "host": "m.youtube.com",
+      "paths": ["/shorts", "/feed/trending"]
+    },
+    {
+      "host": "youtu.be",
+      "paths": ["/shorts"]
+    },
+    {
+      "host": "instagram.com",
+      "paths": ["/reels", "/explore", "/stories"],
+      "note": "Allow DMs/posts; block Reels (Curbox)"
+    },
+    {
+      "host": "www.instagram.com",
+      "paths": ["/reels", "/explore", "/stories"]
+    },
+    {
+      "host": "linkedin.com",
+      "paths": ["/feed", "/games"]
+    }
+  ],
+  "hard_hosts_optional": [
+    "youtube.com",
+    "youtu.be",
+    "m.youtube.com",
+    "music.youtube.com",
+    "instagram.com",
+    "linkedin.com"
+  ],
+  "redirects": {
+    "default": [
+      { "label": "Back to work", "url": "https://notion.so" },
+      { "label": "Deep work timer", "url": "https://pomofocus.io" },
+      { "label": "Calm reset", "url": "https://www.calm.com" }
+    ],
+    "nsfw": [
+      { "label": "Go for a walk", "url": "https://www.youtube.com/watch?v=inpok4MKVLM" },
+      { "label": "Breathing", "url": "https://www.calm.com/breathe" },
+      { "label": "Positive redirect", "url": "https://www.ted.com" }
+    ],
+    "social": [
+      { "label": "Write instead", "url": "https://docs.google.com" },
+      { "label": "Ship something", "url": "https://github.com" }
+    ]
+  }
 }

@@ -1,0 +1,125 @@
+{
+  "name": "Fellowship Focus",
+  "tagline": "Focus en guild. Sans distraction.",
+  "description": "App Windows de productivité pour freelances et devs qui bossent en guild. Bloque Twitter, Shorts et TikTok pendant des sessions focus 45 min, track XP, habits et OKRs avec des amis — dark, clean, data-first.",
+  "sourceUrl": "https://github.com/lezardoloris/fellowship-focus",
+  "logo": {
+    "primary": "logos/favicon.png",
+    "alternates": [
+      "logos/favicon-1.svg",
+      "logos/favicon-2.png",
+      "logos/favicon-3.svg",
+      "logos/favicon-4.ico"
+    ],
+    "notes": "Wordmark Cinzel 11px letter-spaced in-app; favicon as app icon."
+  },
+  "colors": [
+    {
+      "role": "background",
+      "hex": "#1a1c1e",
+      "oklch": "oklch(0.21 0.005 260)",
+      "name": "Primary",
+      "usage": "page canvas and sidebar"
+    },
+    {
+      "role": "foreground",
+      "hex": "#f4f4f5",
+      "oklch": "oklch(0.96 0.002 286)",
+      "name": "Text",
+      "usage": "body text, headings, KPI values"
+    },
+    {
+      "role": "accent",
+      "hex": "#b8422e",
+      "oklch": "oklch(0.52 0.14 35)",
+      "name": "Tertiary",
+      "usage": "primary actions, active nav, timer ring"
+    },
+    {
+      "role": "surface",
+      "hex": "#242628",
+      "oklch": "oklch(0.26 0.005 260)",
+      "name": "Surface",
+      "usage": "cards and panels"
+    },
+    {
+      "role": "muted",
+      "hex": "#9ca3af",
+      "oklch": "oklch(0.71 0.015 260)",
+      "name": "TextMuted",
+      "usage": "secondary text and metadata"
+    },
+    {
+      "role": "border",
+      "hex": "#3a3d40",
+      "oklch": "oklch(0.35 0.005 260)",
+      "name": "Border",
+      "usage": "rules and dividers"
+    },
+    {
+      "role": "accent-secondary",
+      "hex": "#2d6a4f",
+      "oklch": "oklch(0.45 0.07 160)",
+      "name": "Success",
+      "usage": "success states and positive hints"
+    }
+  ],
+  "typography": {
+    "display": {
+      "family": "Cinzel",
+      "fallbacks": [
+        "system-ui",
+        "-apple-system",
+        "Segoe UI",
+        "Helvetica Neue",
+        "Arial",
+        "sans-serif"
+      ],
+      "weights": [400, 600, 700]
+    },
+    "body": {
+      "family": "Public Sans",
+      "fallbacks": [
+        "system-ui",
+        "-apple-system",
+        "Segoe UI",
+        "Helvetica Neue",
+        "Arial",
+        "sans-serif"
+      ],
+      "weights": [400, 500, 600, 700]
+    }
+  },
+  "voice": {
+    "adjectives": ["calme", "professionnelle", "minimaliste", "data-first"],
+    "tone": "Linear × Opal × Notion — dark SaaS, never fantasy RPG.",
+    "messagingPillars": [
+      "Focus sessions 45 min with system-wide blocker",
+      "Guild accountability without aggressive surveillance",
+      "XP, habits and weekly OKRs in one clean dashboard"
+    ],
+    "vocabulary": {
+      "use": ["focus", "session", "guild", "blocker", "OKR", "habit", "streak"],
+      "avoid": ["quest", "Mordor", "gold", "Ring", "fantasy ranks", "JSON dump"]
+    }
+  },
+  "imagery": {
+    "style": "None in product chrome. Optional abstract data texture only.",
+    "subjects": ["dashboard UI", "timer ring", "progress bars"],
+    "treatment": "Flat dark surfaces, 1px borders, no photo heroes in app",
+    "avoid": ["LOTR landscapes", "gold gradients", "game badges"],
+    "samples": []
+  },
+  "layout": {
+    "radius": "6px",
+    "borderWeight": "1px",
+    "spacing": "4px",
+    "postureRules": [
+      "Sidebar 200px fixed, charcoal, no gradient",
+      "Content max-width 960px, padding 24px",
+      "Top bar 48px with title + max 2 status pills",
+      "No JSON, token, or raw URL visible in product UI",
+      "KPI values in Public Sans, never Cinzel"
+    ]
+  }
+}
