@@ -27,3 +27,13 @@ class FellowshipApi:
             return r.json()
         except Exception:
             return None
+
+    def get_habits(self) -> dict | None:
+        if not self.token:
+            return None
+        try:
+            r = requests.get(f"{self.api_url}/api/habits", params={"token": self.token}, timeout=10)
+            r.raise_for_status()
+            return r.json()
+        except Exception:
+            return None

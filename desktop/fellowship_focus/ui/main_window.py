@@ -3,7 +3,7 @@ import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QFont, QPixmap
+from PySide6.QtGui import QAction, QCloseEvent, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSpinBox,
-    QSplitter,
     QStackedWidget,
     QSystemTrayIcon,
     QTextEdit,
@@ -39,6 +38,7 @@ from fellowship_focus.cert_setup import install_cert_windows, is_cert_installed,
 from fellowship_focus.config import load_config, save_config
 from fellowship_focus.constants import DEFAULT_BLOCKED_SITES
 from fellowship_focus.pomodoro_engine import PomodoroEngine
+from fellowship_focus.startup import is_startup_enabled, set_startup_enabled
 from fellowship_focus.tasks import (
     add_task,
     delete_task,
@@ -47,56 +47,9 @@ from fellowship_focus.tasks import (
     load_tasks,
     update_task,
 )
-
-SIDEBAR_STYLE = """
-QListWidget {
-    background: #141a14; border: none; outline: none;
-    font-size: 14px; padding-top: 8px;
-}
-QListWidget::item {
-    padding: 12px 16px; color: #aaa; border-left: 3px solid transparent;
-}
-QListWidget::item:selected {
-    background: #1e2a1e; color: #c9a227; border-left: 3px solid #c9a227;
-}
-"""
-
-APP_STYLE = """
-QMainWindow { background: #060806; color: #f0ebe0; }
-QWidget#contentArea { background: #060806; color: #f0ebe0; }
-QWidget#sidebarPanel {
-    background: qlineargradient(x1:0,y1:0,x2:0,y2:1, stop:0 #0f150f, stop:1 #060806);
-    border-right: 1px solid rgba(212,175,55,0.15);
-}
-QPushButton {
-    background: rgba(42,53,40,0.9); border: 1px solid rgba(212,175,55,0.2); color: #f0ebe0;
-    padding: 9px 16px; border-radius: 8px; font-size: 13px;
-}
-QPushButton:hover { background: #2a3528; border-color: #d4af37; }
-QPushButton#goldBtn {
-    background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #d4af37, stop:0.5 #8a7020, stop:1 #d4af37);
-    color: #0a0a08; font-weight: bold; border: none; padding: 10px 18px;
-}
-QPushButton#dangerBtn { background: #3d1f1f; border-color: #a44; color: #e8a0a0; }
-QLineEdit, QSpinBox, QTextEdit, QComboBox {
-    background: rgba(0,0,0,0.35); border: 1px solid rgba(212,175,55,0.2);
-    border-radius: 8px; padding: 8px; color: #f0ebe0;
-}
-QLineEdit:focus, QSpinBox:focus, QTextEdit:focus {
-    border-color: #d4af37;
-}
-QListWidget#taskList {
-    background: rgba(0,0,0,0.25); border: 1px solid rgba(212,175,55,0.12); border-radius: 10px;
-}
-QListWidget#taskList::item { padding: 10px 14px; border-radius: 6px; }
-QListWidget#taskList::item:selected { background: rgba(212,175,55,0.12); color: #d4af37; }
-QLabel#sectionTitle { font-size: 22px; font-weight: bold; color: #d4af37; font-family: Georgia; }
-QLabel#bigTimer { font-size: 64px; font-weight: bold; color: #d4af37; font-family: Consolas; }
-QLabel#phaseLabel { font-size: 13px; color: #888; letter-spacing: 2px; text-transform: uppercase; }
-QLabel#brandTitle { font-size: 11px; color: #d4af37; letter-spacing: 3px; }
-"""
-
-ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
+from fellowship_focus.ui.dashboard import DashboardPage
+from fellowship_focus.ui.theme import ASSETS_DIR, app_stylesheet, font_display, font_sans, font_timer, load_fonts
+from fellowship_focus.ui.toast import ToastManager
 
 
 class MainWindow(QMainWindow):
@@ -116,9 +69,14 @@ class MainWindow(QMainWindow):
         self.pomodoro.session_finished.connect(self._on_pomo_finished)
 
         self.setWindowTitle("Fellowship Focus")
-        self.setMinimumSize(780, 560)
-        self.resize(900, 640)
-        self.setStyleSheet(APP_STYLE)
+        self.setMinimumSize(960, 640)
+        self.resize(1040, 720)
+        load_fonts()
+        self.setStyleSheet(app_stylesheet())
+        self.setFont(font_sans())
+
+        self.toasts = ToastManager(self)
+        self._fellowship_cache: dict | None = None
 
         root = QWidget()
         self.setCentralWidget(root)
@@ -127,24 +85,32 @@ class MainWindow(QMainWindow):
         outer.setSpacing(0)
 
         self.sidebar = QListWidget()
-        self.sidebar.setFixedWidth(200)
-        self.sidebar.setObjectName("sidebarPanel")
-        self.sidebar.setStyleSheet(SIDEBAR_STYLE)
+        self.sidebar.setFixedWidth(210)
+        self.sidebar.setObjectName("navList")
+        self.sidebar.setFont(font_sans(13))
 
         brand = QLabel("FELLOWSHIP\nFOCUS")
         brand.setObjectName("brandTitle")
+        brand.setFont(font_display(10, bold=True))
         brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand.setStyleSheet("padding: 20px 8px 8px; color: #d4af37; font-weight: bold; line-height: 1.4;")
+        brand.setStyleSheet("padding: 22px 8px 10px; color: #d4af37; line-height: 1.5;")
 
         sidebar_wrap = QWidget()
         sidebar_wrap.setObjectName("sidebarPanel")
-        sidebar_wrap.setFixedWidth(200)
+        sidebar_wrap.setFixedWidth(210)
         sb_layout = QVBoxLayout(sidebar_wrap)
         sb_layout.setContentsMargins(0, 0, 0, 0)
         sb_layout.addWidget(brand)
         sb_layout.addWidget(self.sidebar, 1)
 
-        for label in ["  Tasks", "  Pomodoro", "  Website Blocker", "  Fellowship"]:
+        nav_items = [
+            "  Dashboard",
+            "  Tasks",
+            "  Pomodoro",
+            "  Blocker",
+            "  Guild",
+        ]
+        for label in nav_items:
             self.sidebar.addItem(QListWidgetItem(label))
         self.sidebar.currentRowChanged.connect(self._on_nav)
         outer.addWidget(sidebar_wrap)
@@ -158,6 +124,8 @@ class MainWindow(QMainWindow):
         self.stack.setObjectName("contentArea")
         outer.addWidget(self.stack, 1)
 
+        self.dashboard_page = DashboardPage(self._go_pomodoro, self._open_dashboard)
+        self.stack.addWidget(self.dashboard_page)
         self._build_tasks_page()
         self._build_pomodoro_page()
         self._build_blocker_page()
@@ -169,7 +137,40 @@ class MainWindow(QMainWindow):
         self.sidebar.setCurrentRow(0)
 
         if not is_cert_installed():
-            self.sidebar.setCurrentRow(2)
+            self.sidebar.setCurrentRow(3)
+            QTimer.singleShot(
+                800,
+                lambda: self.toasts.show(
+                    "Certificate needed",
+                    "Install once in Blocker tab — then blocking works forever.",
+                    "warning",
+                ),
+            )
+        else:
+            self.config["cert_setup_done"] = True
+            save_config(self.config)
+            QTimer.singleShot(
+                600,
+                lambda: self.toasts.show(
+                    "Shield armed",
+                    "Certificate ready — distraction sites blocked during focus.",
+                    "success",
+                    3500,
+                ),
+            )
+
+        self._refresh_journey()
+        self._sync_timer = QTimer(self)
+        self._sync_timer.timeout.connect(self._refresh_journey)
+        self._sync_timer.start(30000)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self.toasts.reposition()
+
+    def _go_pomodoro(self) -> None:
+        self.sidebar.setCurrentRow(2)
+        self._start_pomodoro()
 
     # ── Tasks ──────────────────────────────────────────────
 
@@ -180,7 +181,8 @@ class MainWindow(QMainWindow):
 
         header = QHBoxLayout()
         title = QLabel("Tasks")
-        title.setObjectName("sectionTitle")
+        title.setObjectName("goldTitle")
+        title.setFont(font_display(20, bold=True))
         header.addWidget(title)
         header.addStretch()
         for text, slot in [("+", self._add_task), ("✎", self._edit_task), ("🗑", self._delete_task)]:
@@ -272,7 +274,7 @@ class MainWindow(QMainWindow):
         if not self.selected_task_id:
             QMessageBox.information(self, "Tasks", "Select a task first.")
             return
-        self.sidebar.setCurrentRow(1)
+        self.sidebar.setCurrentRow(2)
         self._start_pomodoro()
 
     def _on_task_tick(self) -> None:
@@ -322,6 +324,8 @@ class MainWindow(QMainWindow):
 
         self.timer_label = QLabel("25:00")
         self.timer_label.setObjectName("bigTimer")
+        self.timer_label.setFont(font_timer(58))
+        self.timer_label.setStyleSheet("color: #d4af37;")
         self.timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(self.timer_label)
 
@@ -455,7 +459,7 @@ class MainWindow(QMainWindow):
             result = api.log_session(work_minutes, completed)
             xp = result.get("xpEarned", 0) if result else 0
             if completed and xp:
-                self.tray.showMessage("Quest complete!", f"+{xp} XP", QSystemTrayIcon.MessageIcon.Information, 3000)
+                self.toasts.show("Quest complete!", f"+{xp} XP earned", "success")
         self._refresh_journey()
 
     # ── Website Blocker ────────────────────────────────────
@@ -510,14 +514,17 @@ class MainWindow(QMainWindow):
 
     def _update_blocker_status(self) -> None:
         gen = "✅" if is_cert_generated() else "❌"
-        inst = "✅" if is_cert_installed() else "❌"
-        active = "🛡️ ACTIVE" if self.blocker_active else "inactive"
-        self.blocker_status.setText(f"Certificate: {gen}  Installed: {inst}  Blocker: {active}")
+        inst = "✅ Permanent" if is_cert_installed() else "❌ Install once"
+        active = "🛡️ ACTIVE" if self.blocker_active else "Standby"
+        self.blocker_status.setText(
+            f"Certificate file: {gen}  ·  Windows trust: {inst}  ·  Blocker: {active}\n"
+            "Once installed, the certificate stays — no need to reinstall."
+        )
 
     def _ensure_blocker_ready(self) -> bool:
         if not is_cert_installed():
-            QMessageBox.warning(self, "Certificate", "Install mitmproxy certificate first (Website Blocker tab).")
-            self.sidebar.setCurrentRow(2)
+            QMessageBox.warning(self, "Certificate", "Install mitmproxy certificate first (Blocker tab).")
+            self.sidebar.setCurrentRow(3)
             return False
         if not find_mitmdump():
             QMessageBox.critical(self, "Error", "mitmdump not found.")
@@ -552,7 +559,10 @@ class MainWindow(QMainWindow):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(20, 16, 20, 16)
-        layout.addWidget(QLabel("Fellowship"))
+        title = QLabel("Guild Settings")
+        title.setObjectName("goldTitle")
+        title.setFont(font_display(20, bold=True))
+        layout.addWidget(title)
 
         form = QFormLayout()
         self.api_url_input = QLineEdit()
@@ -561,11 +571,31 @@ class MainWindow(QMainWindow):
         self.code_input = QLineEdit()
         self.name_input = QLineEdit()
         self.tray_check = QCheckBox("Minimize to system tray when closing")
+        self.startup_check = QCheckBox("Start with Windows (minimized, non-intrusive)")
+        self.start_min_check = QCheckBox("Start minimized to tray")
+        self.okr_focus_spin = QSpinBox()
+        self.okr_focus_spin.setRange(1, 80)
+        self.okr_focus_spin.setSuffix(" h/week")
+        self.okr_habit_spin = QSpinBox()
+        self.okr_habit_spin.setRange(10, 100)
+        self.okr_habit_spin.setSuffix(" %")
+        self.okr_revenue_spin = QSpinBox()
+        self.okr_revenue_spin.setRange(0, 100000)
+        self.okr_revenue_spin.setSuffix(" €/month")
+        self.okr_revenue_current = QSpinBox()
+        self.okr_revenue_current.setRange(0, 100000)
+        self.okr_revenue_current.setSuffix(" €")
         form.addRow("API URL", self.api_url_input)
         form.addRow("Member token", self.token_input)
         form.addRow("Fellowship code", self.code_input)
         form.addRow("Your name", self.name_input)
+        form.addRow("OKR focus", self.okr_focus_spin)
+        form.addRow("OKR habits", self.okr_habit_spin)
+        form.addRow("OKR revenue target", self.okr_revenue_spin)
+        form.addRow("Revenue this month", self.okr_revenue_current)
         form.addRow("", self.tray_check)
+        form.addRow("", self.startup_check)
+        form.addRow("", self.start_min_check)
         layout.addLayout(form)
 
         row = QHBoxLayout()
@@ -587,10 +617,18 @@ class MainWindow(QMainWindow):
             "fellowship_code": self.code_input.text().strip(),
             "member_name": self.name_input.text().strip(),
             "minimize_to_tray": self.tray_check.isChecked(),
+            "start_minimized": self.start_min_check.isChecked(),
+            "okr_weekly_focus_hours": self.okr_focus_spin.value(),
+            "okr_habit_rate": self.okr_habit_spin.value(),
+            "okr_freelance_revenue_eur": self.okr_revenue_spin.value(),
+            "okr_revenue_current_eur": self.okr_revenue_current.value(),
         })
         save_config(self.config)
+        if self.startup_check.isChecked() != is_startup_enabled():
+            ok, msg = set_startup_enabled(self.startup_check.isChecked())
+            self.toasts.show("Startup", msg, "success" if ok else "warning")
         self._refresh_journey()
-        QMessageBox.information(self, "Saved", "Fellowship settings saved.")
+        self.toasts.show("Saved", "Guild settings updated.", "success", 2500)
 
     def _refresh_journey(self) -> None:
         code = self.config.get("fellowship_code", "")
@@ -602,10 +640,12 @@ class MainWindow(QMainWindow):
         if not data:
             self.waypoint_label.setText("Could not reach Fellowship API.")
             return
+        self._fellowship_cache = data
         wp = data["journey"]["currentWaypoint"]
         self.waypoint_label.setText(
             f"📍 {wp['name']} — {data['totalXp']:,} XP · {data['journey']['progress']}% to next waypoint"
         )
+        self.dashboard_page.update_data(data, self.config)
 
     def _open_dashboard(self) -> None:
         code = self.config.get("fellowship_code", "")
@@ -619,6 +659,12 @@ class MainWindow(QMainWindow):
         self.code_input.setText(c.get("fellowship_code", ""))
         self.name_input.setText(c.get("member_name", ""))
         self.tray_check.setChecked(c.get("minimize_to_tray", True))
+        self.start_min_check.setChecked(c.get("start_minimized", True))
+        self.startup_check.setChecked(is_startup_enabled())
+        self.okr_focus_spin.setValue(c.get("okr_weekly_focus_hours", 20))
+        self.okr_habit_spin.setValue(c.get("okr_habit_rate", 80))
+        self.okr_revenue_spin.setValue(c.get("okr_freelance_revenue_eur", 3000))
+        self.okr_revenue_current.setValue(c.get("okr_revenue_current_eur", 0))
         self.work_spin.setValue(c.get("work_duration", 25))
         self.break_spin.setValue(c.get("break_duration", 5))
         self.long_break_spin.setValue(c.get("long_break_duration", 15))
@@ -648,7 +694,12 @@ class MainWindow(QMainWindow):
     def _install_cert(self) -> None:
         ok, msg = install_cert_windows()
         self._update_blocker_status()
-        QMessageBox.information(self, "Certificate", msg) if ok else QMessageBox.warning(self, "Certificate", msg)
+        if ok:
+            self.config["cert_setup_done"] = True
+            save_config(self.config)
+            self.toasts.show("Certificate installed", msg, "success")
+        else:
+            self.toasts.show("Certificate", msg, "warning")
 
     def _on_nav(self, index: int) -> None:
         self.stack.setCurrentIndex(index)
@@ -669,6 +720,9 @@ class MainWindow(QMainWindow):
         menu.addAction(quit_a)
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(lambda r: self.show() if r == QSystemTrayIcon.ActivationReason.Trigger else None)
+        icon_path = ASSETS_DIR / "fellowship.jpg"
+        if icon_path.exists():
+            self.tray.setIcon(QIcon(str(icon_path)))
         self.tray.show()
 
     def closeEvent(self, event: QCloseEvent) -> None:
@@ -688,9 +742,12 @@ class MainWindow(QMainWindow):
         QApplication.quit()
 
 
-def run() -> None:
+def run(start_minimized: bool = False) -> None:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     window = MainWindow()
-    window.show()
+    if start_minimized or "--minimized" in sys.argv:
+        window.hide()
+    else:
+        window.show()
     sys.exit(app.exec())

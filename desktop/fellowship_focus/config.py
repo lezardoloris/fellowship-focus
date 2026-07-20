@@ -44,4 +44,10 @@ def default_config() -> dict:
         "enable_website_blocker": True,
         "minimize_to_tray": True,
         "cert_setup_done": False,
+        "startup_on_boot": False,
+        "start_minimized": True,
+        "okr_weekly_focus_hours": 20,
+        "okr_habit_rate": 80,
+        "okr_freelance_revenue_eur": 3000,
+        "okr_revenue_current_eur": 0,
     }
