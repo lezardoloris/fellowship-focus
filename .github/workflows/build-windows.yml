@@ -26,14 +26,7 @@ jobs:
           pip install -r requirements.txt pyinstaller>=6.0
           python scripts/download_fonts.py
           python scripts/generate_placeholders.py
-          pyinstaller --noconfirm --windowed --name FellowshipFocus `
-            --icon "assets/fellowship.ico" `
-            --add-data "assets;assets" `
-            --add-data "blocklist.json;." `
-            --add-data "fellowship_focus;fellowship_focus" `
-            --hidden-import PySide6.QtWebEngineWidgets `
-            --collect-all mitmproxy `
-            main.py
+          pyinstaller --noconfirm FellowshipFocus.spec
 
       - name: Zip artifact
         working-directory: desktop/dist
@@ -44,6 +37,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: desktop/dist/FellowshipFocus-Windows.zip
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -1,7 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { WAYPOINT_IMAGES } from "@/lib/assets";
 import { WAYPOINTS } from "@/lib/waypoints";
 import { HabitTracker } from "@/components/HabitTracker";
 import { StakesPanel } from "@/components/StakesPanel";
@@ -149,6 +151,8 @@ export function FellowshipDashboard({ code }: { code: string }) {
   const memberNames = Object.fromEntries(data.members.map((m) => [m.id, m.name]));
   const myMemberId = myToken ? data.members.find((m) => m.token === myToken)?.id : undefined;
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/f/${code}` : `/f/${code}`;
+  const journeyImage =
+    WAYPOINT_IMAGES[journey.currentWaypoint.id] ?? "/assets/journey-map.jpg";
 
   return (
     <main className="min-h-screen bg-[#1a1c1e]">
@@ -215,11 +219,19 @@ export function FellowshipDashboard({ code }: { code: string }) {
           ))}
         </div>
 
-        <div className="glass-card mb-8 p-6">
+        <div className="glass-card mb-8 overflow-hidden p-0">
+          <div className="relative h-40 w-full">
+            <Image src={journeyImage} alt="" fill className="object-cover opacity-70" />
+            <div className="hero-overlay absolute inset-0" />
+            <div className="absolute inset-x-0 bottom-0 p-6">
+              <h2 className="text-xl font-semibold text-[#f4f4f5]">{journey.currentWaypoint.name}</h2>
+              <p className="text-sm text-[#9ca3af]">{journey.currentWaypoint.storyTitle}</p>
+            </div>
+          </div>
+          <div className="p-6">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold">{journey.currentWaypoint.name}</h2>
-              <p className="text-sm text-[#9ca3af]">{journey.currentWaypoint.storyTitle}</p>
+              <p className="text-xs uppercase tracking-wide text-[#9ca3af]">Journey progress</p>
             </div>
             <span className="rounded-full border border-[#3a3d40] bg-[#2e3134] px-3 py-1 text-sm font-medium text-[#f4f4f5]">
               {totalXp.toLocaleString()} XP
@@ -247,6 +259,7 @@ export function FellowshipDashboard({ code }: { code: string }) {
                 <span className={totalXp >= wp.xpRequired ? "accent-text" : "text-[#9ca3af]"}>{wp.name}</span>
               </div>
             ))}
+          </div>
           </div>
         </div>
 

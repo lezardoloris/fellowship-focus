@@ -84,6 +84,9 @@ def main() -> None:
     }
     for name, img in assets.items():
         path = out / name
+        if path.exists() and path.stat().st_size > 200_000:
+            print(f"Skip {path.name} — keeping generated asset ({path.stat().st_size // 1024} KB)")
+            continue
         img.save(path, "JPEG", quality=92)
         print(f"Wrote {path} ({path.stat().st_size // 1024} KB)")
 

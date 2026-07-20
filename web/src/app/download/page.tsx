@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -28,8 +29,12 @@ export default function DownloadPage() {
       : "Build coming soon";
 
   return (
-    <main className="min-h-screen bg-[#1a1c1e]">
-      <div className="mx-auto max-w-3xl px-4 py-16">
+    <main className="relative min-h-screen overflow-hidden">
+      <div className="absolute inset-0">
+        <Image src="/assets/focus-quest.jpg" alt="" fill priority className="object-cover object-center" />
+        <div className="hero-overlay absolute inset-0" />
+      </div>
+      <div className="relative z-10 mx-auto max-w-3xl px-4 py-16">
         <Link href="/" className="mb-8 inline-block text-sm text-[#9ca3af] hover:text-[#f4f4f5]">
           ← Back
         </Link>
@@ -65,8 +70,8 @@ export default function DownloadPage() {
           {[
             {
               n: "1",
-              title: "Install & open Fellowship Focus",
-              desc: "Run the installer. Certificate setup once in Blocker tab (2 min).",
+              title: "Unzip & launch",
+              desc: "Extract the zip, open the FellowshipFocus folder, double-click Start Fellowship Focus.bat (or FellowshipFocus.exe).",
             },
             {
               n: "2",

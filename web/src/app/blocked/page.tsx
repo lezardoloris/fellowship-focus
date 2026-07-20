@@ -1,8 +1,14 @@
+import Image from "next/image";
+
 export default function BlockedPreviewPage() {
   return (
     <main className="min-h-screen bg-[#1a1c1e]">
       <div className="mx-auto max-w-2xl px-4 py-12">
         <div className="overflow-hidden rounded-xl border border-[#3a3d40] bg-[#242628]">
+          <div className="relative h-48 w-full">
+            <Image src="/assets/cannot-pass.jpg" alt="" fill className="object-cover brightness-75" />
+            <div className="hero-overlay absolute inset-0" />
+          </div>
           <div className="p-8 text-center">
             <h1 className="mb-4 text-3xl font-semibold text-[#f4f4f5]">You cannot pass.</h1>
             <p className="mb-6 text-[#9ca3af]">
