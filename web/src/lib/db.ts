@@ -608,7 +608,7 @@ export function getFeed(fellowshipId: string, limit = 20): FeedEvent[] {
 
 export function getWeeklyLeaderboard(
   fellowshipId: string
-): Array<Member & { weekly_xp: number; weekly_penalties: number; weekly_net: number; league: string }> {
+): Array<Member & { weekly_xp: number; weekly_penalties: number; weekly_net: number; league: string; today_minutes: number }> {
   const weekStart = getWeekStartSql();
   const rows = getDb()
     .prepare(
@@ -617,13 +617,15 @@ export function getWeeklyLeaderboard(
         COALESCE((SELECT SUM(fs.xp_earned) FROM focus_sessions fs
           WHERE fs.member_id = m.id AND fs.created_at >= ?), 0) as weekly_xp,
         COALESCE((SELECT SUM(be.xp_penalty) FROM block_events be
-          WHERE be.member_id = m.id AND be.created_at >= ?), 0) as weekly_penalties
+          WHERE be.member_id = m.id AND be.created_at >= ?), 0) as weekly_penalties,
+        COALESCE((SELECT SUM(fs.minutes) FROM focus_sessions fs
+          WHERE fs.member_id = m.id AND date(fs.created_at) = date('now')), 0) as today_minutes
       FROM members m
       WHERE m.fellowship_id = ?
     `
     )
     .all(weekStart, weekStart, fellowshipId) as Array<
-    Member & { weekly_xp: number; weekly_penalties: number }
+    Member & { weekly_xp: number; weekly_penalties: number; today_minutes: number }
   >;
 
   return rows

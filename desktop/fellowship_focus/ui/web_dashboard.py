@@ -86,7 +86,7 @@ class WebDashboardPage(QWidget):
 
         self._view = QWebEngineView()
         profile = QWebEngineProfile.defaultProfile()
-        profile.setHttpUserAgent(profile.httpUserAgent() + " FellowshipFocusDesktop/1.2")
+        profile.setHttpUserAgent(profile.httpUserAgent() + " FellowshipFocusDesktop/1.3")
         self._view.loadFinished.connect(self._on_load_finished)
         layout.addWidget(self._view, 1)
 

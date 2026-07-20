@@ -406,7 +406,7 @@ class MainWindow(QMainWindow):
 
         btn_row = QHBoxLayout()
         self.pomo_start_btn = QPushButton("Start Quest")
-        self.pomo_start_btn.setObjectName("goldBtn")
+        self.pomo_start_btn.setObjectName("primaryBtn")
         self.pomo_start_btn.clicked.connect(self._start_pomodoro)
         self.pomo_pause_btn = QPushButton("Pause")
         self.pomo_pause_btn.setObjectName("ghostBtn")
@@ -613,7 +613,7 @@ class MainWindow(QMainWindow):
         gen_btn.setObjectName("ghostBtn")
         gen_btn.clicked.connect(self._generate_cert)
         inst_btn = QPushButton("Install certificate")
-        inst_btn.setObjectName("goldBtn")
+        inst_btn.setObjectName("primaryBtn")
         inst_btn.clicked.connect(self._install_cert)
         cert_row.addWidget(gen_btn)
         cert_row.addWidget(inst_btn)

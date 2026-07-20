@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 
 APPLICATION_NAME = "Fellowship Focus"
@@ -6,7 +7,14 @@ APPLICATION_NAME = "Fellowship Focus"
 MITMDUMP_SHUTDOWN_URL = "http://shutdown.fellowshipfocus.internal/"
 MITMDUMP_CHECK_URL = "http://check.fellowshipfocus.internal/"
 
-_BLOCKLIST_PATH = Path(__file__).resolve().parents[2] / "blocklist.json"
+
+def _resource_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parents[2]
+
+
+_BLOCKLIST_PATH = _resource_root() / "blocklist.json"
 _DESKTOP_BLOCKLIST = Path(__file__).resolve().parents[1].parent / "blocklist.json"
 
 _FALLBACK_BLOCKED_SITES = [

@@ -102,7 +102,7 @@ class DashboardPage(QWidget):
 
         actions = QHBoxLayout()
         start_btn = QPushButton("Start Focus Quest")
-        start_btn.setObjectName("goldBtn")
+        start_btn.setObjectName("primaryBtn")
         start_btn.setFont(font_sans(13, QFont.Weight.DemiBold))
         start_btn.clicked.connect(self._on_start_pomo)
         web_btn = QPushButton("Open Web Dashboard")
@@ -128,9 +128,9 @@ class DashboardPage(QWidget):
         my_name = config.get("member_name", "")
         journey = fellowship_data.get("journey", {})
 
-        self.kpi_focus.set_value(str(stats.get("totalMinutes", 0) // max(1, len(leaderboard) or 1)))
         me = next((m for m in leaderboard if m.get("name") == my_name), leaderboard[0] if leaderboard else None)
         if me:
+            self.kpi_focus.set_value(str(me.get("today_minutes", 0)))
             self.kpi_xp.set_value(str(me.get("weekly_net", 0)), me.get("league", "Shire"))
             self.kpi_streak.set_value(f"{me.get('streak', 0)}d")
         me_h = next((h for h in habit_board if h.get("name") == my_name), habit_board[0] if habit_board else None)

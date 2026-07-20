@@ -81,7 +81,7 @@ export function StakesPanel({
 
   return (
     <div>
-      <h2 className="font-display mb-1 text-xl font-semibold">Weekly stakes</h2>
+      <h2 className="mb-1 text-xl font-semibold">Weekly stakes</h2>
       <p className="mb-4 text-xs text-stone-500">
         Mise en jeu via Escrow.com — vérification auto (focus, blocks) + manuel (habitudes PERSO)
       </p>
@@ -111,8 +111,8 @@ export function StakesPanel({
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-4">
-            <p className="font-semibold text-amber-200">{stake.title}</p>
+          <div className="rounded-xl border border-[#3a3d40] bg-[#2e3134] p-4">
+            <p className="font-semibold text-[#f4f4f5]">{stake.title}</p>
             <p className="mt-1 text-xs text-stone-500">
               {(stake.amount_cents / 100).toFixed(0)}€/personne · ≥{stake.min_habit_rate}% habits · max{" "}
               {stake.max_blocks} blocks
@@ -145,7 +145,7 @@ export function StakesPanel({
                 Déposer via Escrow
               </button>
               {escrowUrl && (
-                <a href={escrowUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-amber-400 underline">
+                <a href={escrowUrl} target="_blank" rel="noopener noreferrer" className="text-xs accent-text underline">
                   Ouvrir la transaction Escrow →
                 </a>
               )}

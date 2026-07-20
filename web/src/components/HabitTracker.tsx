@@ -72,7 +72,7 @@ export function HabitTracker({ token, fellowshipCode }: { token: string; fellows
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-semibold">Habit tracker</h2>
+          <h2 className="text-xl font-semibold">Habit tracker</h2>
           <p className="text-xs text-stone-500">
             Inspiré de PERSO.xlsx — grille mensuelle · objectif vs réalisé · potes voient tout sur /f/{fellowshipCode}
           </p>
@@ -80,7 +80,7 @@ export function HabitTracker({ token, fellowshipCode }: { token: string; fellows
         <div className="flex gap-2">
           <button
             type="button"
-            className="rounded-lg border border-white/10 px-3 py-1 text-sm text-stone-400 hover:border-amber-500/30"
+            className="rounded-lg border border-[#3a3d40] px-3 py-1 text-sm text-[#9ca3af] hover:border-[#9ca3af]"
             onClick={() => {
               const m = month === 1 ? 12 : month - 1;
               const y = month === 1 ? year - 1 : year;
@@ -91,10 +91,10 @@ export function HabitTracker({ token, fellowshipCode }: { token: string; fellows
           >
             ←
           </button>
-          <span className="px-2 py-1 text-sm capitalize text-amber-200/90">{monthLabel}</span>
+          <span className="px-2 py-1 text-sm capitalize text-[#f4f4f5]">{monthLabel}</span>
           <button
             type="button"
-            className="rounded-lg border border-white/10 px-3 py-1 text-sm text-stone-400 hover:border-amber-500/30"
+            className="rounded-lg border border-[#3a3d40] px-3 py-1 text-sm text-[#9ca3af] hover:border-[#9ca3af]"
             onClick={() => {
               const m = month === 12 ? 1 : month + 1;
               const y = month === 12 ? year + 1 : year;
@@ -115,7 +115,7 @@ export function HabitTracker({ token, fellowshipCode }: { token: string; fellows
           <table className="w-full min-w-[640px] border-collapse text-xs">
             <thead>
               <tr className="border-b border-white/10 text-stone-500">
-                <th className="sticky left-0 bg-[#0c100c] py-2 pr-3 text-left font-normal">Habitude</th>
+                <th className="sticky left-0 bg-[#242628] py-2 pr-3 text-left font-normal">Habitude</th>
                 {Array.from({ length: daysInMonth }, (_, i) => (
                   <th key={i} className="w-6 px-0.5 py-2 font-normal">
                     {i + 1}
@@ -131,7 +131,7 @@ export function HabitTracker({ token, fellowshipCode }: { token: string; fellows
                 const badge = verificationBadge(habit.verification as "manual" | "auto_focus" | "auto_clean");
                 return (
                   <tr key={habit.id} className="border-b border-white/5">
-                    <td className="sticky left-0 bg-[#0c100c] py-2 pr-3">
+                    <td className="sticky left-0 bg-[#242628] py-2 pr-3">
                       <span className="mr-1">{habit.emoji}</span>
                       <span className="text-stone-300">{habit.label}</span>
                       <span className={`ml-1 ${badge.color}`}>({badge.label})</span>
@@ -150,7 +150,7 @@ export function HabitTracker({ token, fellowshipCode }: { token: string; fellows
                             onClick={() => toggleDay(habit.id, d, habit.verification)}
                             className={`h-5 w-5 rounded ${
                               done
-                                ? "bg-amber-500/80 text-black"
+                                ? "bg-[#b8422e] text-white"
                                 : isFuture
                                   ? "bg-white/5"
                                   : isManual
@@ -165,7 +165,7 @@ export function HabitTracker({ token, fellowshipCode }: { token: string; fellows
                       );
                     })}
                     <td className="px-2 text-center text-stone-500">{habit.goal}</td>
-                    <td className="px-2 text-center font-semibold text-amber-300">{habit.achieved}</td>
+                    <td className="px-2 text-center font-semibold text-[#f4f4f5]">{habit.achieved}</td>
                     <td className="px-2 text-center text-stone-400">{habit.completionRate}%</td>
                   </tr>
                 );
@@ -184,7 +184,7 @@ export function HabitTracker({ token, fellowshipCode }: { token: string; fellows
               type="button"
               disabled={adding}
               onClick={() => addPreset(p.id)}
-              className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-400 hover:border-amber-500/30 hover:text-amber-200"
+              className="rounded-full border border-[#3a3d40] px-3 py-1 text-xs text-[#9ca3af] hover:border-[#9ca3af] hover:text-[#f4f4f5]"
             >
               {p.emoji} {p.label}
             </button>
