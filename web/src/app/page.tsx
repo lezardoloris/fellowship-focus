@@ -51,11 +51,11 @@ export default function HomePage() {
       </div>
 
       <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-4 py-16">
-        <p className="animate-fade-up mb-3 text-xs font-semibold uppercase tracking-[0.45em] text-amber-400/80">
+        <p className="animate-fade-up mb-3 text-xs font-semibold uppercase tracking-[0.45em] text-[#9ca3af]">
           Block · Focus · Win XP with friends
         </p>
         <h1 className="font-display animate-fade-up stagger-1 mb-5 text-center text-5xl font-bold tracking-wide md:text-7xl">
-          <span className="gold-text">Fellowship</span>
+          <span className="accent-text">Fellowship</span>
           <br />
           <span className="text-stone-100">Focus</span>
         </h1>
@@ -149,7 +149,7 @@ export default function HomePage() {
                   className="object-cover transition-transform duration-500 group-hover:scale-110"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                <p className="font-display absolute bottom-3 left-4 text-lg font-semibold text-amber-300">
+                <p className="absolute bottom-3 left-4 text-lg font-semibold text-[#f4f4f5]">
                   {card.title}
                 </p>
               </div>
