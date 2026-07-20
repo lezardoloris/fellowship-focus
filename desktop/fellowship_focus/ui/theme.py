@@ -209,7 +209,11 @@ QLabel#statusPill_neutral {{
     padding: 4px 12px;
     font-size: 11px;
 }}
-QWidget#webSetupBar {{
+QWidget#webSetupBar, QWidget#webConnectedBar {{
+    background: {BG_SURFACE};
+    border-bottom: 1px solid {BORDER};
+}}
+QWidget#heroBanner {{
     background: {BG_SURFACE};
     border-bottom: 1px solid {BORDER};
 }}

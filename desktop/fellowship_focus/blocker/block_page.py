@@ -4,21 +4,38 @@ import base64
 import html as html_mod
 from pathlib import Path
 
+_LOGO_B64: str | None = None
 _IMAGE_B64: str | None = None
 
 
-def _get_image_b64() -> str:
-    global _IMAGE_B64
-    if _IMAGE_B64:
-        return _IMAGE_B64
+def _get_image_b64(name: str) -> str:
     candidates = [
-        Path(__file__).resolve().parents[2] / "assets" / "cannot-pass.jpg",
-        Path(__file__).resolve().parent / "cannot-pass.jpg",
+        Path(__file__).resolve().parents[2] / "assets" / name,
+        Path(__file__).resolve().parent / name,
     ]
     for path in candidates:
         if path.exists():
-            _IMAGE_B64 = base64.b64encode(path.read_bytes()).decode("ascii")
-            return _IMAGE_B64
+            return base64.b64encode(path.read_bytes()).decode("ascii")
+    return ""
+
+
+def _get_block_image_b64() -> str:
+    global _IMAGE_B64
+    if _IMAGE_B64:
+        return _IMAGE_B64
+    _IMAGE_B64 = _get_image_b64("cannot-pass.jpg")
+    return _IMAGE_B64
+
+
+def _get_logo_b64() -> str:
+    global _LOGO_B64
+    if _LOGO_B64:
+        return _LOGO_B64
+    for name in ("shield-logo.png", "app-icon.png", "fellowship.ico"):
+        data = _get_image_b64(name)
+        if data:
+            _LOGO_B64 = data
+            return _LOGO_B64
     return ""
 
 
@@ -33,7 +50,13 @@ def build_block_html(
     alternatives: list | None = None,
     reason: str = "domain",
 ) -> str:
-    img_b64 = _get_image_b64()
+    img_b64 = _get_block_image_b64()
+    logo_b64 = _get_logo_b64()
+    logo_tag = (
+        f'<img src="data:image/png;base64,{logo_b64}" alt="" class="logo" />'
+        if logo_b64
+        else '<div class="logo-fallback">🛡</div>'
+    )
     img_tag = (
         f'<img src="data:image/jpeg;base64,{img_b64}" alt="" class="hero" />'
         if img_b64
@@ -93,6 +116,12 @@ body{{
 .hero{{width:100%;height:220px;object-fit:cover;display:block;
   filter:brightness(0.85)}}
 .hero-placeholder{{height:220px;background:#2e3134}}
+.brand{{display:flex;align-items:center;justify-content:center;gap:.75rem;padding:1rem 1.5rem;
+  border-bottom:1px solid #3a3d40;background:#2e3134}}
+.logo{{width:36px;height:36px;border-radius:8px;object-fit:cover}}
+.logo-fallback{{font-size:1.25rem}}
+.brand-title{{font-size:.75rem;letter-spacing:.18em;text-transform:uppercase;color:#9ca3af}}
+.brand-title strong{{color:#b8422e;font-weight:600}}
 .content{{padding:2rem 2.5rem 2.5rem;text-align:center}}
 h1{{
   font-size:2rem;font-weight:600;margin-bottom:0.75rem;
@@ -129,6 +158,7 @@ h1{{
 .alt:hover{{background:#2e3134}}
 </style></head><body>
 <div class="card">
+  <div class="brand">{logo_tag}<div class="brand-title"><strong>Fellowship Shield</strong> · focus blocker</div></div>
   {img_tag}
   <div class="content">
     <h1>You cannot pass.</h1>

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -15,7 +17,110 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from fellowship_focus.ui.theme import ACCENT, ACCENT_HOVER, BG, BORDER, font_display, font_sans, font_timer
+from fellowship_focus.ui.theme import ACCENT, ACCENT_HOVER, BG, BORDER, font_display, font_sans, font_timer, ASSETS_DIR
+
+
+class HeroBanner(QWidget):
+    """Image hero strip — Heritage dark with generated artwork."""
+
+    def __init__(
+        self,
+        image_name: str,
+        title: str,
+        subtitle: str = "",
+        height: int = 132,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setFixedHeight(height)
+        self.setObjectName("heroBanner")
+
+        candidates = [
+            ASSETS_DIR / image_name,
+            ASSETS_DIR / "focus-quest.jpg",
+            ASSETS_DIR / "hero.jpg",
+        ]
+        pix = QPixmap()
+        for path in candidates:
+            if path.exists():
+                pix = QPixmap(str(path))
+                if not pix.isNull():
+                    break
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(20, 0, 20, 0)
+        layout.setSpacing(16)
+
+        if not pix.isNull():
+            thumb = QLabel()
+            thumb.setFixedSize(72, 72)
+            thumb.setPixmap(
+                pix.scaled(72, 72, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+            )
+            thumb.setStyleSheet(f"border-radius: 8px; border: 1px solid {BORDER};")
+            layout.addWidget(thumb)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        t = QLabel(title)
+        t.setFont(font_sans(18, QFont.Weight.DemiBold))
+        t.setStyleSheet("color: #f4f4f5;")
+        text_col.addWidget(t)
+        if subtitle:
+            s = QLabel(subtitle)
+            s.setWordWrap(True)
+            s.setFont(font_sans(11))
+            s.setStyleSheet("color: #9ca3af;")
+            text_col.addWidget(s)
+        layout.addLayout(text_col, 1)
+
+
+class BlockerIdentityPanel(GlassCard):
+    """Branded shield identity for the website blocker."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(16)
+
+        logo_path = ASSETS_DIR / "shield-logo.png"
+        if not logo_path.exists():
+            logo_path = ASSETS_DIR / "app-icon.png"
+        if logo_path.exists():
+            logo = QLabel()
+            logo.setFixedSize(64, 64)
+            pix = QPixmap(str(logo_path))
+            logo.setPixmap(pix.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            layout.addWidget(logo)
+
+        col = QVBoxLayout()
+        col.setSpacing(4)
+        title = QLabel("FELLOWSHIP SHIELD")
+        title.setFont(font_display(13, bold=True))
+        title.setStyleSheet("color: #f4f4f5; letter-spacing: 2px;")
+        sub = QLabel("System-wide blocker · Shorts, Reels, distractions")
+        sub.setFont(font_sans(11))
+        sub.setObjectName("mutedLabel")
+        sub.setWordWrap(True)
+        badge = QLabel("You cannot pass.")
+        badge.setFont(font_sans(11, QFont.Weight.DemiBold))
+        badge.setStyleSheet(f"color: {ACCENT};")
+        col.addWidget(title)
+        col.addWidget(sub)
+        col.addWidget(badge)
+        layout.addLayout(col, 1)
+
+        preview_path = ASSETS_DIR / "cannot-pass.jpg"
+        if preview_path.exists():
+            preview = QLabel()
+            preview.setFixedSize(120, 72)
+            pix = QPixmap(str(preview_path))
+            preview.setPixmap(
+                pix.scaled(120, 72, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
+            )
+            preview.setStyleSheet(f"border-radius: 6px; border: 1px solid {BORDER};")
+            layout.addWidget(preview)
 
 
 class GlassCard(QFrame):

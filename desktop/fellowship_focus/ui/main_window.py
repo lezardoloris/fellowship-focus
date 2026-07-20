@@ -58,6 +58,7 @@ from fellowship_focus.tasks import (
     update_task,
 )
 from fellowship_focus.ui.components import (
+    BlockerIdentityPanel,
     FocusRing,
     GlassCard,
     NavSidebar,
@@ -600,6 +601,8 @@ class MainWindow(QMainWindow):
 
         scaffold = PageScaffold()
 
+        scaffold.add(BlockerIdentityPanel())
+
         status_card = GlassCard()
         status_layout = QVBoxLayout(status_card)
         status_layout.setContentsMargins(20, 18, 20, 18)
@@ -828,6 +831,7 @@ class MainWindow(QMainWindow):
         form = QFormLayout()
         self.invite_input = QLineEdit()
         self.invite_input.setPlaceholderText("https://…/f/your-code")
+        self.invite_input.setEchoMode(QLineEdit.EchoMode.Password)
         import_btn = QPushButton("Import")
         import_btn.setObjectName("ghostBtn")
         import_btn.clicked.connect(self._import_invite_link)
@@ -933,6 +937,7 @@ class MainWindow(QMainWindow):
             return
         apply_parsed_config(self.config, parsed)
         save_config(self.config)
+        self.invite_input.clear()
         self._load_config_to_ui()
         self.web_dashboard.reload_dashboard()
         self.toasts.show("Connected", "Fellowship linked — open the Fellowship tab.", "success", 3000)
@@ -998,6 +1003,11 @@ class MainWindow(QMainWindow):
         self.token_input.setText(c.get("member_token", ""))
         self.code_input.setText(c.get("fellowship_code", ""))
         self.name_input.setText(c.get("member_name", ""))
+        code = c.get("fellowship_code", "").strip()
+        api = c.get("api_url", "https://fellowship-focus-production.up.railway.app").rstrip("/")
+        self.invite_input.clear()
+        if code:
+            self.invite_input.setPlaceholderText(f"{api}/f/{code}")
         self.tray_check.setChecked(c.get("minimize_to_tray", True))
         self.start_min_check.setChecked(c.get("start_minimized", True))
         self.auto_update_check.setChecked(c.get("auto_update", True))
