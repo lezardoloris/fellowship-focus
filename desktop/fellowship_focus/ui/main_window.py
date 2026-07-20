@@ -64,6 +64,7 @@ from fellowship_focus.ui.components import (
     NavSidebar,
     PageHeader,
     PageScaffold,
+    ShieldToggle,
     StatusPill,
 )
 from fellowship_focus.ui.dashboard import DashboardPage
@@ -603,6 +604,12 @@ class MainWindow(QMainWindow):
 
         scaffold.add(BlockerIdentityPanel())
 
+        self.shield_toggle = ShieldToggle()
+        self.shield_toggle.setting_changed.connect(self._on_shield_setting_changed)
+        self.shield_toggle.arm_requested.connect(self._on_shield_arm)
+        self.shield_toggle.disarm_requested.connect(self._on_shield_disarm)
+        scaffold.add(self.shield_toggle)
+
         status_card = GlassCard()
         status_layout = QVBoxLayout(status_card)
         status_layout.setContentsMargins(20, 18, 20, 18)
@@ -640,11 +647,6 @@ class MainWindow(QMainWindow):
         rules_layout.addWidget(
             PageHeader("Rules", "Soft = Shorts/Reels only · Hard = full YouTube/Instagram")
         )
-        self.blocker_enabled_check = QCheckBox(
-            "Enable website blocker during focus sessions (optional — guild may penalize bypass)"
-        )
-        self.blocker_enabled_check.setChecked(True)
-        rules_layout.addWidget(self.blocker_enabled_check)
 
         mode_row = QHBoxLayout()
         mode_row.addWidget(QLabel("Mode"))
@@ -669,6 +671,43 @@ class MainWindow(QMainWindow):
         layout.addWidget(scaffold)
         self.stack.addWidget(page)
         self._update_blocker_status()
+
+    def _sync_shield_toggle(self) -> None:
+        if not hasattr(self, "shield_toggle"):
+            return
+        in_focus = self.pomodoro.is_running and self.pomodoro.is_work_phase
+        self.shield_toggle.sync_state(
+            enabled=self.config.get("enable_website_blocker", True),
+            active=self.blocker_active,
+            in_focus=in_focus,
+        )
+
+    def _on_shield_setting_changed(self, enabled: bool) -> None:
+        was_enabled = self.config.get("enable_website_blocker", True)
+        if was_enabled and not enabled and self.pomodoro.is_work_phase and self.blocker_active:
+            self._disable_blocker(work_bypass=True)
+            if self.blocker_active:
+                self._sync_shield_toggle()
+                return
+        self.config["enable_website_blocker"] = enabled
+        save_config(self.config)
+        self._sync_shield_toggle()
+        label = "Shield armed for focus sessions" if enabled else "Shield disabled"
+        self.toasts.show("Fellowship Shield", label, "success" if enabled else "info", 2500)
+
+    def _on_shield_arm(self) -> None:
+        if not self._ensure_blocker_ready():
+            self._sync_shield_toggle()
+            return
+        self._enable_blocker()
+        self._sync_shield_toggle()
+        self.toasts.show("Shield on", "Distractions are blocked.", "success", 2500)
+
+    def _on_shield_disarm(self) -> None:
+        if not self.blocker_active:
+            return
+        self._disable_blocker(work_bypass=True)
+        self._sync_shield_toggle()
 
     def _pause_blocker_timed(self, minutes: int) -> None:
         """Impulse Blocker pattern — timed pause during focus, then auto re-arm."""
@@ -702,14 +741,7 @@ class MainWindow(QMainWindow):
 
     def _save_blocker_settings(self) -> None:
         sites = [s.strip() for s in self.sites_edit.toPlainText().splitlines() if s.strip()]
-        was_enabled = self.config.get("enable_website_blocker", True)
-        now_enabled = self.blocker_enabled_check.isChecked()
-        if was_enabled and not now_enabled and self.pomodoro.is_work_phase and self.blocker_active:
-            self._disable_blocker(work_bypass=True)
-            if self.blocker_active:
-                return
         self.config["blocked_sites"] = sites or DEFAULT_BLOCKED_SITES
-        self.config["enable_website_blocker"] = now_enabled
         self.config["blocker_mode"] = self.blocker_mode_combo.currentData() or "soft"
         save_config(self.config)
         if self.blocker_active:
@@ -728,6 +760,7 @@ class MainWindow(QMainWindow):
             "Hard mode blocks full domains. Pause = Impulse timed unlock."
         )
         self._update_chrome_status()
+        self._sync_shield_toggle()
 
     def _ensure_blocker_ready(self) -> bool:
         if not is_cert_installed():
@@ -1023,18 +1056,18 @@ class MainWindow(QMainWindow):
         self.break_spin.setValue(c.get("break_duration", 10))
         self.long_break_spin.setValue(c.get("long_break_duration", 15))
         self.intervals_spin.setValue(c.get("work_intervals", 2))
-        self.blocker_enabled_check.setChecked(c.get("enable_website_blocker", True))
+        self.sites_edit.setPlainText("\n".join(c.get("blocked_sites", DEFAULT_BLOCKED_SITES)))
         mode = c.get("blocker_mode", "soft")
         idx = self.blocker_mode_combo.findData(mode)
         if idx >= 0:
             self.blocker_mode_combo.setCurrentIndex(idx)
-        self.sites_edit.setPlainText("\n".join(c.get("blocked_sites", DEFAULT_BLOCKED_SITES)))
         self.pomodoro.configure(
             self.work_spin.value(), self.break_spin.value(),
             self.long_break_spin.value(), self.intervals_spin.value(),
         )
         self._sync_focus_ring(f"{self.work_spin.value():02d}:00", "Ready", 1.0, False)
         self._refresh_journey()
+        self._sync_shield_toggle()
 
     def _generate_cert(self) -> None:
         if not find_mitmdump():

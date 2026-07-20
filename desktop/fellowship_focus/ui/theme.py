@@ -217,6 +217,11 @@ QWidget#heroBanner {{
     background: {BG_SURFACE};
     border-bottom: 1px solid {BORDER};
 }}
+QWidget#shieldToggleCard {{
+    background: {BG_SURFACE};
+    border: 1px solid {BORDER};
+    border-radius: 10px;
+}}
 QPushButton {{
     background: {BG_ELEVATED};
     border: 1px solid {BORDER};

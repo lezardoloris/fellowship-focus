@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
+from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve, Property
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QBrush
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -17,7 +17,235 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from fellowship_focus.ui.theme import ACCENT, ACCENT_HOVER, BG, BORDER, font_display, font_sans, font_timer, ASSETS_DIR
+from fellowship_focus.ui.theme import (
+    ACCENT,
+    ACCENT_HOVER,
+    BG,
+    BG_ELEVATED,
+    BG_SURFACE,
+    BORDER,
+    FG,
+    MUTED,
+    SUCCESS,
+    font_display,
+    font_sans,
+    font_timer,
+    ASSETS_DIR,
+)
+
+
+class GlassCard(QFrame):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("glassCard")
+
+
+class ToggleSwitch(QWidget):
+    """iOS-style pill toggle — Heritage terracotta when on."""
+
+    toggled = Signal(bool)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(52, 30)
+        self._on = False
+        self._thumb = 0.0
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Enable or disable the shield")
+
+        self._anim = QPropertyAnimation(self, b"thumbPosition", self)
+        self._anim.setDuration(180)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def getThumbPosition(self) -> float:
+        return self._thumb
+
+    def setThumbPosition(self, value: float) -> None:
+        self._thumb = value
+        self.update()
+
+    thumbPosition = Property(float, getThumbPosition, setThumbPosition)
+
+    def isChecked(self) -> bool:
+        return self._on
+
+    def setChecked(self, on: bool, *, animate: bool = True) -> None:
+        on = bool(on)
+        if on == self._on and (on == (self._thumb > 0.5)):
+            return
+        self._on = on
+        target = 1.0 if on else 0.0
+        if animate:
+            self._anim.stop()
+            self._anim.setStartValue(self._thumb)
+            self._anim.setEndValue(target)
+            self._anim.start()
+        else:
+            self._thumb = target
+            self.update()
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.setChecked(not self._on)
+            self.toggled.emit(self._on)
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        pad = 3
+        track_h = h - pad * 2
+        track_w = w - pad * 2
+        radius = track_h / 2
+
+        off_color = QColor(BG_ELEVATED)
+        on_color = QColor(ACCENT)
+        t = self._thumb
+        track = QColor(
+            int(off_color.red() + (on_color.red() - off_color.red()) * t),
+            int(off_color.green() + (on_color.green() - off_color.green()) * t),
+            int(off_color.blue() + (on_color.blue() - off_color.blue()) * t),
+        )
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(track))
+        p.drawRoundedRect(pad, pad, track_w, track_h, radius, radius)
+
+        thumb_d = track_h - 4
+        thumb_x = pad + 2 + t * (track_w - thumb_d - 4)
+        p.setBrush(QColor("#ffffff"))
+        p.drawEllipse(int(thumb_x), pad + 2, int(thumb_d), int(thumb_d))
+        p.end()
+
+
+class ShieldToggle(GlassCard):
+    """
+    Primary blocker control — setting + live arm/disarm during focus.
+    Signals:
+      setting_changed(bool) — enable_website_blocker preference
+      arm_requested() — turn shield on now (focus session)
+      disarm_requested() — turn shield off now (may trigger guild penalty)
+    """
+
+    setting_changed = Signal(bool)
+    arm_requested = Signal()
+    disarm_requested = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("shieldToggleCard")
+        self._in_focus = False
+        self._active = False
+        self._enabled = True
+
+        logo_path = ASSETS_DIR / "shield-logo.png"
+        if not logo_path.exists():
+            logo_path = ASSETS_DIR / "app-icon.png"
+        self._logo = QLabel()
+        self._logo.setFixedSize(52, 52)
+        if logo_path.exists():
+            pix = QPixmap(str(logo_path))
+            self._logo.setPixmap(
+                pix.scaled(52, 52, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            )
+        self._logo.setStyleSheet(f"border-radius: 10px; border: 1px solid {BORDER};")
+
+        self._title = QLabel("Fellowship Shield")
+        self._title.setFont(font_sans(16, QFont.Weight.DemiBold))
+        self._title.setStyleSheet(f"color: {FG};")
+        self._status = QLabel("Standby")
+        self._status.setFont(font_sans(12, QFont.Weight.DemiBold))
+        self._hint = QLabel("Arms automatically when you start a focus session")
+        self._hint.setWordWrap(True)
+        self._hint.setFont(font_sans(11))
+        self._hint.setStyleSheet(f"color: {MUTED};")
+
+        self._switch = ToggleSwitch()
+        self._switch.toggled.connect(self._on_switch_toggled)
+        self._switch_label = QLabel("OFF")
+        self._switch_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._switch_label.setFont(font_sans(10, QFont.Weight.DemiBold))
+        self._switch_label.setStyleSheet(f"color: {MUTED}; letter-spacing: 1px;")
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(20, 18, 20, 18)
+        outer.setSpacing(12)
+
+        row = QHBoxLayout()
+        row.setSpacing(16)
+        row.addWidget(self._logo)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(4)
+        text_col.addWidget(self._title)
+        text_col.addWidget(self._status)
+        text_col.addWidget(self._hint)
+        row.addLayout(text_col, 1)
+
+        switch_col = QVBoxLayout()
+        switch_col.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        switch_col.addWidget(self._switch, alignment=Qt.AlignmentFlag.AlignCenter)
+        switch_col.addWidget(self._switch_label)
+        row.addLayout(switch_col)
+        outer.addLayout(row)
+
+        self._quick_off = QPushButton("Turn off shield")
+        self._quick_off.setObjectName("dangerBtn")
+        self._quick_off.setVisible(False)
+        self._quick_off.clicked.connect(self.disarm_requested.emit)
+        outer.addWidget(self._quick_off)
+
+    def _on_switch_toggled(self, on: bool) -> None:
+        if self._in_focus:
+            if on and not self._active:
+                self.arm_requested.emit()
+            elif not on and self._active:
+                self.disarm_requested.emit()
+            else:
+                self._sync_switch_visual()
+            return
+        self.setting_changed.emit(on)
+
+    def _sync_switch_visual(self) -> None:
+        show_on = self._active if self._in_focus else self._enabled
+        self._switch.blockSignals(True)
+        self._switch.setChecked(show_on, animate=False)
+        self._switch.blockSignals(False)
+        self._switch_label.setText("ON" if show_on else "OFF")
+        self._switch_label.setStyleSheet(
+            f"color: {ACCENT}; letter-spacing: 1px;" if show_on else f"color: {MUTED}; letter-spacing: 1px;"
+        )
+
+    def sync_state(self, *, enabled: bool, active: bool, in_focus: bool) -> None:
+        self._enabled = enabled
+        self._active = active
+        self._in_focus = in_focus
+        self._sync_switch_visual()
+
+        if in_focus and active:
+            self._status.setText("● Shield active")
+            self._status.setStyleSheet(f"color: {SUCCESS};")
+            self._hint.setText("Twitter, YouTube Shorts, TikTok and your blocklist are filtered.")
+            self._quick_off.setVisible(True)
+            self.setStyleSheet(f"#shieldToggleCard {{ border-color: rgba(45, 106, 79, 0.55); }}")
+        elif in_focus and enabled and not active:
+            self._status.setText("Shield paused")
+            self._status.setStyleSheet(f"color: {ACCENT_HOVER};")
+            self._hint.setText("Tap the switch to re-arm — or use a timed pause below.")
+            self._quick_off.setVisible(False)
+            self.setStyleSheet("")
+        elif enabled:
+            self._status.setText("Armed for focus")
+            self._status.setStyleSheet(f"color: {ACCENT};")
+            self._hint.setText("Starts blocking when you launch a focus session from the Focus tab.")
+            self._quick_off.setVisible(False)
+            self.setStyleSheet("")
+        else:
+            self._status.setText("Shield off")
+            self._status.setStyleSheet(f"color: {MUTED};")
+            self._hint.setText("Distractions won't be blocked — guild bypass rules won't apply.")
+            self._quick_off.setVisible(False)
+            self.setStyleSheet(f"#shieldToggleCard {{ border-color: {BORDER}; opacity: 0.92; }}")
 
 
 class HeroBanner(QWidget):
@@ -121,12 +349,6 @@ class BlockerIdentityPanel(GlassCard):
             )
             preview.setStyleSheet(f"border-radius: 6px; border: 1px solid {BORDER};")
             layout.addWidget(preview)
-
-
-class GlassCard(QFrame):
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("glassCard")
 
 
 class MutedLabel(QLabel):
