@@ -47,8 +47,21 @@ async function resolveWindowsAsset(): Promise<{
   }
 }
 
+function requestOrigin(request: Request): string {
+  const envUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.RAILWAY_PUBLIC_DOMAIN?.trim();
+  if (envUrl) {
+    return envUrl.startsWith("http") ? envUrl.replace(/\/$/, "") : `https://${envUrl.replace(/\/$/, "")}`;
+  }
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const proto = request.headers.get("x-forwarded-proto") ?? "https";
+  if (host) {
+    return `${proto}://${host.split(",")[0].trim()}`;
+  }
+  return new URL(request.url).origin;
+}
+
 export async function GET(request: Request) {
-  const origin = new URL(request.url).origin;
+  const origin = requestOrigin(request);
   const resolved = await resolveWindowsAsset();
 
   // Public response — never expose GitHub to the client
