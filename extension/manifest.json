@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Fellowship Focus",
+  "version": "1.0.0",
+  "description": "Pomodoro focus timer with site blocking. Sync sessions to your Fellowship.",
+  "permissions": ["storage", "declarativeNetRequest", "alarms", "tabs"],
+  "host_permissions": ["<all_urls>", "http://localhost:3000/*", "http://127.0.0.1:3000/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Fellowship Focus"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "blocklist",
+        "enabled": false,
+        "path": "rules.json"
+      }
+    ]
+  }
+}

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fellowship Focus</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      background: #0c0f0a;
+      color: #e8e4d9;
+      font-family: system-ui, sans-serif;
+      padding: 16px;
+    }
+    h1 { font-size: 16px; color: #c9a227; margin-bottom: 4px; }
+    .subtitle { font-size: 11px; color: #888; margin-bottom: 16px; }
+    label { font-size: 11px; color: #888; display: block; margin-bottom: 4px; }
+    input, select {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 12px;
+      background: #1a1f18;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #e8e4d9;
+      font-size: 12px;
+    }
+    .timer {
+      font-size: 48px;
+      font-weight: bold;
+      text-align: center;
+      font-family: monospace;
+      margin: 16px 0;
+      color: #c9a227;
+    }
+    .timer.active { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+    .status { text-align: center; font-size: 12px; color: #888; margin-bottom: 12px; }
+    .buttons { display: flex; gap: 8px; }
+    button {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .btn-start { background: linear-gradient(135deg, #c9a227, #8a7020); color: #0c0f0a; }
+    .btn-stop { background: #3d1f1f; color: #e8a0a0; }
+    .btn-stop:disabled, .btn-start:disabled { opacity: 0.5; cursor: not-allowed; }
+    .setup { border-top: 1px solid #333; padding-top: 12px; margin-top: 12px; }
+    .hint { font-size: 10px; color: #666; margin-top: 8px; line-height: 1.4; }
+    .error { color: #e88; font-size: 11px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h1>⚔️ Fellowship Focus</h1>
+  <p class="subtitle">Focus quest · Block distractions</p>
+
+  <div id="setup" class="setup">
+    <label>API URL (your web app)</label>
+    <input id="apiUrl" type="text" placeholder="http://localhost:3000" value="http://localhost:3000" />
+    <label>Your token (from Fellowship dashboard)</label>
+    <input id="token" type="text" placeholder="Paste token after joining" />
+    <button id="saveSetup" class="btn-start" style="width:100%;margin-bottom:0">Save setup</button>
+    <p class="hint">Join your Fellowship on the web dashboard, then paste your token here.</p>
+  </div>
+
+  <div id="timer-section" style="display:none">
+    <div class="timer" id="timer">25:00</div>
+    <p class="status" id="status">Ready for quest</p>
+    <label>Session length</label>
+    <select id="duration">
+      <option value="25" selected>25 min (Daily Quest)</option>
+      <option value="45">45 min</option>
+      <option value="60">60 min</option>
+      <option value="15">15 min (warm-up)</option>
+    </select>
+    <div class="buttons">
+      <button id="startBtn" class="btn-start">Begin Quest</button>
+      <button id="stopBtn" class="btn-stop" disabled>Abandon</button>
+    </div>
+    <p class="hint">Blocked sites: Twitter, Reddit, YouTube, Instagram, TikTok, Netflix, Facebook</p>
+  </div>
+
+  <p id="error" class="error"></p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

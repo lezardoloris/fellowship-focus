@@ -1,0 +1,170 @@
+@import "tailwindcss";
+
+:root {
+  --background: #060806;
+  --foreground: #f0ebe0;
+  --gold: #d4af37;
+  --gold-light: #f0d878;
+  --gold-dim: #8a7020;
+  --forest: #0f1a0f;
+  --ember: #c45c26;
+  --mist: #1a2418;
+  --glass: rgba(12, 18, 12, 0.72);
+  --glass-border: rgba(212, 175, 55, 0.18);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-cinzel);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+.font-display {
+  font-family: var(--font-cinzel), Georgia, serif;
+}
+
+.gold-text {
+  background: linear-gradient(135deg, var(--gold-light), var(--gold));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.glass-card {
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.glass-card:hover {
+  border-color: rgba(212, 175, 55, 0.35);
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(212, 175, 55, 0.08);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #d4af37 0%, #8a7020 50%, #d4af37 100%);
+  background-size: 200% auto;
+  color: #0a0a08;
+  font-weight: 700;
+  padding: 0.875rem 1.75rem;
+  border-radius: 10px;
+  border: none;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 20px rgba(212, 175, 55, 0.25);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-position: right center;
+  box-shadow: 0 6px 28px rgba(212, 175, 55, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hero-overlay {
+  background: linear-gradient(
+    180deg,
+    rgba(6, 8, 6, 0.55) 0%,
+    rgba(6, 8, 6, 0.75) 50%,
+    rgba(6, 8, 6, 0.95) 100%
+  );
+}
+
+.input-premium {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 10px;
+  padding: 0.875rem 1rem;
+  color: var(--foreground);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-premium:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.12);
+}
+
+.waypoint-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--gold-dim);
+  border: 2px solid rgba(212, 175, 55, 0.5);
+  transition: all 0.3s ease;
+}
+
+.waypoint-dot.reached {
+  background: var(--gold);
+  border-color: var(--gold-light);
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.7);
+}
+
+.progress-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8a7020, #d4af37, #f0d878);
+  border-radius: 3px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.4);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.6s ease forwards;
+}
+
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+
+.feed-session {
+  border-left: 3px solid #2d6a4f;
+  background: linear-gradient(90deg, rgba(45, 106, 79, 0.12), transparent);
+}
+
+.feed-block {
+  border-left: 3px solid #9b2226;
+  background: linear-gradient(90deg, rgba(155, 34, 38, 0.12), transparent);
+}
+
+.ladder-gold { background: linear-gradient(135deg, rgba(212, 175, 55, 0.2), rgba(138, 112, 32, 0.1)); }
+.ladder-silver { background: linear-gradient(135deg, rgba(192, 192, 192, 0.15), transparent); }
+.ladder-bronze { background: linear-gradient(135deg, rgba(205, 127, 50, 0.15), transparent); }
