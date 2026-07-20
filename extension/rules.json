@@ -10,7 +10,9 @@
     },
     "condition": {
       "urlFilter": "||twitter.com",
-      "resourceTypes": ["main_frame"]
+      "resourceTypes": [
+        "main_frame"
+      ]
     }
   },
   {
@@ -24,7 +26,9 @@
     },
     "condition": {
       "urlFilter": "||x.com",
-      "resourceTypes": ["main_frame"]
+      "resourceTypes": [
+        "main_frame"
+      ]
     }
   },
   {
@@ -38,7 +42,9 @@
     },
     "condition": {
       "urlFilter": "||reddit.com",
-      "resourceTypes": ["main_frame"]
+      "resourceTypes": [
+        "main_frame"
+      ]
     }
   },
   {
@@ -51,8 +57,10 @@
       }
     },
     "condition": {
-      "urlFilter": "||youtube.com",
-      "resourceTypes": ["main_frame"]
+      "urlFilter": "||old.reddit.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
     }
   },
   {
@@ -65,8 +73,10 @@
       }
     },
     "condition": {
-      "urlFilter": "||instagram.com",
-      "resourceTypes": ["main_frame"]
+      "urlFilter": "||youtube.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
     }
   },
   {
@@ -79,8 +89,10 @@
       }
     },
     "condition": {
-      "urlFilter": "||facebook.com",
-      "resourceTypes": ["main_frame"]
+      "urlFilter": "||youtu.be",
+      "resourceTypes": [
+        "main_frame"
+      ]
     }
   },
   {
@@ -93,8 +105,10 @@
       }
     },
     "condition": {
-      "urlFilter": "||tiktok.com",
-      "resourceTypes": ["main_frame"]
+      "urlFilter": "||m.youtube.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
     }
   },
   {
@@ -107,8 +121,378 @@
       }
     },
     "condition": {
+      "urlFilter": "||music.youtube.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 9,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||instagram.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 10,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||facebook.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 11,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||fb.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 12,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||m.facebook.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 13,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||tiktok.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 14,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||threads.net",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 15,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||snapchat.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 16,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||pinterest.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 17,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||tumblr.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 18,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||linkedin.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 19,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||twitch.tv",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 20,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||discord.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 21,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
       "urlFilter": "||netflix.com",
-      "resourceTypes": ["main_frame"]
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 22,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||disneyplus.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 23,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||primevideo.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 24,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||hulu.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 25,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||crunchyroll.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 26,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||pornhub.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 27,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||xvideos.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 28,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||xnxx.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 29,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||redtube.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 30,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||onlyfans.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
+    }
+  },
+  {
+    "id": 31,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "extensionPath": "/blocked.html"
+      }
+    },
+    "condition": {
+      "urlFilter": "||chaturbate.com",
+      "resourceTypes": [
+        "main_frame"
+      ]
     }
   }
 ]

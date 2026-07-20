@@ -31,4 +31,4 @@ cd desktop && pip install -r requirements.txt && python main.py
 2. **Settings** → API URL + member token + Fellowship code
 3. **Begin Quest** → system-wide blocking + XP sync
 
-See [desktop/README.md](./desktop/README.md) and [PLAN.md](./PLAN.md).
+See [desktop/README.md](./desktop/README.md), [PLAN.md](./PLAN.md), and [DEPLOY.md](./DEPLOY.md) for Railway deployment.

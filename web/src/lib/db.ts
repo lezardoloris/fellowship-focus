@@ -6,7 +6,7 @@ import { calcBlockPenalty, calcSessionXp, getLeague, POINTS } from "./points";
 import { HABIT_PRESETS, HABIT_XP, calcStakeScore, monthKey, todayDate } from "./habits";
 import type { VerificationType } from "./habits";
 
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "fellowship.db");
 
 export type Fellowship = {

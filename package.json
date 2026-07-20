@@ -1,0 +1,12 @@
+{
+  "name": "fellowship-focus",
+  "private": true,
+  "description": "Monorepo: web dashboard (Next.js) + desktop blocker",
+  "scripts": {
+    "build": "npm ci --prefix web && npm run build --prefix web",
+    "start": "npm run start --prefix web"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

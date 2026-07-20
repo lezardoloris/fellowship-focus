@@ -1,0 +1,41 @@
+{
+  "categories": {
+    "social": "Feeds & social (Twitter/X, Insta, TikTok…)",
+    "video": "Video & streaming",
+    "nsfw": "Adult content",
+    "gaming": "Gaming & chat"
+  },
+  "sites": [
+    "twitter.com",
+    "x.com",
+    "reddit.com",
+    "old.reddit.com",
+    "youtube.com",
+    "youtu.be",
+    "m.youtube.com",
+    "music.youtube.com",
+    "instagram.com",
+    "facebook.com",
+    "fb.com",
+    "m.facebook.com",
+    "tiktok.com",
+    "threads.net",
+    "snapchat.com",
+    "pinterest.com",
+    "tumblr.com",
+    "linkedin.com",
+    "twitch.tv",
+    "discord.com",
+    "netflix.com",
+    "disneyplus.com",
+    "primevideo.com",
+    "hulu.com",
+    "crunchyroll.com",
+    "pornhub.com",
+    "xvideos.com",
+    "xnxx.com",
+    "redtube.com",
+    "onlyfans.com",
+    "chaturbate.com"
+  ]
+}

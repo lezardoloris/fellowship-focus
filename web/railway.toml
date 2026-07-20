@@ -1,0 +1,8 @@
+# Used when Railway Root Directory is set to "web"
+
+[build]
+builder = "RAILPACK"
+
+[deploy]
+startCommand = "npm start"
+restartPolicyType = "ON_FAILURE"

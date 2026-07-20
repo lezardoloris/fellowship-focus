@@ -101,16 +101,7 @@ export const WAYPOINTS: Waypoint[] = [
   },
 ];
 
-export const DEFAULT_BLOCKED_SITES = [
-  "twitter.com",
-  "x.com",
-  "reddit.com",
-  "youtube.com",
-  "instagram.com",
-  "facebook.com",
-  "tiktok.com",
-  "netflix.com",
-];
+export { DEFAULT_BLOCKED_SITES } from "./blocklist";
 
 export function getCurrentWaypoint(totalXp: number): Waypoint {
   let current = WAYPOINTS[0];

@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 APPLICATION_NAME = "Fellowship Focus"
 
 MITMDUMP_SHUTDOWN_URL = "http://shutdown.fellowshipfocus.internal/"
@@ -15,16 +18,31 @@ h1{{color:#c9a227}}p{{color:#888;max-width:420px;line-height:1.6}}
 <p style="color:#c45c26;margin-top:1rem">Return to your work.</p>
 </body></html>"""
 
-DEFAULT_BLOCKED_SITES = [
+_BLOCKLIST_PATH = Path(__file__).resolve().parents[2] / "blocklist.json"
+
+_FALLBACK_BLOCKED_SITES = [
     "twitter.com",
     "x.com",
     "reddit.com",
     "youtube.com",
+    "youtu.be",
     "instagram.com",
     "facebook.com",
     "tiktok.com",
+    "pornhub.com",
     "netflix.com",
 ]
+
+
+def _load_blocklist() -> list[str]:
+    try:
+        data = json.loads(_BLOCKLIST_PATH.read_text(encoding="utf-8"))
+        return list(data.get("sites", _FALLBACK_BLOCKED_SITES))
+    except Exception:
+        return _FALLBACK_BLOCKED_SITES.copy()
+
+
+DEFAULT_BLOCKED_SITES = _load_blocklist()
 
 PROXY_PORT = 8080
 MITMDUMP_PORT = 8080

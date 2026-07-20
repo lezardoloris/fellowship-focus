@@ -1,0 +1,11 @@
+# Railway config — https://docs.railway.com/guides/monorepo
+# Alternative: set Root Directory = "web" in service Settings (same effect).
+
+[build]
+builder = "RAILPACK"
+buildCommand = "npm ci --prefix web && npm run build --prefix web"
+
+[deploy]
+startCommand = "npm run start --prefix web"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

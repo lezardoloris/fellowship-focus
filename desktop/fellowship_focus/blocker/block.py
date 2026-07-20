@@ -58,7 +58,11 @@ def request(flow) -> None:
     addresses = {strip_www(a.strip()) for a in ctx.options.addresses_str.split(",") if a.strip()}
     parsed = urllib.parse.urlparse(flow.request.pretty_url)
     url_domain = strip_www(parsed.netloc)
-    has_match = url_domain in addresses
+
+    def domain_matches(domain: str, blocked: str) -> bool:
+        return domain == blocked or domain.endswith("." + blocked)
+
+    has_match = any(domain_matches(url_domain, a) for a in addresses)
 
     if (ctx.options.block_type == "allowlist" and not has_match) or (
         ctx.options.block_type == "blocklist" and has_match

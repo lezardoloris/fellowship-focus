@@ -468,7 +468,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Website Blocker"))
         layout.addWidget(QLabel(
             "System-wide blocking via mitmproxy (same as Koncentro).\n"
-            "Install the certificate once, then sites are blocked in all browsers during focus."
+            "Install the certificate once, then sites are blocked in all browsers during focus.\n"
+            "Default list: social feeds, streaming, NSFW (edit below)."
         ))
 
         self.blocker_enabled_check = QCheckBox("Enable website blocker during Pomodoro work intervals")

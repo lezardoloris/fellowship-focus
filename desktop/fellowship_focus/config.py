@@ -12,7 +12,14 @@ def load_config() -> dict:
         return default_config()
     try:
         data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        return {**default_config(), **data}
+        merged = {**default_config(), **data}
+        # Merge new default sites into saved config (don't remove user additions)
+        sites = list(merged.get("blocked_sites", []))
+        for site in DEFAULT_BLOCKED_SITES:
+            if site not in sites:
+                sites.append(site)
+        merged["blocked_sites"] = sites
+        return merged
     except Exception:
         return default_config()
 
