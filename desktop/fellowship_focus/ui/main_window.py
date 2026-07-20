@@ -50,6 +50,9 @@ from fellowship_focus.tasks import (
 from fellowship_focus.ui.dashboard import DashboardPage
 from fellowship_focus.ui.theme import ASSETS_DIR, app_stylesheet, font_display, font_sans, font_timer, load_fonts
 from fellowship_focus.ui.toast import ToastManager
+from fellowship_focus.ui.web_dashboard import WebDashboardPage
+from fellowship_focus.updater import apply_git_update, check_for_updates
+from fellowship_focus.version import APP_VERSION
 
 
 class MainWindow(QMainWindow):
@@ -68,7 +71,7 @@ class MainWindow(QMainWindow):
         self.pomodoro.phase_changed.connect(self._on_pomo_phase)
         self.pomodoro.session_finished.connect(self._on_pomo_finished)
 
-        self.setWindowTitle("Fellowship Focus")
+        self.setWindowTitle(f"Fellowship Focus v{APP_VERSION}")
         self.setMinimumSize(960, 640)
         self.resize(1040, 720)
         load_fonts()
@@ -104,11 +107,12 @@ class MainWindow(QMainWindow):
         sb_layout.addWidget(self.sidebar, 1)
 
         nav_items = [
-            "  Dashboard",
+            "  Fellowship",
+            "  Overview",
             "  Tasks",
             "  Pomodoro",
             "  Blocker",
-            "  Guild",
+            "  Settings",
         ]
         for label in nav_items:
             self.sidebar.addItem(QListWidgetItem(label))
@@ -124,6 +128,8 @@ class MainWindow(QMainWindow):
         self.stack.setObjectName("contentArea")
         outer.addWidget(self.stack, 1)
 
+        self.web_dashboard = WebDashboardPage(lambda: self.config, self._open_dashboard)
+        self.stack.addWidget(self.web_dashboard)
         self.dashboard_page = DashboardPage(self._go_pomodoro, self._open_dashboard)
         self.stack.addWidget(self.dashboard_page)
         self._build_tasks_page()
@@ -137,7 +143,7 @@ class MainWindow(QMainWindow):
         self.sidebar.setCurrentRow(0)
 
         if not is_cert_installed():
-            self.sidebar.setCurrentRow(3)
+            self.sidebar.setCurrentRow(4)
             QTimer.singleShot(
                 800,
                 lambda: self.toasts.show(
@@ -164,13 +170,37 @@ class MainWindow(QMainWindow):
         self._sync_timer.timeout.connect(self._refresh_journey)
         self._sync_timer.start(30000)
 
+        QTimer.singleShot(2000, self._check_updates_silent)
+        QTimer.singleShot(500, self.web_dashboard.reload_dashboard)
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self.toasts.reposition()
 
     def _go_pomodoro(self) -> None:
-        self.sidebar.setCurrentRow(2)
+        self.sidebar.setCurrentRow(3)
         self._start_pomodoro()
+
+    def _check_updates_silent(self) -> None:
+        if not self.config.get("auto_update", True):
+            return
+        info = check_for_updates()
+        if info.available:
+            self.toasts.show("Update available", info.message, "info", 8000)
+
+    def _apply_update(self) -> None:
+        ok, msg = apply_git_update()
+        self.toasts.show("Update", msg, "success" if ok else "warning", 6000)
+
+    def _check_updates_manual(self) -> None:
+        info = check_for_updates()
+        if info.available and info.can_auto_apply:
+            self._apply_update()
+        elif info.available:
+            self.toasts.show(f"Update — v{info.latest}", info.message, "info", 8000)
+            webbrowser.open(info.release_url)
+        else:
+            self.toasts.show("Up to date", info.message, "success", 3000)
 
     # ── Tasks ──────────────────────────────────────────────
 
@@ -274,8 +304,35 @@ class MainWindow(QMainWindow):
         if not self.selected_task_id:
             QMessageBox.information(self, "Tasks", "Select a task first.")
             return
-        self.sidebar.setCurrentRow(2)
+        self.sidebar.setCurrentRow(3)
         self._start_pomodoro()
+
+    def _check_updates_silent(self) -> None:
+        if not self.config.get("auto_update", True):
+            return
+        info = check_for_updates()
+        if info.available:
+            self.toasts.show(
+                "Update available",
+                info.message,
+                "info",
+                8000,
+            )
+            if info.can_auto_apply:
+                self._pending_update = info
+
+    def _apply_update(self) -> None:
+        ok, msg = apply_git_update()
+        self.toasts.show("Update", msg, "success" if ok else "warning", 6000)
+
+    def _check_updates_manual(self) -> None:
+        info = check_for_updates()
+        if info.available:
+            self.toasts.show(f"Update — v{info.latest}", info.message, "info", 8000)
+            if info.can_auto_apply:
+                self._apply_update()
+        else:
+            self.toasts.show("Up to date", info.message, "success", 3000)
 
     def _on_task_tick(self) -> None:
         if self.selected_task_id and self.pomodoro.is_work_phase:
@@ -524,7 +581,7 @@ class MainWindow(QMainWindow):
     def _ensure_blocker_ready(self) -> bool:
         if not is_cert_installed():
             QMessageBox.warning(self, "Certificate", "Install mitmproxy certificate first (Blocker tab).")
-            self.sidebar.setCurrentRow(3)
+            self.sidebar.setCurrentRow(4)
             return False
         if not find_mitmdump():
             QMessageBox.critical(self, "Error", "mitmdump not found.")
@@ -573,6 +630,7 @@ class MainWindow(QMainWindow):
         self.tray_check = QCheckBox("Minimize to system tray when closing")
         self.startup_check = QCheckBox("Start with Windows (minimized, non-intrusive)")
         self.start_min_check = QCheckBox("Start minimized to tray")
+        self.auto_update_check = QCheckBox("Check for updates automatically (GitHub)")
         self.okr_focus_spin = QSpinBox()
         self.okr_focus_spin.setRange(1, 80)
         self.okr_focus_spin.setSuffix(" h/week")
@@ -596,6 +654,7 @@ class MainWindow(QMainWindow):
         form.addRow("", self.tray_check)
         form.addRow("", self.startup_check)
         form.addRow("", self.start_min_check)
+        form.addRow("", self.auto_update_check)
         layout.addLayout(form)
 
         row = QHBoxLayout()
@@ -618,6 +677,7 @@ class MainWindow(QMainWindow):
             "member_name": self.name_input.text().strip(),
             "minimize_to_tray": self.tray_check.isChecked(),
             "start_minimized": self.start_min_check.isChecked(),
+            "auto_update": self.auto_update_check.isChecked(),
             "okr_weekly_focus_hours": self.okr_focus_spin.value(),
             "okr_habit_rate": self.okr_habit_spin.value(),
             "okr_freelance_revenue_eur": self.okr_revenue_spin.value(),
@@ -628,6 +688,7 @@ class MainWindow(QMainWindow):
             ok, msg = set_startup_enabled(self.startup_check.isChecked())
             self.toasts.show("Startup", msg, "success" if ok else "warning")
         self._refresh_journey()
+        self.web_dashboard.reload_dashboard()
         self.toasts.show("Saved", "Guild settings updated.", "success", 2500)
 
     def _refresh_journey(self) -> None:
@@ -660,6 +721,7 @@ class MainWindow(QMainWindow):
         self.name_input.setText(c.get("member_name", ""))
         self.tray_check.setChecked(c.get("minimize_to_tray", True))
         self.start_min_check.setChecked(c.get("start_minimized", True))
+        self.auto_update_check.setChecked(c.get("auto_update", True))
         self.startup_check.setChecked(is_startup_enabled())
         self.okr_focus_spin.setValue(c.get("okr_weekly_focus_hours", 20))
         self.okr_habit_spin.setValue(c.get("okr_habit_rate", 80))
@@ -703,6 +765,8 @@ class MainWindow(QMainWindow):
 
     def _on_nav(self, index: int) -> None:
         self.stack.setCurrentIndex(index)
+        if index == 0:
+            self.web_dashboard.reload_dashboard()
 
     # ── Tray & lifecycle ───────────────────────────────────
 
@@ -714,9 +778,13 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         show_a = QAction("Show", self)
         show_a.triggered.connect(self.show)
+        update_a = QAction("Check for updates", self)
+        update_a.triggered.connect(self._check_updates_manual)
         quit_a = QAction("Quit", self)
         quit_a.triggered.connect(self._quit_app)
         menu.addAction(show_a)
+        menu.addAction(update_a)
+        menu.addSeparator()
         menu.addAction(quit_a)
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(lambda r: self.show() if r == QSystemTrayIcon.ActivationReason.Trigger else None)

@@ -50,4 +50,5 @@ def default_config() -> dict:
         "okr_habit_rate": 80,
         "okr_freelance_revenue_eur": 3000,
         "okr_revenue_current_eur": 0,
+        "auto_update": True,
     }
