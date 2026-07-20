@@ -47,6 +47,7 @@ export function FellowshipDashboard({ code }: { code: string }) {
   const [myToken, setMyToken] = useState<string | null>(null);
   const [myName, setMyName] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [desktopCopied, setDesktopCopied] = useState(false);
   const [error, setError] = useState("");
 
   const storageKey = `ff-member-${code}`;
@@ -103,6 +104,19 @@ export function FellowshipDashboard({ code }: { code: string }) {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  function copyDesktopSync() {
+    if (!myToken) return;
+    const payload = JSON.stringify({
+      apiUrl: window.location.origin,
+      code,
+      token: myToken,
+      name: myName,
+    });
+    navigator.clipboard.writeText(payload);
+    setDesktopCopied(true);
+    setTimeout(() => setDesktopCopied(false), 2000);
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#060806]">
@@ -146,6 +160,11 @@ export function FellowshipDashboard({ code }: { code: string }) {
           <button onClick={copyLink} className="btn-primary">
             {copied ? "✓ Link copied" : "Copy invite link"}
           </button>
+          {myToken && (
+            <button onClick={copyDesktopSync} className="btn-secondary">
+              {desktopCopied ? "✓ Copied for desktop" : "Copy for desktop app"}
+            </button>
+          )}
         </div>
 
         {!myToken && (

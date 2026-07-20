@@ -82,6 +82,24 @@ body {
   cursor: not-allowed;
 }
 
+.btn-secondary {
+  background: transparent;
+  color: #d4af37;
+  font-weight: 600;
+  padding: 0.875rem 1.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(212, 175, 55, 0.45);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  transition: all 0.3s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: #d4af37;
+  background: rgba(212, 175, 55, 0.08);
+}
+
 .hero-overlay {
   background: linear-gradient(
     180deg,

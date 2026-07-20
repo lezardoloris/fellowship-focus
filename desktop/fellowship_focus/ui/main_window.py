@@ -36,6 +36,7 @@ from fellowship_focus.blocker.manager import (
 )
 from fellowship_focus.cert_setup import install_cert_windows, is_cert_installed, is_cert_generated
 from fellowship_focus.config import load_config, save_config
+from fellowship_focus.invite import apply_parsed_config, parse_invite_or_sync
 from fellowship_focus.constants import DEFAULT_BLOCKED_SITES
 from fellowship_focus.pomodoro_engine import PomodoroEngine
 from fellowship_focus.startup import is_startup_enabled, set_startup_enabled
@@ -128,7 +129,11 @@ class MainWindow(QMainWindow):
         self.stack.setObjectName("contentArea")
         outer.addWidget(self.stack, 1)
 
-        self.web_dashboard = WebDashboardPage(lambda: self.config, self._open_dashboard)
+        self.web_dashboard = WebDashboardPage(
+            lambda: self.config,
+            self._open_dashboard,
+            self._on_web_config_updated,
+        )
         self.stack.addWidget(self.web_dashboard)
         self.dashboard_page = DashboardPage(self._go_pomodoro, self._open_dashboard)
         self.stack.addWidget(self.dashboard_page)
@@ -622,6 +627,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(title)
 
         form = QFormLayout()
+        self.invite_input = QLineEdit()
+        self.invite_input.setPlaceholderText("Paste invite link or desktop sync JSON")
+        import_btn = QPushButton("Import")
+        import_btn.clicked.connect(self._import_invite_link)
+        invite_row = QHBoxLayout()
+        invite_row.addWidget(self.invite_input, 1)
+        invite_row.addWidget(import_btn)
         self.api_url_input = QLineEdit()
         self.token_input = QLineEdit()
         self.token_input.setEchoMode(QLineEdit.EchoMode.Password)
@@ -643,6 +655,7 @@ class MainWindow(QMainWindow):
         self.okr_revenue_current = QSpinBox()
         self.okr_revenue_current.setRange(0, 100000)
         self.okr_revenue_current.setSuffix(" €")
+        form.addRow("Quick connect", invite_row)
         form.addRow("API URL", self.api_url_input)
         form.addRow("Member token", self.token_input)
         form.addRow("Fellowship code", self.code_input)
@@ -668,6 +681,26 @@ class MainWindow(QMainWindow):
         layout.addLayout(row)
         layout.addStretch()
         self.stack.addWidget(page)
+
+    def _on_web_config_updated(self, config: dict) -> None:
+        self.config = config
+        save_config(self.config)
+        self.api_url_input.setText(config.get("api_url", "http://localhost:3000"))
+        self.token_input.setText(config.get("member_token", ""))
+        self.code_input.setText(config.get("fellowship_code", ""))
+        self.name_input.setText(config.get("member_name", ""))
+        self._refresh_journey()
+
+    def _import_invite_link(self) -> None:
+        parsed = parse_invite_or_sync(self.invite_input.text())
+        if not parsed:
+            self.toasts.show("Import failed", "Paste a valid invite link or desktop sync JSON.", "warning")
+            return
+        apply_parsed_config(self.config, parsed)
+        save_config(self.config)
+        self._load_config_to_ui()
+        self.web_dashboard.reload_dashboard()
+        self.toasts.show("Connected", "Fellowship linked — open the Fellowship tab.", "success", 3000)
 
     def _save_fellowship_settings(self) -> None:
         self.config.update({
@@ -767,6 +800,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(index)
         if index == 0:
             self.web_dashboard.reload_dashboard()
+        elif index == 1:
+            self._refresh_journey()
 
     # ── Tray & lifecycle ───────────────────────────────────
 
