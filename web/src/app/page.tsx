@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FEATURE_IMAGES } from "@/lib/assets";
@@ -44,24 +45,32 @@ export default function HomePage() {
         <div className="hero-overlay absolute inset-0" />
       </div>
 
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-4 py-20">
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-4 py-16">
         <p className="animate-fade-up mb-3 text-xs font-semibold uppercase tracking-[0.45em] text-amber-400/80">
-          Duolingo for deep work
+          Block · Focus · Win XP with friends
         </p>
         <h1 className="font-display animate-fade-up stagger-1 mb-5 text-center text-5xl font-bold tracking-wide md:text-7xl">
           <span className="gold-text">Fellowship</span>
           <br />
           <span className="text-stone-100">Focus</span>
         </h1>
-        <p className="animate-fade-up stagger-2 mb-12 max-w-xl text-center text-lg leading-relaxed text-stone-400">
-          Block distractions. Complete daily focus quests. March your Fellowship from the Shire to
-          Mount Doom — one link for all your friends.
+        <p className="animate-fade-up stagger-2 mb-8 max-w-xl text-center text-lg leading-relaxed text-stone-400">
+          System-wide blocker for Twitter, YouTube, TikTok. 45-min focus quests. Weekly ladder with your guild.
         </p>
+
+        <div className="animate-fade-up stagger-3 mb-10 w-full max-w-md">
+          <Link href="/download" className="btn-primary block w-full text-center">
+            Download for Windows — block sites & start 45-min focus
+          </Link>
+        </div>
 
         <form
           onSubmit={createFellowship}
           className="glass-card animate-fade-up stagger-3 w-full max-w-md p-8"
         >
+          <p className="mb-4 text-center text-xs uppercase tracking-widest text-stone-500">
+            Or start in the browser
+          </p>
           <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-stone-500">
             Name your Fellowship
           </label>
@@ -73,27 +82,27 @@ export default function HomePage() {
             className="input-premium mb-5 w-full"
           />
           {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
-          <button type="submit" disabled={loading} className="btn-primary w-full">
-            {loading ? "Forging the Ring…" : "Begin the Journey"}
+          <button type="submit" disabled={loading} className="btn-secondary w-full">
+            {loading ? "Forging the Ring…" : "Create Fellowship (web)"}
           </button>
         </form>
 
-        <div className="mt-16 grid w-full max-w-4xl gap-5 md:grid-cols-3">
+        <div className="mt-14 grid w-full max-w-4xl gap-5 md:grid-cols-3">
           {[
             {
-              img: FEATURE_IMAGES.link,
-              title: "One link",
-              desc: "Share with friends. Everyone tracks focus on the same map.",
+              img: FEATURE_IMAGES.focus,
+              title: "Block everything",
+              desc: "Desktop app blocks dopamine sites in all browsers during focus.",
             },
             {
-              img: FEATURE_IMAGES.focus,
-              title: "Block & focus",
-              desc: "Desktop app blocks dopamine sites system-wide during Pomodoro.",
+              img: FEATURE_IMAGES.link,
+              title: "One guild link",
+              desc: "Share with friends. OKRs, habits, stakes, Guild Trust.",
             },
             {
               img: FEATURE_IMAGES.ladder,
-              title: "Weekly ladder",
-              desc: "Compete on focus XP. Co-op on the journey. Duolingo-style streaks.",
+              title: "XP & ladder",
+              desc: "45–50 min quests (flexible). Windows notifications when done.",
             },
           ].map((card, i) => (
             <div

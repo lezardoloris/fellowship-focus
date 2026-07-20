@@ -37,8 +37,8 @@ def default_config() -> dict:
         "fellowship_code": "",
         "blocked_sites": DEFAULT_BLOCKED_SITES.copy(),
         "session_minutes": 25,
-        "work_duration": 25,
-        "break_duration": 5,
+        "work_duration": 45,
+        "break_duration": 10,
         "long_break_duration": 15,
         "work_intervals": 2,
         "enable_website_blocker": True,
@@ -51,4 +51,7 @@ def default_config() -> dict:
         "okr_freelance_revenue_eur": 3000,
         "okr_revenue_current_eur": 0,
         "auto_update": True,
+        "proof_mode": "signal",
+        "proof_interval_min": 10,
+        "proof_webcam": False,
     }

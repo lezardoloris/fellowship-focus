@@ -5,6 +5,13 @@ import { nanoid } from "nanoid";
 import { calcBlockPenalty, calcSessionXp, getLeague, POINTS } from "./points";
 import { HABIT_PRESETS, HABIT_XP, calcStakeScore, monthKey, todayDate } from "./habits";
 import type { VerificationType } from "./habits";
+import {
+  type FocusProof,
+  type ProofPrivacyTier,
+  type ProofType,
+  purgeOldProofs,
+  saveProofThumb,
+} from "./proofs";
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "fellowship.db");
@@ -48,7 +55,7 @@ export type BlockEvent = {
 
 export type FeedEvent = {
   id: string;
-  type: "session" | "block" | "join" | "waypoint" | "habit" | "stake";
+  type: "session" | "block" | "join" | "waypoint" | "habit" | "stake" | "proof";
   member_name: string;
   message: string;
   created_at: string;
@@ -235,12 +242,31 @@ function initSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_checkins_habit ON habit_checkins(habit_id);
     CREATE INDEX IF NOT EXISTS idx_checkins_date ON habit_checkins(date);
     CREATE INDEX IF NOT EXISTS idx_stakes_fellowship ON stakes(fellowship_id);
+
+    CREATE TABLE IF NOT EXISTS focus_proofs (
+      id TEXT PRIMARY KEY,
+      session_id TEXT,
+      member_id TEXT NOT NULL,
+      fellowship_id TEXT NOT NULL,
+      proof_type TEXT NOT NULL,
+      privacy_tier TEXT NOT NULL DEFAULT 'signal',
+      active_app TEXT,
+      thumb_path TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id),
+      FOREIGN KEY (fellowship_id) REFERENCES fellowships(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_proofs_fellowship ON focus_proofs(fellowship_id);
+    CREATE INDEX IF NOT EXISTS idx_proofs_member ON focus_proofs(member_id);
+    CREATE INDEX IF NOT EXISTS idx_proofs_session ON focus_proofs(session_id);
   `);
   try {
     database.exec(`ALTER TABLE block_events ADD COLUMN fellowship_tax INTEGER NOT NULL DEFAULT 3`);
   } catch {
     /* column exists */
   }
+  purgeOldProofs(database);
 }
 
 function slugify(name: string): string {
@@ -327,14 +353,25 @@ export function getFellowshipTotalXp(fellowshipId: string): number {
   return Math.max(0, row.total - tax);
 }
 
+export function startFocusSession(memberId: string, fellowshipId: string): string {
+  const sessionId = nanoid();
+  getDb()
+    .prepare(
+      "INSERT INTO focus_sessions (id, member_id, fellowship_id, minutes, xp_earned, completed) VALUES (?, ?, ?, 0, 0, 0)"
+    )
+    .run(sessionId, memberId, fellowshipId);
+  return sessionId;
+}
+
 export function logSession(
   memberId: string,
   fellowshipId: string,
   minutes: number,
-  completed: boolean
+  completed: boolean,
+  existingSessionId?: string
 ): { session: FocusSession; member: Member; xpEarned: number } {
   const database = getDb();
-  const sessionId = nanoid();
+  const sessionId = existingSessionId || nanoid();
 
   const hourAgo = new Date(Date.now() - 3600000).toISOString().replace("T", " ").slice(0, 19);
   const recentBlocks = (
@@ -348,11 +385,19 @@ export function logSession(
 
   const xpEarned = calcSessionXp(minutes, completed, hadBlocks);
 
-  database
-    .prepare(
-      "INSERT INTO focus_sessions (id, member_id, fellowship_id, minutes, xp_earned, completed) VALUES (?, ?, ?, ?, ?, ?)"
-    )
-    .run(sessionId, memberId, fellowshipId, minutes, xpEarned, completed ? 1 : 0);
+  if (existingSessionId) {
+    database
+      .prepare(
+        "UPDATE focus_sessions SET minutes = ?, xp_earned = ?, completed = ? WHERE id = ? AND member_id = ?"
+      )
+      .run(minutes, xpEarned, completed ? 1 : 0, sessionId, memberId);
+  } else {
+    database
+      .prepare(
+        "INSERT INTO focus_sessions (id, member_id, fellowship_id, minutes, xp_earned, completed) VALUES (?, ?, ?, ?, ?, ?)"
+      )
+      .run(sessionId, memberId, fellowshipId, minutes, xpEarned, completed ? 1 : 0);
+  }
 
   const member = database.prepare("SELECT * FROM members WHERE id = ?").get(memberId) as Member;
   const today = new Date().toISOString().slice(0, 10);
@@ -846,4 +891,83 @@ export function evaluateStakeOutcomes(fellowshipId: string) {
 
   database.prepare("UPDATE stakes SET status = 'settled' WHERE id = ?").run(stake.id);
   return getActiveStake(fellowshipId);
+}
+
+export function addFocusProof(
+  memberId: string,
+  fellowshipId: string,
+  sessionId: string | null,
+  proofType: ProofType,
+  privacyTier: ProofPrivacyTier,
+  activeApp: string | null,
+  imageBase64?: string
+): FocusProof {
+  const database = getDb();
+  const id = nanoid();
+  let thumbPath: string | null = null;
+  if (imageBase64 && privacyTier !== "signal") {
+    thumbPath = saveProofThumb(imageBase64);
+  }
+  database
+    .prepare(
+      `INSERT INTO focus_proofs (id, session_id, member_id, fellowship_id, proof_type, privacy_tier, active_app, thumb_path)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(id, sessionId, memberId, fellowshipId, proofType, privacyTier, activeApp, thumbPath);
+
+  return database.prepare("SELECT * FROM focus_proofs WHERE id = ?").get(id) as FocusProof;
+}
+
+export type TrustMember = {
+  member_id: string;
+  name: string;
+  proof_count_7d: number;
+  screen_count_7d: number;
+  webcam_count_7d: number;
+  last_app: string | null;
+  last_proof_at: string | null;
+  trust_score: number;
+};
+
+export function getTrustLeaderboard(fellowshipId: string): TrustMember[] {
+  const database = getDb();
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().replace("T", " ").slice(0, 19);
+  const members = getMembers(fellowshipId);
+
+  return members.map((m) => {
+    const stats = database
+      .prepare(
+        `SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN proof_type = 'screen' THEN 1 ELSE 0 END) as screens,
+          SUM(CASE WHEN proof_type = 'webcam' THEN 1 ELSE 0 END) as webcams
+         FROM focus_proofs WHERE member_id = ? AND created_at >= ?`
+      )
+      .get(m.id, weekAgo) as { total: number; screens: number; webcams: number };
+
+    const last = database
+      .prepare(
+        `SELECT active_app, created_at FROM focus_proofs
+         WHERE member_id = ? ORDER BY created_at DESC LIMIT 1`
+      )
+      .get(m.id) as { active_app: string | null; created_at: string } | undefined;
+
+    const proofCount = stats?.total ?? 0;
+    const trustScore = Math.min(100, proofCount * 8 + (stats?.screens ?? 0) * 2);
+
+    return {
+      member_id: m.id,
+      name: m.name,
+      proof_count_7d: proofCount,
+      screen_count_7d: stats?.screens ?? 0,
+      webcam_count_7d: stats?.webcams ?? 0,
+      last_app: last?.active_app ?? null,
+      last_proof_at: last?.created_at ?? null,
+      trust_score: trustScore,
+    };
+  }).sort((a, b) => b.trust_score - a.trust_score);
+}
+
+export function getProofById(proofId: string): FocusProof | undefined {
+  return getDb().prepare("SELECT * FROM focus_proofs WHERE id = ?").get(proofId) as FocusProof | undefined;
 }

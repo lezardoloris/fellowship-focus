@@ -38,7 +38,9 @@ from fellowship_focus.cert_setup import install_cert_windows, is_cert_installed,
 from fellowship_focus.config import load_config, save_config
 from fellowship_focus.invite import apply_parsed_config, parse_invite_or_sync
 from fellowship_focus.constants import DEFAULT_BLOCKED_SITES
+from fellowship_focus.notifications import notify
 from fellowship_focus.pomodoro_engine import PomodoroEngine
+from fellowship_focus.proof_worker import ProofWorker
 from fellowship_focus.startup import is_startup_enabled, set_startup_enabled
 from fellowship_focus.tasks import (
     add_task,
@@ -68,6 +70,10 @@ class MainWindow(QMainWindow):
         self.task_tick.timeout.connect(self._on_task_tick)
 
         self.pomodoro = PomodoroEngine()
+        self.proof_worker = ProofWorker(lambda: self.config)
+        self.proof_worker.proof_sent.connect(lambda app: self.toasts.show("Guild Trust", f"Proof · {app}", "success", 2000))
+        self._active_session_id: str | None = None
+        self._prev_pomo_phase = PomodoroEngine.PHASE_IDLE
         self.pomodoro.tick.connect(self._on_pomo_tick)
         self.pomodoro.phase_changed.connect(self._on_pomo_phase)
         self.pomodoro.session_finished.connect(self._on_pomo_finished)
@@ -466,19 +472,28 @@ class MainWindow(QMainWindow):
         self.task_tick.start(1000)
         self.pomodoro.start_work()
         self._set_pomo_buttons(running=True)
+        api = FellowshipApi(self.config.get("api_url", ""), self.config.get("member_token", ""))
+        self._active_session_id = api.start_session()
+        if self._active_session_id:
+            self.proof_worker.start(self._active_session_id)
 
     def _pause_pomodoro(self) -> None:
         paused = self.pomodoro.pause_resume()
         self.pomo_pause_btn.setText("▶ Resume" if paused else "⏸ Pause")
         if paused:
             self.task_tick.stop()
+            self.proof_worker.stop()
             self._disable_blocker()
         elif self.pomodoro.is_work_phase:
             self.task_tick.start(1000)
+            if self._active_session_id:
+                self.proof_worker.start(self._active_session_id)
             if self.config.get("enable_website_blocker", True):
                 self._enable_blocker()
 
     def _stop_pomodoro(self) -> None:
+        self.proof_worker.stop()
+        self._active_session_id = None
         self.task_tick.stop()
         if self.selected_task_id and self.task_timer_seconds > 0:
             task = get_task(self.selected_task_id)
@@ -508,20 +523,42 @@ class MainWindow(QMainWindow):
         self.phase_label.setText(phase)
 
     def _on_pomo_phase(self, phase: str) -> None:
+        prev = self._prev_pomo_phase
+        self._prev_pomo_phase = phase
+
+        if prev == PomodoroEngine.PHASE_WORK and phase in (
+            PomodoroEngine.PHASE_BREAK,
+            PomodoroEngine.PHASE_LONG_BREAK,
+        ):
+            mins = self.config.get("work_duration", 45)
+            msg = f"{mins} min focus complete — take a break."
+            self.toasts.show("Quest interval done", msg, "success", 6000)
+            notify("Fellowship Focus", msg, getattr(self, "tray", None))
+        elif prev in (PomodoroEngine.PHASE_BREAK, PomodoroEngine.PHASE_LONG_BREAK) and phase == PomodoroEngine.PHASE_WORK:
+            msg = "Break over — distractions blocked again."
+            self.toasts.show("Back to focus", msg, "info", 5000)
+            notify("Fellowship Focus", msg, getattr(self, "tray", None))
+        elif phase == PomodoroEngine.PHASE_WORK and prev == PomodoroEngine.PHASE_IDLE:
+            mins = self.config.get("work_duration", 45)
+            notify("Fellowship Focus", f"Focus quest started — {mins} min.", getattr(self, "tray", None))
+
         if phase == PomodoroEngine.PHASE_WORK and self.config.get("enable_website_blocker", True):
             self._enable_blocker()
         else:
             self._disable_blocker()
 
     def _on_pomo_finished(self, completed: bool, work_minutes: int) -> None:
+        self.proof_worker.stop()
         self._disable_blocker()
         self._set_pomo_buttons(running=False)
         if work_minutes > 0:
             api = FellowshipApi(self.config.get("api_url", ""), self.config.get("member_token", ""))
-            result = api.log_session(work_minutes, completed)
+            result = api.log_session(work_minutes, completed, self._active_session_id)
+            self._active_session_id = None
             xp = result.get("xpEarned", 0) if result else 0
             if completed and xp:
                 self.toasts.show("Quest complete!", f"+{xp} XP earned", "success")
+                notify("Fellowship Focus", f"Session logged — +{xp} XP", getattr(self, "tray", None))
         self._refresh_journey()
 
     # ── Website Blocker ────────────────────────────────────
@@ -655,6 +692,12 @@ class MainWindow(QMainWindow):
         self.okr_revenue_current = QSpinBox()
         self.okr_revenue_current.setRange(0, 100000)
         self.okr_revenue_current.setSuffix(" €")
+        self.proof_mode_combo = QComboBox()
+        self.proof_mode_combo.addItems(["off", "signal", "blur", "full"])
+        self.proof_interval_spin = QSpinBox()
+        self.proof_interval_spin.setRange(5, 15)
+        self.proof_interval_spin.setSuffix(" min")
+        self.proof_webcam_check = QCheckBox("Optional webcam presence (blurred, once per session)")
         form.addRow("Quick connect", invite_row)
         form.addRow("API URL", self.api_url_input)
         form.addRow("Member token", self.token_input)
@@ -664,6 +707,9 @@ class MainWindow(QMainWindow):
         form.addRow("OKR habits", self.okr_habit_spin)
         form.addRow("OKR revenue target", self.okr_revenue_spin)
         form.addRow("Revenue this month", self.okr_revenue_current)
+        form.addRow("Guild Trust mode", self.proof_mode_combo)
+        form.addRow("Proof interval", self.proof_interval_spin)
+        form.addRow("", self.proof_webcam_check)
         form.addRow("", self.tray_check)
         form.addRow("", self.startup_check)
         form.addRow("", self.start_min_check)
@@ -715,6 +761,9 @@ class MainWindow(QMainWindow):
             "okr_habit_rate": self.okr_habit_spin.value(),
             "okr_freelance_revenue_eur": self.okr_revenue_spin.value(),
             "okr_revenue_current_eur": self.okr_revenue_current.value(),
+            "proof_mode": self.proof_mode_combo.currentText(),
+            "proof_interval_min": self.proof_interval_spin.value(),
+            "proof_webcam": self.proof_webcam_check.isChecked(),
         })
         save_config(self.config)
         if self.startup_check.isChecked() != is_startup_enabled():
@@ -760,8 +809,11 @@ class MainWindow(QMainWindow):
         self.okr_habit_spin.setValue(c.get("okr_habit_rate", 80))
         self.okr_revenue_spin.setValue(c.get("okr_freelance_revenue_eur", 3000))
         self.okr_revenue_current.setValue(c.get("okr_revenue_current_eur", 0))
-        self.work_spin.setValue(c.get("work_duration", 25))
-        self.break_spin.setValue(c.get("break_duration", 5))
+        self.proof_mode_combo.setCurrentText(c.get("proof_mode", "signal"))
+        self.proof_interval_spin.setValue(c.get("proof_interval_min", 10))
+        self.proof_webcam_check.setChecked(c.get("proof_webcam", False))
+        self.work_spin.setValue(c.get("work_duration", 45))
+        self.break_spin.setValue(c.get("break_duration", 10))
         self.long_break_spin.setValue(c.get("long_break_duration", 15))
         self.intervals_spin.setValue(c.get("work_intervals", 2))
         self.blocker_enabled_check.setChecked(c.get("enable_website_blocker", True))

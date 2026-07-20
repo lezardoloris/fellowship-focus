@@ -6,6 +6,7 @@ import {
   getFellowshipTotalXp,
   getFeed,
   getMembers,
+  getTrustLeaderboard,
   getWeeklyLeaderboard,
 } from "@/lib/db";
 import { getCurrentWaypoint, getNextWaypoint, getProgressToNext } from "@/lib/waypoints";
@@ -26,6 +27,7 @@ export async function GET(
     const members = getMembers(fellowship.id);
     const leaderboard = getWeeklyLeaderboard(fellowship.id);
     const habitLeaderboard = getFellowshipHabitLeaderboard(fellowship.id);
+    const trustLeaderboard = getTrustLeaderboard(fellowship.id);
     const feed = getFeed(fellowship.id);
     const currentWaypoint = getCurrentWaypoint(totalXp);
     const nextWaypoint = getNextWaypoint(totalXp);
@@ -38,6 +40,7 @@ export async function GET(
       members,
       leaderboard,
       habitLeaderboard,
+      trustLeaderboard,
       feed,
       journey: { currentWaypoint, nextWaypoint, progress },
     });

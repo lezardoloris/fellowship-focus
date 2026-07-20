@@ -1,11 +1,13 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { WAYPOINT_IMAGES } from "@/lib/assets";
 import { WAYPOINTS } from "@/lib/waypoints";
 import { HabitTracker } from "@/components/HabitTracker";
 import { StakesPanel } from "@/components/StakesPanel";
+import { TrustPanel } from "@/components/TrustPanel";
 
 type FellowshipData = {
   fellowship: { id: string; code: string; name: string };
@@ -30,6 +32,16 @@ type FellowshipData = {
     total_achieved: number;
     completion_rate: number;
     stake_score: number;
+  }>;
+  trustLeaderboard: Array<{
+    member_id: string;
+    name: string;
+    proof_count_7d: number;
+    screen_count_7d: number;
+    webcam_count_7d: number;
+    last_app: string | null;
+    last_proof_at: string | null;
+    trust_score: number;
   }>;
   feed: Array<{ id: string; type: string; member_name: string; message: string; created_at: string }>;
   journey: {
@@ -133,8 +145,9 @@ export function FellowshipDashboard({ code }: { code: string }) {
     );
   }
 
-  const { fellowship, totalXp, stats, leaderboard, habitLeaderboard, feed, journey } = data;
+  const { fellowship, totalXp, stats, leaderboard, habitLeaderboard, trustLeaderboard, feed, journey } = data;
   const memberNames = Object.fromEntries(data.members.map((m) => [m.id, m.name]));
+  const myMemberId = myToken ? data.members.find((m) => m.token === myToken)?.id : undefined;
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/f/${code}` : `/f/${code}`;
   const wpImage = WAYPOINT_IMAGES[journey.currentWaypoint.id] ?? "/assets/journey-map.jpg";
 
@@ -157,7 +170,10 @@ export function FellowshipDashboard({ code }: { code: string }) {
 
       <div className="mx-auto max-w-6xl px-4 py-8 md:px-8">
         <div className="mb-8 flex flex-wrap gap-3">
-          <button onClick={copyLink} className="btn-primary">
+          <Link href="/download" className="btn-primary">
+            Download Windows app
+          </Link>
+          <button onClick={copyLink} className="btn-secondary">
             {copied ? "✓ Link copied" : "Copy invite link"}
           </button>
           {myToken && (
@@ -298,6 +314,10 @@ export function FellowshipDashboard({ code }: { code: string }) {
               <StakesPanel token={myToken} fellowshipCode={code} memberNames={memberNames} />
             </div>
           )}
+        </div>
+
+        <div className="mb-8">
+          <TrustPanel members={trustLeaderboard ?? []} myId={myMemberId} />
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
