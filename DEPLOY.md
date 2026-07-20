@@ -18,14 +18,9 @@ Redeploy. Railpack detects Next.js automatically.
 
 ### Option B — Build from repo root
 
-A root `package.json` + `railway.toml` delegate build/start to `web/`:
+Root `package.json` + `railway.toml` delegate build/start to `web/` (no Root Directory change).
 
-```bash
-npm ci --prefix web && npm run build --prefix web
-npm run start --prefix web
-```
-
-No root directory change needed.
+**Do not** override Railpack `install` steps in `railpack.json` — that skips copying `package.json` into the image.
 
 ## Environment variables
 

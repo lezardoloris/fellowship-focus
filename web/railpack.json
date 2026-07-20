@@ -4,14 +4,6 @@
     "node": "22"
   },
   "buildAptPackages": ["python3", "make", "g++"],
-  "steps": {
-    "install": {
-      "commands": ["npm install"]
-    },
-    "build": {
-      "commands": ["npm run build"]
-    }
-  },
   "deploy": {
     "startCommand": "npm start"
   }
