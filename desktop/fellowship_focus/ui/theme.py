@@ -7,6 +7,21 @@ from PySide6.QtGui import QFont, QFontDatabase
 ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
 FONTS_DIR = ASSETS_DIR / "fonts"
 
+APP_ICON_CANDIDATES = (
+    "fellowship.ico",
+    "app-icon.png",
+    "shield-logo.png",
+    "fellowship.jpg",
+)
+
+
+def resolve_app_icon_path() -> Path | None:
+    for name in APP_ICON_CANDIDATES:
+        path = ASSETS_DIR / name
+        if path.exists():
+            return path
+    return None
+
 # Heritage semantic tokens (system/tokens.dark.json)
 BG = "#1a1c1e"
 BG_SURFACE = "#242628"
@@ -217,10 +232,39 @@ QWidget#heroBanner {{
     background: {BG_SURFACE};
     border-bottom: 1px solid {BORDER};
 }}
-QWidget#shieldToggleCard {{
+QWidget#shieldHeroCard {{
     background: {BG_SURFACE};
     border: 1px solid {BORDER};
     border-radius: 10px;
+}}
+QPushButton#presetChip {{
+    background: {BG_ELEVATED};
+    border: 1px solid {BORDER};
+    border-radius: 999px;
+    padding: 8px 20px;
+    color: {MUTED};
+    font-size: 13px;
+    font-weight: 600;
+}}
+QPushButton#presetChip:hover {{
+    border-color: {MUTED};
+    color: {FG};
+}}
+QPushButton#presetChip:checked {{
+    background: rgba(184, 66, 46, 0.18);
+    border-color: {ACCENT};
+    color: {FG};
+}}
+QPushButton#linkBtn {{
+    background: transparent;
+    border: none;
+    color: {ACCENT_HOVER};
+    padding: 2px 8px;
+    font-size: 12px;
+    text-decoration: underline;
+}}
+QPushButton#linkBtn:hover {{
+    color: {FG};
 }}
 QPushButton {{
     background: {BG_ELEVATED};

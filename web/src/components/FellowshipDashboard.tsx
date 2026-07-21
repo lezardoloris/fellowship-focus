@@ -8,6 +8,7 @@ import { WAYPOINTS } from "@/lib/waypoints";
 import { HabitTracker } from "@/components/HabitTracker";
 import { StakesPanel } from "@/components/StakesPanel";
 import { TrustPanel } from "@/components/TrustPanel";
+import { AgendaPanel } from "@/components/AgendaPanel";
 
 type FellowshipData = {
   fellowship: { id: string; code: string; name: string; blocker_bypass_penalty?: number };
@@ -218,6 +219,12 @@ export function FellowshipDashboard({ code }: { code: string }) {
             </div>
           ))}
         </div>
+
+        {myToken && (
+          <div className="mb-8">
+            <AgendaPanel token={myToken} />
+          </div>
+        )}
 
         <div className="glass-card mb-8 overflow-hidden p-0">
           <div className="relative h-40 w-full">

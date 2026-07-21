@@ -4,6 +4,8 @@
 import sys
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_all
+
 block_cipher = None
 root = Path(SPECPATH)
 
@@ -24,6 +26,7 @@ hiddenimports = [
     "win10toast",
     "PySide6.QtWebEngineWidgets",
     "PySide6.QtWebEngineCore",
+    "PySide6.QtMultimedia",
     "fellowship_focus",
     "fellowship_focus.ui.main_window",
     "fellowship_focus.blocker.manager",
@@ -38,11 +41,24 @@ datas = [
     (str(root / "packaging" / "WINDOWS-README.txt"), "."),
     (str(root / "packaging" / "Start-Fellowship-Focus.bat"), "."),
 ]
+binaries = []
+
+# Bundle heavy dependency trees (esp. mitmproxy data files) PyInstaller misses.
+# These must be gathered BEFORE Analysis so their TOCs get normalized with the
+# rest; appending raw collect_all() tuples to a.datas afterward breaks COLLECT.
+for pkg in ("mitmproxy", "certifi", "psutil", "mss", "cv2"):
+    try:
+        pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
+        datas += pkg_datas
+        binaries += pkg_binaries
+        hiddenimports += pkg_hidden
+    except Exception:
+        pass
 
 a = Analysis(
     [str(root / "main.py")],
     pathex=[str(root)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -54,16 +70,6 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
-
-# Bundle heavy dependency trees PyInstaller often misses.
-for pkg in ("mitmproxy", "certifi", "psutil", "mss", "cv2"):
-    try:
-        tmp = collect_all(pkg)
-        a.datas += tmp[0]
-        a.binaries += tmp[1]
-        a.hiddenimports += tmp[2]
-    except Exception:
-        pass
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

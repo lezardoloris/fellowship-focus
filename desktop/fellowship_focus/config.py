@@ -19,9 +19,33 @@ def load_config() -> dict:
             if site not in sites:
                 sites.append(site)
         merged["blocked_sites"] = sites
+        merged["member_name"] = _repair_member_name(merged)
         return merged
     except Exception:
         return default_config()
+
+
+def _repair_member_name(config: dict) -> str:
+    """Heal configs where an invite link or sync JSON was pasted into the name field."""
+    name = str(config.get("member_name") or "").strip()
+    if not name:
+        return ""
+    if name.startswith("{"):
+        try:
+            payload = json.loads(name)
+        except json.JSONDecodeError:
+            return ""
+        if isinstance(payload, dict):
+            # Recover the real values that were buried in the pasted blob.
+            for src, dest in (("apiUrl", "api_url"), ("code", "fellowship_code"), ("token", "member_token")):
+                value = str(payload.get(src) or "").strip()
+                if value and not str(config.get(dest) or "").strip():
+                    config[dest] = value.rstrip("/") if dest == "api_url" else value
+            return str(payload.get("name") or "").strip()[:40]
+        return ""
+    if "://" in name:
+        return ""
+    return name[:40]
 
 
 def save_config(config: dict) -> None:
@@ -52,10 +76,16 @@ def default_config() -> dict:
         "start_minimized": True,
         "okr_weekly_focus_hours": 20,
         "okr_habit_rate": 80,
+        "okr_focus_score": 70,
         "okr_freelance_revenue_eur": 3000,
         "okr_revenue_current_eur": 0,
         "auto_update": True,
         "proof_mode": "signal",
         "proof_interval_min": 10,
         "proof_webcam": False,
+        "focus_music_enabled": True,
+        "focus_music_volume": 0.5,
+        "focus_music_track": "",
+        "screen_time_enabled": True,
+        "usage_categories": {},
     }

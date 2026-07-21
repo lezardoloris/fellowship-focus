@@ -23,10 +23,33 @@ jobs:
         working-directory: desktop
         shell: pwsh
         run: |
-          pip install -r requirements.txt pyinstaller>=6.0
+          pip install -r requirements.txt pyinstaller>=6.0 pytest
           python scripts/download_fonts.py
+          python scripts/build_icon.py
           python scripts/generate_placeholders.py
           pyinstaller --noconfirm FellowshipFocus.spec
+
+      - name: Unit tests
+        working-directory: desktop
+        shell: pwsh
+        run: python -m pytest tests -q
+
+      - name: Smoke test bundle
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $exe = "dist/FellowshipFocus/FellowshipFocus.exe"
+          if (-not (Test-Path $exe)) { throw "Smoke test FAILED: $exe not found." }
+          & $exe --run-proxy --version
+          if ($LASTEXITCODE -ne 0) { throw "Smoke test FAILED: embedded mitmproxy engine not reachable (exit $LASTEXITCODE)." }
+          $blockCandidates = @(
+            "dist/FellowshipFocus/_internal/fellowship_focus/blocker/block.py",
+            "dist/FellowshipFocus/fellowship_focus/blocker/block.py"
+          )
+          if (-not ($blockCandidates | Where-Object { Test-Path $_ })) {
+            throw "Smoke test FAILED: block.py not bundled. Checked: $($blockCandidates -join ', ')"
+          }
+          Write-Host "Smoke tests passed."
 
       - name: Zip artifact
         working-directory: desktop/dist

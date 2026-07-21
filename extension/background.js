@@ -1,129 +1,355 @@
-const BLOCK_RULES_ID = "blocklist";
+/* Fellowship Focus — MV3 background service worker.
+   Blocks distracting sites via declarativeNetRequest, runs focus sessions,
+   syncs the block list from the web app, and logs blocks/sessions to the guild. */
 
-const BLOCKED_DOMAINS = [
-  "twitter.com",
-  "x.com",
-  "reddit.com",
-  "old.reddit.com",
-  "youtube.com",
-  "youtu.be",
-  "m.youtube.com",
-  "music.youtube.com",
-  "instagram.com",
-  "facebook.com",
-  "fb.com",
-  "m.facebook.com",
-  "tiktok.com",
-  "threads.net",
-  "snapchat.com",
-  "pinterest.com",
-  "tumblr.com",
-  "linkedin.com",
-  "twitch.tv",
-  "discord.com",
-  "netflix.com",
-  "disneyplus.com",
-  "primevideo.com",
-  "hulu.com",
-  "crunchyroll.com",
-  "pornhub.com",
-  "xvideos.com",
-  "xnxx.com",
-  "redtube.com",
-  "onlyfans.com",
-  "chaturbate.com",
+const DEFAULT_SITES = [
+  "x.com", "twitter.com", "facebook.com", "instagram.com", "reddit.com",
+  "tiktok.com", "youtube.com", "netflix.com", "twitch.tv",
 ];
 
-async function enableBlocking() {
-  await chrome.declarativeNetRequest.updateEnabledRulesets({
-    enableRulesetIds: [BLOCK_RULES_ID],
-    disableRulesetIds: [],
-  });
+const DEFAULTS = {
+  apiUrl: "",
+  token: "",
+  code: "",
+  name: "",
+  manualShield: false,
+  sites: DEFAULT_SITES.slice(),
+  prefs: { focus_min: 25, break_min: 5, cycles: 4 },
+  focus: null, // { phase, cycle, endsAt }
+  stats: { date: today(), blocks: 0, focusMinutes: 0 },
+};
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-async function disableBlocking() {
-  await chrome.declarativeNetRequest.updateEnabledRulesets({
-    enableRulesetIds: [],
-    disableRulesetIds: [BLOCK_RULES_ID],
-  });
+async function getConfig() {
+  const { config } = await chrome.storage.local.get("config");
+  const merged = { ...DEFAULTS, ...(config || {}) };
+  merged.prefs = { ...DEFAULTS.prefs, ...(config?.prefs || {}) };
+  merged.stats = { ...DEFAULTS.stats, ...(config?.stats || {}) };
+  if (merged.stats.date !== today()) merged.stats = { date: today(), blocks: 0, focusMinutes: 0 };
+  return merged;
 }
 
-function isBlockedUrl(url) {
+async function setConfig(patch) {
+  const current = await getConfig();
+  const next = { ...current, ...patch };
+  await chrome.storage.local.set({ config: next });
+  return next;
+}
+
+function effectiveShield(cfg) {
+  return cfg.manualShield || !!cfg.focus;
+}
+
+// ── declarativeNetRequest rules ─────────────────────────
+
+function ruleForDomain(domain, id) {
+  return {
+    id,
+    priority: 1,
+    action: {
+      type: "redirect",
+      redirect: { extensionPath: "/block.html?d=" + encodeURIComponent(domain) },
+    },
+    condition: {
+      urlFilter: "||" + domain + "^",
+      resourceTypes: ["main_frame"],
+    },
+  };
+}
+
+async function rebuildRules() {
+  const cfg = await getConfig();
+  const existing = await chrome.declarativeNetRequest.getDynamicRules();
+  const removeRuleIds = existing.map((r) => r.id);
+
+  let addRules = [];
+  if (effectiveShield(cfg)) {
+    addRules = cfg.sites
+      .filter(Boolean)
+      .slice(0, 4000)
+      .map((site, i) => ruleForDomain(site, i + 1));
+  }
+  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
+  updateBadge(cfg);
+}
+
+function updateBadge(cfg) {
+  const on = effectiveShield(cfg);
+  chrome.action.setBadgeText({ text: on ? (cfg.focus ? "◕" : "on") : "" });
+  chrome.action.setBadgeBackgroundColor({ color: cfg.focus ? "#b8422e" : "#2d6a4f" });
+}
+
+// ── Remote sync (web app is the source of truth when connected) ──
+
+async function syncRemote() {
+  const cfg = await getConfig();
+  if (!cfg.apiUrl || !cfg.token) return cfg;
   try {
-    const host = new URL(url).hostname.replace(/^www\./, "");
-    return BLOCKED_DOMAINS.some((d) => host === d || host.endsWith("." + d));
-  } catch {
-    return false;
+    const base = cfg.apiUrl.replace(/\/$/, "");
+    const [blRes, pfRes] = await Promise.all([
+      fetch(`${base}/api/blocklist?token=${encodeURIComponent(cfg.token)}`),
+      fetch(`${base}/api/prefs?token=${encodeURIComponent(cfg.token)}`),
+    ]);
+    const patch = {};
+    if (blRes.ok) {
+      const { sites } = await blRes.json();
+      if (Array.isArray(sites) && sites.length) {
+        patch.sites = sites.map((s) => s.site).filter(Boolean);
+      }
+    }
+    if (pfRes.ok) {
+      const { prefs } = await pfRes.json();
+      if (prefs) patch.prefs = { focus_min: prefs.focus_min, break_min: prefs.break_min, cycles: prefs.cycles };
+    }
+    if (Object.keys(patch).length) await setConfig(patch);
+  } catch (e) {
+    /* offline — keep local list */
+  }
+  return getConfig();
+}
+
+// ── Focus sessions ───────────────────────────────────────
+
+async function startFocus() {
+  const cfg = await getConfig();
+  const endsAt = Date.now() + cfg.prefs.focus_min * 60000;
+  await setConfig({ focus: { phase: "focus", cycle: 1, endsAt } });
+  await chrome.alarms.create("focus", { when: endsAt });
+  await rebuildRules();
+}
+
+async function stopFocus() {
+  await chrome.alarms.clear("focus");
+  await setConfig({ focus: null });
+  await rebuildRules();
+}
+
+async function onFocusAlarm() {
+  const cfg = await getConfig();
+  if (!cfg.focus) return;
+  const { phase, cycle } = cfg.focus;
+
+  if (phase === "focus") {
+    await logSession(cfg);
+    const mins = (await getConfig()).stats.focusMinutes + cfg.prefs.focus_min;
+    await setConfig({ stats: { ...cfg.stats, focusMinutes: mins } });
+    if (cycle >= cfg.prefs.cycles) {
+      await stopFocus();
+      notify("Focus complete", `${cfg.prefs.cycles} cycles done. Well fought.`);
+      return;
+    }
+    const endsAt = Date.now() + cfg.prefs.break_min * 60000;
+    await setConfig({ focus: { phase: "break", cycle, endsAt } });
+    await chrome.alarms.create("focus", { when: endsAt });
+    notify("Break", `${cfg.prefs.break_min} min. Sites stay blocked.`);
+  } else {
+    const endsAt = Date.now() + cfg.prefs.focus_min * 60000;
+    await setConfig({ focus: { phase: "focus", cycle: cycle + 1, endsAt } });
+    await chrome.alarms.create("focus", { when: endsAt });
+    notify("Back to focus", `Cycle ${cycle + 1}/${cfg.prefs.cycles}.`);
+  }
+  await rebuildRules();
+}
+
+async function logSession(cfg) {
+  if (!cfg.apiUrl || !cfg.token) return;
+  try {
+    await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/api/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: cfg.token, minutes: cfg.prefs.focus_min, completed: true }),
+    });
+  } catch (e) {
+    /* ignore */
   }
 }
 
-const recentBlocks = new Set();
+// ── Block logging (called by the block page when shown) ──
 
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status !== "loading" || !tab.url) return;
-  const { sessionActive, token, apiUrl } = await chrome.storage.local.get([
-    "sessionActive",
-    "token",
-    "apiUrl",
-  ]);
-  if (!sessionActive || !token || !apiUrl) return;
-  if (!isBlockedUrl(tab.url)) return;
+async function reportBlock(domain) {
+  const cfg = await getConfig();
+  const stats = cfg.stats.date === today()
+    ? { ...cfg.stats, blocks: cfg.stats.blocks + 1 }
+    : { date: today(), blocks: 1, focusMinutes: 0 };
+  await setConfig({ stats });
+  if (cfg.apiUrl && cfg.token && domain) {
+    try {
+      await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/api/blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cfg.token, site: domain }),
+      });
+    } catch (e) {
+      /* ignore */
+    }
+  }
+}
 
-  const host = new URL(tab.url).hostname;
-  const key = `${host}-${Math.floor(Date.now() / 30000)}`;
-  if (recentBlocks.has(key)) return;
-  recentBlocks.add(key);
-  setTimeout(() => recentBlocks.delete(key), 30000);
+function notify(title, message) {
+  // Notifications permission is optional; guard it.
+  try {
+    if (chrome.notifications) {
+      chrome.notifications.create({
+        type: "basic",
+        iconUrl: "icons/icon128.png",
+        title,
+        message,
+      });
+    }
+  } catch (e) {
+    /* ignore */
+  }
+}
 
-  await fetch(`${apiUrl}/api/blocks`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token, site: host }),
-  }).catch(() => {});
+// ── Connect / list management ────────────────────────────
+
+async function connect(payload) {
+  let data = payload;
+  if (typeof payload === "string") {
+    data = JSON.parse(payload);
+  }
+  await setConfig({
+    apiUrl: (data.apiUrl || "").replace(/\/$/, ""),
+    token: data.token || "",
+    code: data.code || "",
+    name: data.name || "",
+  });
+  await syncRemote();
+  await rebuildRules();
+  return getConfig();
+}
+
+async function addSite(site) {
+  const cfg = await getConfig();
+  const clean = normalizeSite(site);
+  if (!clean) return cfg;
+  if (cfg.apiUrl && cfg.token) {
+    try {
+      const res = await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/api/blocklist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cfg.token, action: "add", sites: [clean], category: "custom" }),
+      });
+      if (res.ok) {
+        const { sites } = await res.json();
+        await setConfig({ sites: sites.map((s) => s.site) });
+        await rebuildRules();
+        return getConfig();
+      }
+    } catch (e) {
+      /* fall through to local */
+    }
+  }
+  if (!cfg.sites.includes(clean)) {
+    await setConfig({ sites: [...cfg.sites, clean] });
+    await rebuildRules();
+  }
+  return getConfig();
+}
+
+async function removeSite(site) {
+  const cfg = await getConfig();
+  const clean = normalizeSite(site);
+  if (cfg.apiUrl && cfg.token) {
+    try {
+      const res = await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/api/blocklist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cfg.token, action: "remove", site: clean }),
+      });
+      if (res.ok) {
+        const { sites } = await res.json();
+        await setConfig({ sites: sites.map((s) => s.site) });
+        await rebuildRules();
+        return getConfig();
+      }
+    } catch (e) {
+      /* fall through */
+    }
+  }
+  await setConfig({ sites: cfg.sites.filter((s) => s !== clean) });
+  await rebuildRules();
+  return getConfig();
+}
+
+function normalizeSite(site) {
+  return String(site || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/.*$/, "")
+    .slice(0, 120);
+}
+
+// ── Wiring ───────────────────────────────────────────────
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await getConfig();
+  await rebuildRules();
+  chrome.alarms.create("sync", { periodInMinutes: 15 });
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type === "ENABLE_BLOCKING") {
-    enableBlocking().then(() => sendResponse({ ok: true }));
-    return true;
-  }
-  if (message.type === "DISABLE_BLOCKING") {
-    disableBlocking().then(() => sendResponse({ ok: true }));
-    return true;
-  }
-  if (message.type === "COMPLETE_SESSION") {
-    completeSession(message.minutes, message.completed).then(() => sendResponse({ ok: true }));
-    return true;
-  }
+chrome.runtime.onStartup.addListener(async () => {
+  await rebuildRules();
+  chrome.alarms.create("sync", { periodInMinutes: 15 });
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === "focus-timer") {
-    const data = await chrome.storage.local.get([
-      "endTime",
-      "sessionActive",
-      "durationMinutes",
-    ]);
-    if (!data.sessionActive) return;
-    if (data.endTime - Date.now() <= 0) {
-      await completeSession(data.durationMinutes, true);
-    }
+  if (alarm.name === "focus") await onFocusAlarm();
+  else if (alarm.name === "sync") {
+    await syncRemote();
+    await rebuildRules();
   }
 });
 
-async function completeSession(minutes, completed) {
-  const { token, apiUrl } = await chrome.storage.local.get(["token", "apiUrl"]);
-  await disableBlocking();
-  await chrome.storage.local.set({ sessionActive: false, endTime: null });
-  chrome.alarms.clear("focus-timer");
-
-  if (token && apiUrl) {
-    await fetch(`${apiUrl}/api/sessions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, minutes, completed }),
-    }).catch(() => {});
-  }
-
-  chrome.action.setBadgeText({ text: "" });
-}
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  (async () => {
+    switch (msg?.type) {
+      case "getState":
+        sendResponse({ config: await getConfig() });
+        break;
+      case "setShield":
+        await setConfig({ manualShield: !!msg.on });
+        await rebuildRules();
+        sendResponse({ config: await getConfig() });
+        break;
+      case "startFocus":
+        await startFocus();
+        sendResponse({ config: await getConfig() });
+        break;
+      case "stopFocus":
+        await stopFocus();
+        sendResponse({ config: await getConfig() });
+        break;
+      case "connect":
+        sendResponse({ config: await connect(msg.payload) });
+        break;
+      case "disconnect":
+        await setConfig({ apiUrl: "", token: "", code: "", name: "" });
+        sendResponse({ config: await getConfig() });
+        break;
+      case "addSite":
+        sendResponse({ config: await addSite(msg.site) });
+        break;
+      case "removeSite":
+        sendResponse({ config: await removeSite(msg.site) });
+        break;
+      case "refresh":
+        await syncRemote();
+        await rebuildRules();
+        sendResponse({ config: await getConfig() });
+        break;
+      case "reportBlock":
+        await reportBlock(msg.domain);
+        sendResponse({ ok: true });
+        break;
+      default:
+        sendResponse({ error: "unknown" });
+    }
+  })();
+  return true; // async
+});

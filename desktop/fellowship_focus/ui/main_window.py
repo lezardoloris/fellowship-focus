@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSpinBox,
     QStackedWidget,
@@ -29,15 +30,16 @@ from PySide6.QtWidgets import (
 from fellowship_focus.activity_tracker import ActivityTracker
 from fellowship_focus.api_client import FellowshipApi
 from fellowship_focus.blocker.manager import (
-    find_mitmdump,
+    force_release_blocker,
+    is_mitmdump_running,
+    proxy_engine_available,
     set_system_proxy,
-    shutdown_mitmdump_gracefully,
     start_mitmdump,
 )
 from fellowship_focus.cert_setup import install_cert_windows, is_cert_installed, is_cert_generated
 from fellowship_focus.config import load_config, save_config
 from fellowship_focus.invite import apply_parsed_config, parse_invite_or_sync
-from fellowship_focus.constants import DEFAULT_BLOCKED_SITES, DEFAULT_PATH_RULES, DEFAULT_REDIRECTS, HARD_HOSTS_OPTIONAL
+from fellowship_focus.constants import DEFAULT_BLOCKED_SITES, DEFAULT_REDIRECTS, effective_block_lists
 from fellowship_focus.notifications import (
     notify,
     notify_back_to_focus,
@@ -58,19 +60,22 @@ from fellowship_focus.tasks import (
     update_task,
 )
 from fellowship_focus.ui.components import (
-    BlockerIdentityPanel,
     FocusRing,
     GlassCard,
+    MiniShieldToggle,
     NavSidebar,
     PageHeader,
     PageScaffold,
-    ShieldToggle,
+    ShieldHeroCard,
     StatusPill,
 )
 from fellowship_focus.ui.dashboard import DashboardPage
-from fellowship_focus.ui.theme import ASSETS_DIR, app_stylesheet, font_sans, load_fonts
+from fellowship_focus.ui.music_player import FocusMusicPlayer
+from fellowship_focus.ui.theme import ASSETS_DIR, app_stylesheet, font_sans, load_fonts, resolve_app_icon_path
 from fellowship_focus.ui.toast import ToastManager
+from fellowship_focus.ui.usage_page import UsagePage
 from fellowship_focus.ui.web_dashboard import WebDashboardPage
+from fellowship_focus.usage_tracker import UsageTracker, focus_score
 from fellowship_focus.updater import apply_git_update, check_for_updates
 from fellowship_focus.version import APP_VERSION
 
@@ -81,6 +86,9 @@ class MainWindow(QMainWindow):
         self.config = load_config()
         self.mitm_process = None
         self.blocker_active = False
+        self._wizard_running = False
+        self._cert_ok = is_cert_installed()
+        force_release_blocker()
         self.selected_task_id: str | None = None
         self.task_timer_seconds = 0
         self.task_tick = QTimer()
@@ -103,11 +111,9 @@ class MainWindow(QMainWindow):
         load_fonts()
         self.setStyleSheet(app_stylesheet())
         self.setFont(font_sans())
-        for icon_name in ("fellowship.ico", "app-icon.png", "fellowship.jpg"):
-            icon_file = ASSETS_DIR / icon_name
-            if icon_file.exists():
-                self.setWindowIcon(QIcon(str(icon_file)))
-                break
+        icon_file = resolve_app_icon_path()
+        if icon_file:
+            self.setWindowIcon(QIcon(str(icon_file)))
 
         self.toasts = ToastManager(self)
         self._fellowship_cache: dict | None = None
@@ -154,6 +160,14 @@ class MainWindow(QMainWindow):
             lambda: self.config,
             self._open_dashboard,
             self._on_web_config_updated,
+            blocker_api={
+                "state": self._web_blocker_state,
+                "set_shield": self._web_set_shield,
+                "add_sites": self._web_add_sites,
+                "remove_site": self._web_remove_site,
+                "weekly_stats": self._web_weekly_stats,
+                "set_okr": self._web_set_okr,
+            },
         )
         self.stack.addWidget(self.web_dashboard)
         self.dashboard_page = DashboardPage(self._go_pomodoro, self._open_dashboard)
@@ -163,19 +177,25 @@ class MainWindow(QMainWindow):
         self._build_blocker_page()
         self._build_fellowship_page()
 
+        self.usage_tracker = UsageTracker(lambda: self.config)
+        self.usage_page = UsagePage(self.usage_tracker, self.config, save_config)
+        self.stack.addWidget(self.usage_page)
+        if bool(self.config.get("screen_time_enabled", True)):
+            self.usage_tracker.start()
+
         self._init_tray()
         self._load_config_to_ui()
         self._refresh_tasks()
         self.sidebar.set_current(0)
         self._update_chrome_status()
 
-        if not is_cert_installed():
+        if not self._cert_ok:
             self.sidebar.set_current(4)
             QTimer.singleShot(
                 800,
                 lambda: self.toasts.show(
-                    "Certificate needed",
-                    "Install once in Blocker tab — then blocking works forever.",
+                    "One-time setup",
+                    "Click Activate Shield — takes about 15 seconds, once.",
                     "warning",
                 ),
             )
@@ -197,6 +217,10 @@ class MainWindow(QMainWindow):
         self._sync_timer.timeout.connect(self._refresh_journey)
         self._sync_timer.start(30000)
 
+        self._usage_sync_timer = QTimer(self)
+        self._usage_sync_timer.timeout.connect(self._sync_usage)
+        self._usage_sync_timer.start(300000)
+
         QTimer.singleShot(2000, self._check_updates_silent)
         QTimer.singleShot(500, self.web_dashboard.reload_dashboard)
 
@@ -217,6 +241,10 @@ class MainWindow(QMainWindow):
     def _update_chrome_status(self) -> None:
         code = self.config.get("fellowship_code", "")
         name = self.config.get("member_name", "")
+        # Older configs stored a pasted invite blob here; never render it.
+        if name.startswith("{") or "://" in name:
+            name = ""
+        name = name[:40]
         if code and name:
             self._style_pill(self.status_guild, "active", f"{name} · {code}")
         elif code:
@@ -226,10 +254,10 @@ class MainWindow(QMainWindow):
 
         if self.blocker_active:
             self._style_pill(self.status_blocker, "active", "Shield active")
-        elif not is_cert_installed():
-            self._style_pill(self.status_blocker, "warn", "Cert needed")
+        elif not self._cert_ok:
+            self._style_pill(self.status_blocker, "warn", "Setup needed")
         else:
-            self._style_pill(self.status_blocker, "neutral", "Blocker standby")
+            self._style_pill(self.status_blocker, "neutral", "Shield standby")
         self.sidebar.set_status(f"v{APP_VERSION}")
 
     def _check_updates_silent(self) -> None:
@@ -424,6 +452,12 @@ class MainWindow(QMainWindow):
         for b in [self.pomo_start_btn, self.pomo_pause_btn, self.pomo_stop_btn, self.pomo_skip_btn]:
             btn_row.addWidget(b)
         left.addLayout(btn_row)
+
+        self.focus_shield = MiniShieldToggle()
+        self.focus_shield.setting_changed.connect(self._on_shield_setting_changed)
+        self.focus_shield.arm_requested.connect(self._on_shield_arm)
+        self.focus_shield.disarm_requested.connect(self._on_shield_disarm)
+        left.addWidget(self.focus_shield)
         root.addLayout(left, 3)
 
         settings_card = GlassCard()
@@ -452,7 +486,15 @@ class MainWindow(QMainWindow):
         save_pomo.clicked.connect(self._save_pomo_settings)
         settings_layout.addWidget(save_pomo)
         settings_layout.addStretch()
-        root.addWidget(settings_card, 1)
+
+        right = QVBoxLayout()
+        right.setSpacing(20)
+        right.addWidget(settings_card)
+        self.music_player = FocusMusicPlayer(self.config, save_config)
+        self.music_player.setFixedWidth(300)
+        right.addWidget(self.music_player)
+        right.addStretch()
+        root.addLayout(right, 1)
 
         self.stack.addWidget(page)
         self._sync_focus_ring("45:00", "Ready", 1.0, False)
@@ -491,6 +533,7 @@ class MainWindow(QMainWindow):
         if self._active_session_id:
             self.proof_worker.start(self._active_session_id)
         self.activity.start()
+        self.music_player.on_focus_start()
 
     def _pause_pomodoro(self) -> None:
         paused = self.pomodoro.pause_resume()
@@ -499,12 +542,14 @@ class MainWindow(QMainWindow):
             self.task_tick.stop()
             self.proof_worker.stop()
             self._disable_blocker()
+            self.music_player.on_pause()
         elif self.pomodoro.is_work_phase:
             self.task_tick.start(1000)
             if self._active_session_id:
                 self.proof_worker.start(self._active_session_id)
             if self.config.get("enable_website_blocker", True):
                 self._enable_blocker()
+            self.music_player.on_resume()
 
     def _stop_pomodoro(self) -> None:
         self.proof_worker.stop()
@@ -522,6 +567,7 @@ class MainWindow(QMainWindow):
                 self._refresh_tasks()
         self.pomodoro.stop()
         self._disable_blocker()
+        self.music_player.on_session_end()
         self._set_pomo_buttons(running=False)
         self._sync_focus_ring(f"{self.work_spin.value():02d}:00", "Ready", 1.0, False)
 
@@ -564,10 +610,12 @@ class MainWindow(QMainWindow):
             msg = f"{mins} min focus complete — take a break."
             self.toasts.show("Quest interval done", msg, "success", 6000)
             notify_break(msg, getattr(self, "tray", None))
+            self.music_player.on_break()
         elif prev in (PomodoroEngine.PHASE_BREAK, PomodoroEngine.PHASE_LONG_BREAK) and phase == PomodoroEngine.PHASE_WORK:
             msg = "Break over — distractions blocked again."
             self.toasts.show("Back to focus", msg, "info", 5000)
             notify_back_to_focus(getattr(self, "tray", None))
+            self.music_player.on_focus_start()
         elif phase == PomodoroEngine.PHASE_WORK and prev == PomodoroEngine.PHASE_IDLE:
             mins = self.config.get("work_duration", 45)
             notify_focus_started(mins, getattr(self, "tray", None), self._dashboard_url())
@@ -581,6 +629,7 @@ class MainWindow(QMainWindow):
         self.proof_worker.stop()
         activity_score = self.activity.stop()
         self._disable_blocker()
+        self.music_player.on_session_end()
         self._set_pomo_buttons(running=False)
         self._blocker_on_for_session = False
         if work_minutes > 0:
@@ -602,69 +651,89 @@ class MainWindow(QMainWindow):
 
         scaffold = PageScaffold()
 
-        scaffold.add(BlockerIdentityPanel())
+        self.shield_hero = ShieldHeroCard()
+        self.shield_hero.setting_changed.connect(self._on_shield_setting_changed)
+        self.shield_hero.arm_requested.connect(self._on_shield_arm)
+        self.shield_hero.disarm_requested.connect(self._on_shield_disarm)
+        self.shield_hero.pause_requested.connect(self._pause_blocker_timed)
+        scaffold.add(self.shield_hero)
 
-        self.shield_toggle = ShieldToggle()
-        self.shield_toggle.setting_changed.connect(self._on_shield_setting_changed)
-        self.shield_toggle.arm_requested.connect(self._on_shield_arm)
-        self.shield_toggle.disarm_requested.connect(self._on_shield_disarm)
-        scaffold.add(self.shield_toggle)
+        # One-time setup — visible only until the certificate is ready
+        self.setup_card = GlassCard()
+        setup_layout = QVBoxLayout(self.setup_card)
+        setup_layout.setContentsMargins(20, 18, 20, 18)
+        setup_layout.addWidget(PageHeader("One-time setup", "One click — about 15 seconds, then permanent"))
+        self.setup_info = QLabel("")
+        self.setup_info.setObjectName("mutedLabel")
+        self.setup_info.setWordWrap(True)
+        setup_layout.addWidget(self.setup_info)
+        self.setup_progress = QProgressBar()
+        self.setup_progress.setRange(0, 3)
+        self.setup_progress.setValue(0)
+        self.setup_progress.setTextVisible(False)
+        self.setup_progress.setVisible(False)
+        setup_layout.addWidget(self.setup_progress)
+        setup_row = QHBoxLayout()
+        self.setup_btn = QPushButton("Activate Shield")
+        self.setup_btn.setObjectName("primaryBtn")
+        self.setup_btn.clicked.connect(self._activate_shield_wizard)
+        self.setup_help_btn = QPushButton("Get mitmproxy")
+        self.setup_help_btn.setObjectName("ghostBtn")
+        self.setup_help_btn.setVisible(False)
+        self.setup_help_btn.clicked.connect(lambda: webbrowser.open("https://mitmproxy.org/downloads/"))
+        setup_row.addWidget(self.setup_btn)
+        setup_row.addWidget(self.setup_help_btn)
+        setup_row.addStretch()
+        setup_layout.addLayout(setup_row)
+        scaffold.add(self.setup_card)
 
-        status_card = GlassCard()
-        status_layout = QVBoxLayout(status_card)
-        status_layout.setContentsMargins(20, 18, 20, 18)
-        status_layout.addWidget(PageHeader("Status", "Install certificate once — permanent on Windows"))
-        self.blocker_status = QLabel("")
-        self.blocker_status.setObjectName("mutedLabel")
-        self.blocker_status.setWordWrap(True)
-        status_layout.addWidget(self.blocker_status)
-        cert_row = QHBoxLayout()
-        gen_btn = QPushButton("Generate certificate")
-        gen_btn.setObjectName("ghostBtn")
-        gen_btn.clicked.connect(self._generate_cert)
-        inst_btn = QPushButton("Install certificate")
-        inst_btn.setObjectName("primaryBtn")
-        inst_btn.clicked.connect(self._install_cert)
-        cert_row.addWidget(gen_btn)
-        cert_row.addWidget(inst_btn)
-        status_layout.addLayout(cert_row)
-
-        pause_row = QHBoxLayout()
-        pause_lbl = QLabel("Impulse pause (timed unlock):")
-        pause_lbl.setObjectName("mutedLabel")
-        pause_row.addWidget(pause_lbl)
-        for mins in (5, 15, 30):
-            btn = QPushButton(f"{mins} min")
-            btn.setObjectName("ghostBtn")
-            btn.clicked.connect(lambda checked=False, m=mins: self._pause_blocker_timed(m))
-            pause_row.addWidget(btn)
-        status_layout.addLayout(pause_row)
-        scaffold.add(status_card)
-
+        # Rules — two presets, auto-saved, custom list folded away
         rules_card = GlassCard()
         rules_layout = QVBoxLayout(rules_card)
         rules_layout.setContentsMargins(20, 18, 20, 18)
-        rules_layout.addWidget(
-            PageHeader("Rules", "Soft = Shorts/Reels only · Hard = full YouTube/Instagram")
-        )
+        rules_layout.addWidget(PageHeader("What gets blocked", "Auto-saved — no Save button needed"))
 
-        mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel("Mode"))
-        self.blocker_mode_combo = QComboBox()
-        self.blocker_mode_combo.addItem("Soft — allow YouTube tutorials, block Shorts/Reels", "soft")
-        self.blocker_mode_combo.addItem("Hard — block YouTube & Instagram entirely", "hard")
-        mode_row.addWidget(self.blocker_mode_combo, 1)
-        rules_layout.addLayout(mode_row)
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(8)
+        self.preset_soft_btn = QPushButton("Deep Work")
+        self.preset_hard_btn = QPushButton("Lockdown")
+        for btn, mode in ((self.preset_soft_btn, "soft"), (self.preset_hard_btn, "hard")):
+            btn.setObjectName("presetChip")
+            btn.setCheckable(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked=False, m=mode: self._apply_mode(m))
+            preset_row.addWidget(btn)
+        preset_row.addStretch()
+        rules_layout.addLayout(preset_row)
+
+        self.preset_desc = QLabel("")
+        self.preset_desc.setObjectName("mutedLabel")
+        self.preset_desc.setWordWrap(True)
+        rules_layout.addWidget(self.preset_desc)
+
+        edit_row = QHBoxLayout()
+        self.edit_sites_btn = QPushButton("Edit site list")
+        self.edit_sites_btn.setObjectName("ghostBtn")
+        self.edit_sites_btn.setCheckable(True)
+        self.edit_sites_btn.toggled.connect(self._toggle_sites_editor)
+        test_btn = QPushButton("Test the shield")
+        test_btn.setObjectName("ghostBtn")
+        test_btn.clicked.connect(self._test_shield)
+        edit_row.addWidget(self.edit_sites_btn)
+        edit_row.addWidget(test_btn)
+        edit_row.addStretch()
+        rules_layout.addLayout(edit_row)
 
         self.sites_edit = QTextEdit()
         self.sites_edit.setPlainText("\n".join(DEFAULT_BLOCKED_SITES))
-        self.sites_edit.setMinimumHeight(200)
+        self.sites_edit.setMinimumHeight(180)
+        self.sites_edit.setVisible(False)
+        self._sites_save_timer = QTimer(self)
+        self._sites_save_timer.setSingleShot(True)
+        self._sites_save_timer.timeout.connect(self._autosave_sites)
+        self.sites_edit.textChanged.connect(lambda: self._sites_save_timer.start(900))
         rules_layout.addWidget(self.sites_edit)
-        save_btn = QPushButton("Save blocker settings")
-        save_btn.setObjectName("primaryBtn")
-        save_btn.setMaximumWidth(240)
-        save_btn.clicked.connect(self._save_blocker_settings)
-        rules_layout.addWidget(save_btn)
+
         scaffold.add(rules_card)
         scaffold.add_stretch()
 
@@ -672,15 +741,139 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(page)
         self._update_blocker_status()
 
-    def _sync_shield_toggle(self) -> None:
-        if not hasattr(self, "shield_toggle"):
+    def _toggle_sites_editor(self, show: bool) -> None:
+        self.sites_edit.setVisible(show)
+        self.edit_sites_btn.setText("Hide site list" if show else "Edit site list")
+
+    # ── One-click setup wizard ─────────────────────────────
+
+    def _refresh_setup_card(self) -> None:
+        if not hasattr(self, "setup_card") or self._wizard_running:
             return
+        if self._cert_ok and proxy_engine_available():
+            self.setup_card.setVisible(False)
+            return
+        self.setup_card.setVisible(True)
+        self.setup_progress.setVisible(False)
+        self.setup_btn.setEnabled(True)
+        if not proxy_engine_available():
+            self.setup_info.setText(
+                "The shield needs the free mitmproxy engine to filter sites.\n"
+                "Install it below, then click Activate Shield."
+            )
+            self.setup_help_btn.setVisible(True)
+        else:
+            self.setup_info.setText(
+                "One click sets up the blocking certificate on this PC.\n"
+                "Windows asks you to confirm once — after that it's permanent."
+            )
+            self.setup_help_btn.setVisible(False)
+
+    def _activate_shield_wizard(self) -> None:
+        if not proxy_engine_available():
+            self._refresh_setup_card()
+            self.toasts.show(
+                "Missing engine",
+                "Install mitmproxy first (button below), then click Activate Shield again.",
+                "warning",
+                5000,
+            )
+            return
+        if self._cert_ok and is_cert_generated():
+            self._update_blocker_status()
+            return
+        self._wizard_running = True
+        self.setup_btn.setEnabled(False)
+        self.setup_help_btn.setVisible(False)
+        self.setup_progress.setVisible(True)
+        self.setup_progress.setValue(1)
+        self.setup_info.setText("Step 1 of 3 — generating your certificate…")
+        if not is_cert_generated():
+            self.mitm_process = start_mitmdump(["example.com"])
+            set_system_proxy(True)
+        self._wizard_polls = 0
+        QTimer.singleShot(700, self._wizard_wait_cert)
+
+    def _wizard_wait_cert(self) -> None:
+        self._wizard_polls += 1
+        if not is_cert_generated() and self._wizard_polls < 20:
+            QTimer.singleShot(500, self._wizard_wait_cert)
+            return
+        force_release_blocker()
+        self.mitm_process = None
+        if not is_cert_generated():
+            self._wizard_fail("Could not generate the certificate. Close any VPN or proxy tool and try again.")
+            return
+        self.setup_progress.setValue(2)
+        self.setup_info.setText("Step 2 of 3 — installing (Windows will ask you to confirm)…")
+        QTimer.singleShot(200, self._wizard_install)
+
+    def _wizard_install(self) -> None:
+        ok, msg = install_cert_windows()
+        if not ok:
+            self._wizard_fail(f"Install failed: {msg}")
+            return
+        self.setup_progress.setValue(3)
+        self._cert_ok = True
+        self.config["cert_setup_done"] = True
+        save_config(self.config)
+        self._wizard_running = False
+        self._update_blocker_status()
+        self.toasts.show(
+            "Shield ready",
+            "Setup complete — distractions are blocked during every focus session.",
+            "success",
+            5000,
+        )
+
+    def _wizard_fail(self, message: str) -> None:
+        self._wizard_running = False
+        self.setup_progress.setVisible(False)
+        self.setup_btn.setEnabled(True)
+        self.setup_info.setText(f"{message}\nClick Activate Shield to try again.")
+        self.toasts.show("Setup failed", message, "warning", 6000)
+        self._update_blocker_status()
+
+    def _test_shield(self) -> None:
+        if not self._ensure_blocker_ready():
+            return
+        started_for_test = False
+        if not self.blocker_active:
+            self._enable_blocker()
+            started_for_test = self.blocker_active
+        if not self.blocker_active:
+            self.toasts.show("Shield", "Could not start the shield — check the setup above.", "warning", 4000)
+            return
+        webbrowser.open("https://twitter.com")
+        if started_for_test and not self.pomodoro.is_work_phase:
+            self.toasts.show(
+                "Shield test",
+                "twitter.com should say 'You cannot pass.' Auto-off in 30 s.",
+                "info",
+                6000,
+            )
+            QTimer.singleShot(30_000, self._end_shield_test)
+        else:
+            self.toasts.show("Shield test", "twitter.com should say 'You cannot pass.'", "info", 5000)
+
+    def _end_shield_test(self) -> None:
+        if self.pomodoro.is_work_phase:
+            return
+        self._release_blocker_infra()
+        self.toasts.show("Test over", "Shield is back on standby — it arms during focus.", "info", 3000)
+
+    def _sync_shield_toggle(self) -> None:
         in_focus = self.pomodoro.is_running and self.pomodoro.is_work_phase
-        self.shield_toggle.sync_state(
+        state = dict(
             enabled=self.config.get("enable_website_blocker", True),
             active=self.blocker_active,
             in_focus=in_focus,
+            ready=bool(self._cert_ok and proxy_engine_available()),
         )
+        if hasattr(self, "shield_hero"):
+            self.shield_hero.sync_state(**state)
+        if hasattr(self, "focus_shield"):
+            self.focus_shield.sync_state(**state)
 
     def _on_shield_setting_changed(self, enabled: bool) -> None:
         was_enabled = self.config.get("enable_website_blocker", True)
@@ -691,6 +884,8 @@ class MainWindow(QMainWindow):
                 return
         self.config["enable_website_blocker"] = enabled
         save_config(self.config)
+        if not enabled:
+            self._release_blocker_infra()
         self._sync_shield_toggle()
         label = "Shield armed for focus sessions" if enabled else "Shield disabled"
         self.toasts.show("Fellowship Shield", label, "success" if enabled else "info", 2500)
@@ -739,52 +934,278 @@ class MainWindow(QMainWindow):
             self._enable_blocker()
             self.toasts.show("Shield re-armed", "Focus pause ended — distractions blocked again.", "success", 4000)
 
-    def _save_blocker_settings(self) -> None:
+    def _apply_mode(self, mode: str) -> None:
+        self.config["blocker_mode"] = mode
+        save_config(self.config)
+        self._sync_preset_ui()
+        if self.blocker_active:
+            self._release_blocker_infra()
+            self._enable_blocker()
+        label = (
+            "Deep Work — Shorts, Reels and feeds blocked, tutorials and DMs still work."
+            if mode == "soft"
+            else "Lockdown — full YouTube, Instagram and LinkedIn blocked too."
+        )
+        self.toasts.show("Saved", label, "success", 2500)
+
+    def _sync_preset_ui(self) -> None:
+        mode = self.config.get("blocker_mode", "soft")
+        self.preset_soft_btn.setChecked(mode == "soft")
+        self.preset_hard_btn.setChecked(mode == "hard")
+        if mode == "soft":
+            self.preset_desc.setText(
+                "Allowed: YouTube tutorials, DMs, work tools.   "
+                "Blocked: Shorts, Reels, Twitter/X, TikTok, feeds and your site list."
+            )
+        else:
+            self.preset_desc.setText(
+                "Blocked: everything from Deep Work, plus full YouTube, Instagram and LinkedIn."
+            )
+
+    def _autosave_sites(self) -> None:
         sites = [s.strip() for s in self.sites_edit.toPlainText().splitlines() if s.strip()]
+        if sites == self.config.get("blocked_sites"):
+            return
         self.config["blocked_sites"] = sites or DEFAULT_BLOCKED_SITES
-        self.config["blocker_mode"] = self.blocker_mode_combo.currentData() or "soft"
         save_config(self.config)
         if self.blocker_active:
-            self._disable_blocker()
+            self._release_blocker_infra()
             self._enable_blocker()
-        QMessageBox.information(self, "Saved", "Blocker settings saved.")
+        self.toasts.show("Saved", f"{len(self.config['blocked_sites'])} sites in your blocklist.", "success", 1800)
+
+    # ── Bridge for the embedded web app (Block tab) ────────────
+    @staticmethod
+    def _normalize_host(raw: str) -> str:
+        s = (raw or "").strip().lower()
+        if "://" in s:
+            s = s.split("://", 1)[1]
+        if s.startswith("www."):
+            s = s[4:]
+        return s.split("/", 1)[0].strip()
+
+    def _web_blocker_state(self) -> dict:
+        return {
+            "shieldOn": bool(self.blocker_active),
+            "active": bool(self.blocker_active),
+            "certReady": bool(self._cert_ok and proxy_engine_available()),
+            "sites": list(self.config.get("blocked_sites", [])),
+        }
+
+    def _web_set_shield(self, on: bool) -> dict:
+        try:
+            if on and not self.blocker_active:
+                self._on_shield_arm()
+            elif not on and self.blocker_active:
+                self._on_shield_disarm()
+        except Exception:
+            pass
+        return self._web_blocker_state()
+
+    def _sync_sites_editor(self) -> None:
+        editor = getattr(self, "sites_edit", None)
+        if editor is None:
+            return
+        try:
+            editor.blockSignals(True)
+            editor.setPlainText("\n".join(self.config.get("blocked_sites", [])))
+        finally:
+            editor.blockSignals(False)
+
+    def _web_reapply_sites(self) -> None:
+        save_config(self.config)
+        self._sync_sites_editor()
+        if self.blocker_active:
+            self._release_blocker_infra()
+            self._enable_blocker()
+
+    def _web_add_sites(self, sites: list[str]) -> dict:
+        current = list(self.config.get("blocked_sites", []))
+        changed = False
+        for raw in sites or []:
+            host = self._normalize_host(raw)
+            if host and host not in current:
+                current.append(host)
+                changed = True
+        if changed:
+            self.config["blocked_sites"] = current
+            self._web_reapply_sites()
+        return self._web_blocker_state()
+
+    def _web_remove_site(self, site: str) -> dict:
+        host = self._normalize_host(site)
+        current = list(self.config.get("blocked_sites", []))
+        filtered = [x for x in current if x != host and x != (site or "").strip()]
+        if len(filtered) != len(current):
+            self.config["blocked_sites"] = filtered
+            self._web_reapply_sites()
+        return self._web_blocker_state()
+
+    # ── Solo productivity bridge (no guild needed) ─────────────
+    @staticmethod
+    def _solo_league(hours: float) -> dict:
+        tiers = [("Mordor", 20), ("Gondor", 10), ("Rohan", 5), ("Shire", 0)]
+        name = "Shire"
+        for tier_name, threshold in tiers:
+            if hours >= threshold:
+                name = tier_name
+                break
+        nxt = None
+        for tier_name, threshold in reversed(tiers):
+            if threshold > hours:
+                nxt = {"name": tier_name, "at": threshold}
+                break
+        return {"name": name, "hours": hours, "next": nxt}
+
+    def _web_weekly_stats(self) -> dict:
+        from datetime import date, timedelta
+
+        from fellowship_focus.usage_tracker import focus_score, load_day
+
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+        days = []
+        work_total = 0
+        distr_total = 0
+        scores: list[int] = []
+        for i in range(7):
+            d = monday + timedelta(days=i)
+            data = load_day(d.isoformat())
+            cats = data.get("categories", {})
+            work = int(cats.get("work", 0))
+            distr = int(cats.get("distraction", 0))
+            sc = focus_score(data)
+            if d <= today:
+                work_total += work
+                distr_total += distr
+                if work + distr > 0:
+                    scores.append(sc)
+            days.append({
+                "date": d.isoformat(),
+                "weekday": weekdays[i],
+                "work_seconds": work,
+                "distraction_seconds": distr,
+                "focus_minutes": round(work / 60),
+                "focus_score": sc,
+            })
+
+        # Streak: consecutive days (walking back from today) with >= 25 min focus.
+        streak = 0
+        cursor = today
+        for _ in range(400):
+            data = load_day(cursor.isoformat())
+            if int(data.get("categories", {}).get("work", 0)) >= 1500:
+                streak += 1
+                cursor = cursor - timedelta(days=1)
+            elif cursor == today:
+                cursor = cursor - timedelta(days=1)  # today may still be ramping up
+            else:
+                break
+
+        # 8-week history of weekly focus minutes + avg score.
+        history = []
+        for wk in range(7, -1, -1):
+            wstart = monday - timedelta(weeks=wk)
+            wmins = 0
+            wscores: list[int] = []
+            for i in range(7):
+                d = wstart + timedelta(days=i)
+                if d > today:
+                    continue
+                data = load_day(d.isoformat())
+                cats = data.get("categories", {})
+                work = int(cats.get("work", 0))
+                wmins += work // 60
+                if work + int(cats.get("distraction", 0)) > 0:
+                    wscores.append(focus_score(data))
+            history.append({
+                "weekStart": wstart.isoformat(),
+                "work_minutes": wmins,
+                "avg_focus_score": round(sum(wscores) / len(wscores)) if wscores else 0,
+            })
+
+        work_hours = round(work_total / 3600, 1)
+        avg_score = round(sum(scores) / len(scores)) if scores else 0
+        cfg = self.config
+        return {
+            "available": True,
+            "weekStart": monday.isoformat(),
+            "days": days,
+            "history": history,
+            "kpis": {
+                "focus_hours": work_hours,
+                "avg_focus_score": avg_score,
+                "distraction_hours": round(distr_total / 3600, 1),
+                "streak": streak,
+                "focus_days": len([d for d in days if d["work_seconds"] >= 1500 and d["date"] <= today.isoformat()]),
+            },
+            "league": self._solo_league(work_hours),
+            "okr": {
+                "focus_hours": {"current": work_hours, "target": cfg.get("okr_weekly_focus_hours", 20)},
+                "focus_score": {"current": avg_score, "target": cfg.get("okr_focus_score", 70)},
+                "revenue": {
+                    "current_eur": cfg.get("okr_revenue_current_eur", 0),
+                    "target_eur": cfg.get("okr_freelance_revenue_eur", 3000),
+                },
+            },
+        }
+
+    def _web_set_okr(self, patch: dict) -> dict:
+        mapping = {
+            "focus_hours_target": "okr_weekly_focus_hours",
+            "focus_score_target": "okr_focus_score",
+            "revenue_target_eur": "okr_freelance_revenue_eur",
+            "revenue_current_eur": "okr_revenue_current_eur",
+        }
+        changed = False
+        for key, cfg_key in mapping.items():
+            if isinstance(patch, dict) and patch.get(key) is not None:
+                try:
+                    self.config[cfg_key] = max(0, int(patch[key]))
+                    changed = True
+                except (TypeError, ValueError):
+                    pass
+        if changed:
+            save_config(self.config)
+            try:
+                self._sync_settings_from_config()
+            except Exception:
+                pass
+        return self._web_weekly_stats()
+
+    def _sync_settings_from_config(self) -> None:
+        """Reflect OKR edits made from the web app back into the settings spinboxes."""
+        c = self.config
+        if hasattr(self, "okr_focus_spin"):
+            self.okr_focus_spin.setValue(c.get("okr_weekly_focus_hours", 20))
+        if hasattr(self, "okr_revenue_spin"):
+            self.okr_revenue_spin.setValue(c.get("okr_freelance_revenue_eur", 3000))
+        if hasattr(self, "okr_revenue_current"):
+            self.okr_revenue_current.setValue(c.get("okr_revenue_current_eur", 0))
 
     def _update_blocker_status(self) -> None:
-        gen = "Ready" if is_cert_generated() else "Missing"
-        inst = "Installed" if is_cert_installed() else "Install once"
-        active = "Active during focus" if self.blocker_active else "Standby"
-        mode = self.config.get("blocker_mode", "soft")
-        self.blocker_status.setText(
-            f"Certificate file: {gen}\nWindows trust store: {inst}\nBlocker: {active} · mode {mode}\n\n"
-            "Soft mode blocks YouTube Shorts & Instagram Reels only (Curbox).\n"
-            "Hard mode blocks full domains. Pause = Impulse timed unlock."
-        )
+        self._refresh_setup_card()
         self._update_chrome_status()
         self._sync_shield_toggle()
 
     def _ensure_blocker_ready(self) -> bool:
-        if not is_cert_installed():
-            QMessageBox.warning(self, "Certificate", "Install mitmproxy certificate first (Blocker tab).")
+        if not self._cert_ok:
+            self._cert_ok = is_cert_installed()
+        if not self._cert_ok or not proxy_engine_available():
             self.sidebar.set_current(4)
-            return False
-        if not find_mitmdump():
-            QMessageBox.critical(self, "Error", "mitmdump not found.")
+            self._update_blocker_status()
+            self.toasts.show(
+                "One-time setup",
+                "Click Activate Shield — takes about 15 seconds, once.",
+                "warning",
+                5000,
+            )
             return False
         return True
 
     def _effective_block_lists(self) -> tuple[list[str], list]:
-        sites = list(self.config.get("blocked_sites", DEFAULT_BLOCKED_SITES))
-        path_rules = list(self.config.get("blocked_path_rules", DEFAULT_PATH_RULES))
-        mode = self.config.get("blocker_mode", "soft")
-        if mode == "hard":
-            for host in HARD_HOSTS_OPTIONAL:
-                if host not in sites:
-                    sites.append(host)
-        else:
-            # Soft: YouTube/Instagram only via path rules — remove from full list if present
-            soft_hosts = set(HARD_HOSTS_OPTIONAL)
-            sites = [s for s in sites if s not in soft_hosts]
-        return sites, path_rules
+        return effective_block_lists(self.config)
 
     def _enable_blocker(self) -> None:
         if self.blocker_active:
@@ -797,12 +1218,38 @@ class MainWindow(QMainWindow):
             self.config.get("member_token", ""),
             path_rules=path_rules,
             redirects=redirects,
+            dashboard_url=self._dashboard_url() or "",
         )
-        if self.mitm_process:
-            set_system_proxy(True)
-            self.blocker_active = True
-            self._blocker_on_for_session = True
-            self._update_blocker_status()
+        if not self.mitm_process:
+            self._on_blocker_failed("The blocking engine could not start on this PC.")
+            return
+        set_system_proxy(True)
+        self.blocker_active = True
+        self._blocker_on_for_session = True
+        self._update_blocker_status()
+        # The proxy child (the frozen exe re-launched with --run-proxy) can take a
+        # few seconds to accept connections, so poll before declaring failure.
+        QTimer.singleShot(4000, lambda: self._verify_blocker_running(attempts=3))
+
+    def _verify_blocker_running(self, attempts: int = 3) -> None:
+        """A blocker that fails silently is worse than none — confirm the proxy answers."""
+        if not self.blocker_active:
+            return
+        if is_mitmdump_running():
+            return
+        if attempts > 1:
+            QTimer.singleShot(3000, lambda: self._verify_blocker_running(attempts=attempts - 1))
+            return
+        self._on_blocker_failed("The shield started but isn't filtering traffic.")
+
+    def _on_blocker_failed(self, detail: str) -> None:
+        self._release_blocker_infra()
+        self.toasts.show(
+            "Shield NOT active",
+            f"{detail} You are not protected. Try again from the Blocker tab.",
+            "warning",
+            8000,
+        )
 
     def _guild_bypass_penalty(self) -> int:
         if not self._fellowship_cache:
@@ -811,40 +1258,42 @@ class MainWindow(QMainWindow):
         return int(f.get("blocker_bypass_penalty", 0) or 0)
 
     def _disable_blocker(self, *, work_bypass: bool = False) -> None:
-        if not self.blocker_active:
-            return
-        if (
-            work_bypass
-            and self.pomodoro.is_work_phase
-            and self._active_session_id
-            and self._blocker_on_for_session
-        ):
-            penalty = self._guild_bypass_penalty()
-            if penalty > 0:
-                ans = QMessageBox.question(
-                    self,
-                    "Disable blocker?",
-                    f"Your guild penalizes turning off the blocker during focus (−{penalty} XP).\n\nContinue anyway?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                )
-                if ans != QMessageBox.StandardButton.Yes:
-                    return
-                api = FellowshipApi(self.config.get("api_url", ""), self.config.get("member_token", ""))
-                result = api.bypass_blocker(self._active_session_id)
-                if result and result.get("penalty"):
-                    self.toasts.show(
-                        "Blocker off",
-                        f"−{result['penalty']} XP · guild accountability",
-                        "warning",
-                        5000,
+        if self.blocker_active:
+            if (
+                work_bypass
+                and self.pomodoro.is_work_phase
+                and self._active_session_id
+                and self._blocker_on_for_session
+            ):
+                penalty = self._guild_bypass_penalty()
+                if penalty > 0:
+                    ans = QMessageBox.question(
+                        self,
+                        "Disable blocker?",
+                        f"Your guild penalizes turning off the blocker during focus (−{penalty} XP).\n\nContinue anyway?",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     )
-                    notify_blocker_penalty(int(result["penalty"]), getattr(self, "tray", None))
-                self._refresh_journey()
-            elif self._active_session_id:
-                api = FellowshipApi(self.config.get("api_url", ""), self.config.get("member_token", ""))
-                api.bypass_blocker(self._active_session_id)
-        shutdown_mitmdump_gracefully()
-        set_system_proxy(False)
+                    if ans != QMessageBox.StandardButton.Yes:
+                        return
+                    api = FellowshipApi(self.config.get("api_url", ""), self.config.get("member_token", ""))
+                    result = api.bypass_blocker(self._active_session_id)
+                    if result and result.get("penalty"):
+                        self.toasts.show(
+                            "Blocker off",
+                            f"−{result['penalty']} XP · guild accountability",
+                            "warning",
+                            5000,
+                        )
+                        notify_blocker_penalty(int(result["penalty"]), getattr(self, "tray", None))
+                    self._refresh_journey()
+                elif self._active_session_id:
+                    api = FellowshipApi(self.config.get("api_url", ""), self.config.get("member_token", ""))
+                    api.bypass_blocker(self._active_session_id)
+        self._release_blocker_infra()
+
+    def _release_blocker_infra(self) -> None:
+        force_release_blocker()
+        self.mitm_process = None
         self.blocker_active = False
         self._update_blocker_status()
 
@@ -975,12 +1424,40 @@ class MainWindow(QMainWindow):
         self.web_dashboard.reload_dashboard()
         self.toasts.show("Connected", "Fellowship linked — open the Fellowship tab.", "success", 3000)
 
+    def _clean_member_name(self) -> str:
+        """Rescue a name field that got an invite link or sync JSON pasted into it."""
+        raw = self.name_input.text().strip()
+        if not raw:
+            return ""
+        if raw.startswith("{") or "://" in raw:
+            parsed = parse_invite_or_sync(raw)
+            if parsed:
+                # Credentials belong in their own fields, not in the display name.
+                if parsed.get("api_url"):
+                    self.api_url_input.setText(parsed["api_url"])
+                if parsed.get("member_token"):
+                    self.token_input.setText(parsed["member_token"])
+                if parsed.get("fellowship_code"):
+                    self.code_input.setText(parsed["fellowship_code"])
+                name = parsed.get("member_name", "")
+                self.name_input.setText(name)
+                self.toasts.show(
+                    "Cleaned up",
+                    "That looked like an invite, not a name — credentials moved to the right fields.",
+                    "success",
+                    3500,
+                )
+                return name
+            self.name_input.setText("")
+            return ""
+        return raw[:40]
+
     def _save_fellowship_settings(self) -> None:
         self.config.update({
+            "member_name": self._clean_member_name(),
             "api_url": self.api_url_input.text().strip(),
             "member_token": self.token_input.text().strip(),
             "fellowship_code": self.code_input.text().strip(),
-            "member_name": self.name_input.text().strip(),
             "minimize_to_tray": self.tray_check.isChecked(),
             "start_minimized": self.start_min_check.isChecked(),
             "auto_update": self.auto_update_check.isChecked(),
@@ -1018,11 +1495,35 @@ class MainWindow(QMainWindow):
         self.dashboard_page.update_data(data, self.config)
         self._update_chrome_status()
 
+    def _sync_usage(self) -> None:
+        tracker = getattr(self, "usage_tracker", None)
+        if tracker is None:
+            return
+        token = self.config.get("member_token", "")
+        api_url = self.config.get("api_url", "")
+        if not token or not api_url:
+            return
+        data = tracker.today()
+        cats = data.get("categories", {})
+        total = sum(int(v) for v in cats.values())
+        if total <= 0:
+            return
+        try:
+            FellowshipApi(api_url, token).sync_usage(
+                work_seconds=int(cats.get("work", 0)),
+                distraction_seconds=int(cats.get("distraction", 0)),
+                personal_seconds=int(cats.get("personal", 0)),
+                neutral_seconds=int(cats.get("neutral", 0)),
+                focus_score=focus_score(data),
+            )
+        except Exception:
+            pass
+
     def _dashboard_url(self) -> str | None:
         code = self.config.get("fellowship_code", "")
         api = self.config.get("api_url", "").rstrip("/")
         if code and api:
-            return f"{api}/f/{code}"
+            return f"{api}/app?code={code}"
         return None
 
     def _open_dashboard(self) -> None:
@@ -1056,11 +1557,10 @@ class MainWindow(QMainWindow):
         self.break_spin.setValue(c.get("break_duration", 10))
         self.long_break_spin.setValue(c.get("long_break_duration", 15))
         self.intervals_spin.setValue(c.get("work_intervals", 2))
+        self.sites_edit.blockSignals(True)
         self.sites_edit.setPlainText("\n".join(c.get("blocked_sites", DEFAULT_BLOCKED_SITES)))
-        mode = c.get("blocker_mode", "soft")
-        idx = self.blocker_mode_combo.findData(mode)
-        if idx >= 0:
-            self.blocker_mode_combo.setCurrentIndex(idx)
+        self.sites_edit.blockSignals(False)
+        self._sync_preset_ui()
         self.pomodoro.configure(
             self.work_spin.value(), self.break_spin.value(),
             self.long_break_spin.value(), self.intervals_spin.value(),
@@ -1068,29 +1568,6 @@ class MainWindow(QMainWindow):
         self._sync_focus_ring(f"{self.work_spin.value():02d}:00", "Ready", 1.0, False)
         self._refresh_journey()
         self._sync_shield_toggle()
-
-    def _generate_cert(self) -> None:
-        if not find_mitmdump():
-            QMessageBox.critical(self, "Error", "mitmdump not found.")
-            return
-        self.mitm_process = start_mitmdump(["example.com"])
-        set_system_proxy(True)
-        QTimer.singleShot(3000, self._finish_cert_generation)
-
-    def _finish_cert_generation(self) -> None:
-        shutdown_mitmdump_gracefully()
-        set_system_proxy(False)
-        self._update_blocker_status()
-
-    def _install_cert(self) -> None:
-        ok, msg = install_cert_windows()
-        self._update_blocker_status()
-        if ok:
-            self.config["cert_setup_done"] = True
-            save_config(self.config)
-            self.toasts.show("Certificate installed", msg, "success")
-        else:
-            self.toasts.show("Certificate", msg, "warning")
 
     def _on_nav(self, index: int) -> None:
         self.stack.setCurrentIndex(index)
@@ -1101,6 +1578,8 @@ class MainWindow(QMainWindow):
             self.web_dashboard.reload_dashboard()
         elif index == 1:
             self._refresh_journey()
+        elif index == 6:
+            self.usage_page.refresh()
 
     # ── Tray & lifecycle ───────────────────────────────────
 
@@ -1122,10 +1601,7 @@ class MainWindow(QMainWindow):
         menu.addAction(quit_a)
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(lambda r: self.show() if r == QSystemTrayIcon.ActivationReason.Trigger else None)
-        icon_path = next(
-            (ASSETS_DIR / n for n in ("fellowship.ico", "app-icon.png", "fellowship.jpg") if (ASSETS_DIR / n).exists()),
-            None,
-        )
+        icon_path = resolve_app_icon_path()
         if icon_path:
             self.tray.setIcon(QIcon(str(icon_path)))
         else:
@@ -1134,17 +1610,35 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.config.get("minimize_to_tray", True):
+            self._release_blocker_on_hide()
             event.ignore()
             self.hide()
             return
         self._quit_app()
 
+    def _release_blocker_on_hide(self) -> None:
+        """Closing the window must restore normal browsing (app may stay in tray)."""
+        was_active = self.blocker_active
+        self._release_blocker_infra()
+        self._sync_shield_toggle()
+        if was_active:
+            self.toasts.show(
+                "Shield released",
+                "Sites are unblocked while the app runs in the tray.",
+                "info",
+                3500,
+            )
+
     def _quit_app(self) -> None:
         self.task_tick.stop()
+        if hasattr(self, "music_player"):
+            self.music_player.on_session_end()
+        if hasattr(self, "usage_tracker"):
+            self.usage_tracker.stop()
+            self._sync_usage()
         if self.pomodoro.is_running:
             self._stop_pomodoro()
-        else:
-            self._disable_blocker()
+        self._release_blocker_infra()
         self.tray.hide()
         QApplication.quit()
 
@@ -1152,6 +1646,9 @@ class MainWindow(QMainWindow):
 def run(start_minimized: bool = False) -> None:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    icon_file = resolve_app_icon_path()
+    if icon_file:
+        app.setWindowIcon(QIcon(str(icon_file)))
     window = MainWindow()
     if start_minimized or "--minimized" in sys.argv:
         window.hide()

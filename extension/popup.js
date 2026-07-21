@@ -1,129 +1,103 @@
-const timerEl = document.getElementById("timer");
-const statusEl = document.getElementById("status");
-const startBtn = document.getElementById("startBtn");
-const stopBtn = document.getElementById("stopBtn");
-const durationEl = document.getElementById("duration");
-const apiUrlEl = document.getElementById("apiUrl");
-const tokenEl = document.getElementById("token");
-const saveSetupBtn = document.getElementById("saveSetup");
-const setupEl = document.getElementById("setup");
-const timerSection = document.getElementById("timer-section");
-const errorEl = document.getElementById("error");
+const els = {
+  who: document.getElementById("who"),
+  shieldToggle: document.getElementById("shieldToggle"),
+  shieldHint: document.getElementById("shieldHint"),
+  timer: document.getElementById("timer"),
+  phase: document.getElementById("phase"),
+  focusBtn: document.getElementById("focusBtn"),
+  blocks: document.getElementById("blocks"),
+  focusMin: document.getElementById("focusMin"),
+  siteCount: document.getElementById("siteCount"),
+  dash: document.getElementById("dash"),
+  opts: document.getElementById("opts"),
+};
 
-let tickInterval = null;
+let state = null;
+let ticker = null;
 
-async function init() {
-  const data = await chrome.storage.local.get([
-    "apiUrl",
-    "token",
-    "sessionActive",
-    "endTime",
-    "durationMinutes",
-  ]);
+function send(msg) {
+  return new Promise((resolve) => chrome.runtime.sendMessage(msg, resolve));
+}
 
-  if (data.apiUrl) apiUrlEl.value = data.apiUrl;
-  if (data.token) tokenEl.value = data.token;
+function pad(n) {
+  return String(n).padStart(2, "0");
+}
 
-  if (data.token && data.apiUrl) {
-    setupEl.style.display = "none";
-    timerSection.style.display = "block";
-  }
+function render() {
+  const cfg = state;
+  if (!cfg) return;
 
-  if (data.sessionActive && data.endTime) {
-    startTicking(data.endTime, data.durationMinutes);
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    durationEl.disabled = true;
-    timerEl.classList.add("active");
-    statusEl.textContent = "Quest in progress — sites blocked";
+  els.who.textContent = cfg.name
+    ? `${cfg.name} · ${cfg.code}`
+    : "Not connected — open Settings";
+
+  const shieldOn = cfg.manualShield || !!cfg.focus;
+  els.shieldToggle.setAttribute("aria-checked", String(shieldOn));
+  els.shieldToggle.disabled = !!cfg.focus;
+  els.shieldHint.textContent = cfg.focus
+    ? "Locked on during focus"
+    : shieldOn
+      ? `${cfg.sites.length} sites blocked`
+      : "Block distracting sites";
+
+  els.blocks.textContent = cfg.stats?.blocks ?? 0;
+  els.focusMin.textContent = `${cfg.stats?.focusMinutes ?? 0}m`;
+  els.siteCount.textContent = cfg.sites?.length ?? 0;
+
+  els.dash.style.display = cfg.apiUrl && cfg.code ? "block" : "none";
+  els.dash.href = cfg.apiUrl && cfg.code ? `${cfg.apiUrl}/app?code=${cfg.code}` : "#";
+
+  if (cfg.focus) {
+    els.focusBtn.textContent = "Stop";
+    els.focusBtn.classList.add("stop");
+    els.phase.textContent = cfg.focus.phase === "break" ? "Break" : `Focus ${cfg.focus.cycle}/${cfg.prefs.cycles}`;
+    startTicker();
+  } else {
+    els.focusBtn.textContent = "Start focus";
+    els.focusBtn.classList.remove("stop");
+    els.phase.textContent = "Ready";
+    els.timer.textContent = `${pad(cfg.prefs.focus_min)}:00`;
+    stopTicker();
   }
 }
 
-saveSetupBtn.addEventListener("click", async () => {
-  const apiUrl = apiUrlEl.value.trim().replace(/\/$/, "");
-  const token = tokenEl.value.trim();
-  if (!apiUrl || !token) {
-    errorEl.textContent = "API URL and token required";
-    return;
-  }
-  await chrome.storage.local.set({ apiUrl, token });
-  setupEl.style.display = "none";
-  timerSection.style.display = "block";
-  errorEl.textContent = "";
-});
-
-startBtn.addEventListener("click", async () => {
-  const minutes = parseInt(durationEl.value, 10);
-  const endTime = Date.now() + minutes * 60 * 1000;
-
-  await chrome.storage.local.set({
-    sessionActive: true,
-    endTime,
-    durationMinutes: minutes,
-  });
-
-  chrome.runtime.sendMessage({ type: "ENABLE_BLOCKING" });
-  chrome.alarms.create("focus-timer", { periodInMinutes: 0.5 });
-  chrome.action.setBadgeText({ text: "🔥" });
-  chrome.action.setBadgeBackgroundColor({ color: "#c9a227" });
-
-  startBtn.disabled = true;
-  stopBtn.disabled = false;
-  durationEl.disabled = true;
-  timerEl.classList.add("active");
-  statusEl.textContent = "Quest in progress — sites blocked";
-  startTicking(endTime, minutes);
-});
-
-stopBtn.addEventListener("click", async () => {
-  const data = await chrome.storage.local.get(["endTime", "durationMinutes"]);
-  const totalMs = data.durationMinutes * 60 * 1000;
-  const elapsed = totalMs - (data.endTime - Date.now());
-  const minutes = Math.max(1, Math.round(elapsed / 60000));
-
-  chrome.runtime.sendMessage({
-    type: "COMPLETE_SESSION",
-    minutes,
-    completed: false,
-  });
-
-  resetUI();
-  statusEl.textContent = "Quest abandoned";
-});
-
-function startTicking(endTime, totalMinutes) {
-  if (tickInterval) clearInterval(tickInterval);
-
-  function tick() {
-    const remaining = endTime - Date.now();
-    if (remaining <= 0) {
-      timerEl.textContent = "00:00";
-      chrome.runtime.sendMessage({
-        type: "COMPLETE_SESSION",
-        minutes: totalMinutes,
-        completed: true,
-      });
-      resetUI();
-      statusEl.textContent = "Quest complete! +XP earned";
-      return;
-    }
-    const mins = Math.floor(remaining / 60000);
-    const secs = Math.floor((remaining % 60000) / 1000);
-    timerEl.textContent = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-  }
-
+function startTicker() {
+  stopTicker();
+  const tick = () => {
+    if (!state?.focus) return stopTicker();
+    const ms = state.focus.endsAt - Date.now();
+    const s = Math.max(0, Math.round(ms / 1000));
+    els.timer.textContent = `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
+    if (ms <= 0) refresh();
+  };
   tick();
-  tickInterval = setInterval(tick, 1000);
+  ticker = setInterval(tick, 1000);
 }
 
-function resetUI() {
-  if (tickInterval) clearInterval(tickInterval);
-  timerEl.classList.remove("active");
-  timerEl.textContent = "25:00";
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
-  durationEl.disabled = false;
-  chrome.alarms.clear("focus-timer");
+function stopTicker() {
+  if (ticker) clearInterval(ticker);
+  ticker = null;
 }
 
-init();
+async function refresh() {
+  const res = await send({ type: "getState" });
+  state = res?.config || null;
+  render();
+}
+
+els.shieldToggle.addEventListener("click", async () => {
+  if (state?.focus) return;
+  const res = await send({ type: "setShield", on: !state.manualShield });
+  state = res.config;
+  render();
+});
+
+els.focusBtn.addEventListener("click", async () => {
+  const res = await send({ type: state?.focus ? "stopFocus" : "startFocus" });
+  state = res.config;
+  render();
+});
+
+els.opts.addEventListener("click", () => chrome.runtime.openOptionsPage());
+
+refresh();

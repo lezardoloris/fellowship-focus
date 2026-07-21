@@ -76,8 +76,8 @@
       { "label": "Calm reset", "url": "https://www.calm.com" }
     ],
     "nsfw": [
-      { "label": "Go for a walk", "url": "https://www.youtube.com/watch?v=inpok4MKVLM" },
       { "label": "Breathing", "url": "https://www.calm.com/breathe" },
+      { "label": "Guided reset", "url": "https://www.calm.com" },
       { "label": "Positive redirect", "url": "https://www.ted.com" }
     ],
     "social": [

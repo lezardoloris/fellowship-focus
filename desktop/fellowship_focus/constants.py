@@ -68,3 +68,23 @@ HARD_HOSTS_OPTIONAL = list(_DATA.get("hard_hosts_optional") or [])
 
 PROXY_PORT = 8080
 MITMDUMP_PORT = 8080
+
+
+def effective_block_lists(config: dict) -> tuple[list[str], list]:
+    """Resolve the (domains, path_rules) to block for the given config.
+
+    Soft mode (Deep Work): distraction hosts like YouTube/Instagram are filtered
+    only by path (Shorts/Reels), so they drop out of the full-domain list.
+    Hard mode (Lockdown): those hosts get blocked entirely.
+    """
+    sites = list(config.get("blocked_sites", DEFAULT_BLOCKED_SITES))
+    path_rules = list(config.get("blocked_path_rules", DEFAULT_PATH_RULES))
+    mode = config.get("blocker_mode", "soft")
+    if mode == "hard":
+        for host in HARD_HOSTS_OPTIONAL:
+            if host not in sites:
+                sites.append(host)
+    else:
+        soft_hosts = set(HARD_HOSTS_OPTIONAL)
+        sites = [s for s in sites if s not in soft_hosts]
+    return sites, path_rules

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fellowship Focus — Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="head">
+        <img src="icons/icon48.png" alt="" class="logo" />
+        <div>
+          <h1>Fellowship Focus</h1>
+          <p class="sub">Blocker settings & guild connection</p>
+        </div>
+      </header>
+
+      <section class="card">
+        <h2>Connection</h2>
+        <p class="status" id="status">Not connected.</p>
+        <p class="hint">
+          In the web app (<a id="appLink" href="#" target="_blank" rel="noreferrer">open</a>), go to the
+          <strong>Block</strong> tab → <strong>Connect extension</strong>, then paste the copied code here.
+        </p>
+        <textarea id="payload" class="input area" placeholder='{"apiUrl":"…","code":"…","token":"…","name":"…"}'></textarea>
+        <div class="row">
+          <button id="connect" class="btn-primary">Connect</button>
+          <button id="refresh" class="btn-secondary">Sync now</button>
+          <button id="disconnect" class="btn-secondary danger">Disconnect</button>
+        </div>
+        <p class="msg" id="msg"></p>
+      </section>
+
+      <section class="card">
+        <h2>Block list <span id="count" class="count"></span></h2>
+        <form id="addForm" class="row">
+          <input id="site" class="input" placeholder="add a site, e.g. news.ycombinator.com" />
+          <button type="submit" class="btn-primary">Add</button>
+        </form>
+        <ul id="list" class="list"></ul>
+      </section>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -80,12 +80,16 @@ def main() -> None:
         "hero.jpg": hero_banner(),
         "journey-map.jpg": journey_map(),
         "focus-quest.jpg": focus_quest(),
-        "fellowship.jpg": fellowship_icon(),
     }
+    if not (out / "app-icon.png").exists() and not (out / "shield-logo.png").exists():
+        assets["fellowship.jpg"] = fellowship_icon()
     for name, img in assets.items():
         path = out / name
         if path.exists() and path.stat().st_size > 200_000:
             print(f"Skip {path.name} — keeping generated asset ({path.stat().st_size // 1024} KB)")
+            continue
+        if name == "fellowship.jpg" and (out / "app-icon.png").exists():
+            print("Skip fellowship.jpg — app-icon.png is the brand icon")
             continue
         img.save(path, "JPEG", quality=92)
         print(f"Wrote {path} ({path.stat().st_size // 1024} KB)")

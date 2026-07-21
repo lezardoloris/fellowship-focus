@@ -23,3 +23,15 @@ Thumbs.db
 # Local config
 *.db
 *.sqlite
+
+# Runtime logs
+*.log
+desktop/_app_run.log
+
+# PyInstaller build output
+desktop/build/
+desktop/dist/
+
+# Bundled/added audio (keep the folder + README, ignore large tracks)
+desktop/assets/music/*
+!desktop/assets/music/README.txt

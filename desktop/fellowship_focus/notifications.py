@@ -11,7 +11,7 @@ import sys
 from enum import Enum
 from pathlib import Path
 
-from fellowship_focus.ui.theme import ASSETS_DIR
+from fellowship_focus.ui.theme import resolve_app_icon_path
 
 
 class NotifyKind(str, Enum):
@@ -25,11 +25,8 @@ class NotifyKind(str, Enum):
 
 
 def _icon_path() -> str | None:
-    for name in ("fellowship.ico", "app-icon.png", "fellowship.png", "fellowship.jpg", "focus-quest.jpg"):
-        path = ASSETS_DIR / name
-        if path.exists():
-            return str(path.resolve())
-    return None
+    icon = resolve_app_icon_path()
+    return str(icon.resolve()) if icon else None
 
 
 def _duration(kind: NotifyKind) -> str:

@@ -87,6 +87,34 @@ class FellowshipApi:
         except Exception:
             return False
 
+    def sync_usage(
+        self,
+        work_seconds: int,
+        distraction_seconds: int,
+        personal_seconds: int,
+        neutral_seconds: int,
+        focus_score: int,
+    ) -> bool:
+        if not self.token:
+            return False
+        try:
+            r = requests.post(
+                f"{self.api_url}/api/usage",
+                json={
+                    "token": self.token,
+                    "workSeconds": work_seconds,
+                    "distractionSeconds": distraction_seconds,
+                    "personalSeconds": personal_seconds,
+                    "neutralSeconds": neutral_seconds,
+                    "focusScore": focus_score,
+                },
+                timeout=10,
+            )
+            r.raise_for_status()
+            return True
+        except Exception:
+            return False
+
     def get_fellowship(self, code: str) -> dict | None:
         try:
             r = requests.get(f"{self.api_url}/api/fellowship/{code}", timeout=10)

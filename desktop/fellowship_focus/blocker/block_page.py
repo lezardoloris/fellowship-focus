@@ -49,6 +49,7 @@ def build_block_html(
     fellowship_tax: int = 3,
     alternatives: list | None = None,
     reason: str = "domain",
+    dashboard_url: str = "",
 ) -> str:
     img_b64 = _get_block_image_b64()
     logo_b64 = _get_logo_b64()
@@ -94,6 +95,14 @@ def build_block_html(
 
     site_safe = html_mod.escape(site)
     name_safe = html_mod.escape(member_name) if member_name else ""
+
+    if dashboard_url:
+        cta_html = (
+            f'<a class="btn" href="{html_mod.escape(dashboard_url)}" rel="noopener">See your guild ladder →</a>'
+            '<p class="back-hint"><a class="back" href="javascript:history.back()">← Go back</a></p>'
+        )
+    else:
+        cta_html = '<a class="btn" href="javascript:history.back()">← Return to your quest</a>'
 
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
@@ -156,6 +165,9 @@ h1{{
   color:#f4f4f5;text-decoration:none;font-size:0.8rem;font-family:system-ui,sans-serif;
 }}
 .alt:hover{{background:#2e3134}}
+.back-hint{{margin-top:0.75rem}}
+.back{{color:#9ca3af;text-decoration:none;font-size:0.8rem}}
+.back:hover{{color:#f4f4f5}}
 </style></head><body>
 <div class="card">
   <div class="brand">{logo_tag}<div class="brand-title"><strong>Fellowship Shield</strong> · focus blocker</div></div>
@@ -171,7 +183,7 @@ h1{{
       {f"<strong>{name_safe}</strong>'s distraction costs the Fellowship <strong>−{fellowship_tax} XP</strong> on the shared journey." if name_safe else f"The Fellowship loses <strong>−{fellowship_tax} XP</strong> on the shared journey."}
     </p>
     {alt_html}
-    <a class="btn" href="javascript:history.back()">← Return to your quest</a>
+    {cta_html}
   </div>
 </div>
 </body></html>"""

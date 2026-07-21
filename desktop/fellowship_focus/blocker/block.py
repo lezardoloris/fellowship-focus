@@ -23,6 +23,7 @@ def load(loader) -> None:
     loader.add_option("block_type", str, "blocklist", "Allowlist or blocklist.")
     loader.add_option("api_url", str, "", "Fellowship API URL for block logging.")
     loader.add_option("member_token", str, "", "Member token for block logging.")
+    loader.add_option("dashboard_url", str, "", "Guild dashboard URL for the block page CTA.")
 
 
 def _decode_json(b64: str, default):
@@ -144,5 +145,6 @@ def request(flow) -> None:
             fellowship_tax=meta.get("fellowship_tax", 3),
             alternatives=alts,
             reason=reason,
+            dashboard_url=ctx.options.dashboard_url.strip(),
         )
         flow.response = http.Response.make(200, html.encode("utf-8"), {"Content-Type": "text/html; charset=utf-8"})

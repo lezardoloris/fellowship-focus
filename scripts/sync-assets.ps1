@@ -5,7 +5,7 @@ $web = Join-Path $root "web\public\assets"
 $names = @(
   "hero.jpg", "journey-map.jpg", "focus-quest.jpg", "fellowship.jpg",
   "rivendell.jpg", "mount-doom.jpg", "cannot-pass.jpg",
-  "app-icon.png", "fellowship.ico"
+  "app-icon.png", "shield-logo.png", "fellowship.ico"
 )
 New-Item -ItemType Directory -Force -Path $web | Out-Null
 foreach ($name in $names) {

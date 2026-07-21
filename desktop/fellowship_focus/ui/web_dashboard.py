@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from PySide6.QtGui import QFont
-from PySide6.QtCore import QTimer, QUrl
+from PySide6.QtCore import QIODevice, QFile, QObject, QTimer, QUrl, Slot
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from fellowship_focus.invite import apply_parsed_config, parse_invite_or_sync
@@ -13,20 +13,113 @@ from fellowship_focus.ui.theme import ACCENT, BG, BG_SURFACE, BORDER, FG, MUTED,
 
 try:
     from PySide6.QtWebEngineWidgets import QWebEngineView
-    from PySide6.QtWebEngineCore import QWebEngineProfile
+    from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEngineScript
 
     HAS_WEBENGINE = True
 except ImportError:
     HAS_WEBENGINE = False
 
+try:
+    from PySide6.QtWebChannel import QWebChannel
+
+    HAS_WEBCHANNEL = True
+except ImportError:
+    HAS_WEBCHANNEL = False
+
+
+# Sets up window.ffdesktop from the Qt WebChannel transport and announces it.
+# Retries briefly because qt.webChannelTransport can appear a tick after the
+# document is created.
+_BRIDGE_INIT_JS = """
+(function() {
+  if (window.__ffBridgeInit) return;
+  window.__ffBridgeInit = true;
+  var tries = 0;
+  function connect() {
+    tries += 1;
+    if (typeof QWebChannel === 'undefined' || !window.qt || !qt.webChannelTransport) {
+      if (tries < 50) { setTimeout(connect, 100); }
+      return;
+    }
+    try {
+      new QWebChannel(qt.webChannelTransport, function(channel) {
+        window.ffdesktop = channel.objects.ffdesktop;
+        window.dispatchEvent(new Event('ffdesktop-ready'));
+      });
+    } catch (e) { /* not running inside the desktop app */ }
+  }
+  connect();
+})();
+"""
+
+
+class DesktopBridge(QObject):
+    """Exposed to the embedded web app so its Block tab drives the real blocker."""
+
+    def __init__(self, api: dict) -> None:
+        super().__init__()
+        self._api = api or {}
+
+    def _fallback(self) -> dict:
+        return {"shieldOn": False, "active": False, "certReady": False, "sites": []}
+
+    def _call(self, key: str, *args) -> str:
+        fn = self._api.get(key)
+        try:
+            result = fn(*args) if fn else self._fallback()
+        except Exception:
+            result = self._fallback()
+        return json.dumps(result)
+
+    @Slot(result=str)
+    def state(self) -> str:
+        return self._call("state")
+
+    @Slot(bool, result=str)
+    def setShield(self, on: bool) -> str:
+        return self._call("set_shield", bool(on))
+
+    @Slot(str, result=str)
+    def addSites(self, sites_json: str) -> str:
+        try:
+            sites = json.loads(sites_json)
+        except (TypeError, json.JSONDecodeError):
+            sites = []
+        if not isinstance(sites, list):
+            sites = []
+        return self._call("add_sites", [str(s) for s in sites])
+
+    @Slot(str, result=str)
+    def removeSite(self, site: str) -> str:
+        return self._call("remove_site", str(site))
+
+    @Slot(result=str)
+    def weeklyStats(self) -> str:
+        return self._call("weekly_stats")
+
+    @Slot(str, result=str)
+    def setOkr(self, patch_json: str) -> str:
+        try:
+            patch = json.loads(patch_json)
+        except (TypeError, json.JSONDecodeError):
+            patch = {}
+        if not isinstance(patch, dict):
+            patch = {}
+        return self._call("set_okr", patch)
+
 
 class WebDashboardPage(QWidget):
-    def __init__(self, get_config, on_open_external, on_config_updated) -> None:
+    def __init__(self, get_config, on_open_external, on_config_updated, blocker_api=None) -> None:
         super().__init__()
         self._get_config = get_config
         self._on_open_external = on_open_external
         self._on_config_updated = on_config_updated
+        self._blocker_api = blocker_api
         self._injected = False
+        self._bridge = None
+        self._channel = None
+        self._qwebchannel_js = ""
+        self._bridge_ready = False
         self._auth_pending: tuple[str, str, str, str] | None = None
 
         layout = QVBoxLayout(self)
@@ -41,10 +134,10 @@ class WebDashboardPage(QWidget):
         setup_layout.setSpacing(12)
 
         left = QVBoxLayout()
-        self._title = QLabel("Connect Fellowship")
+        self._title = QLabel("Guild (optional)")
         self._title.setFont(font_sans(14, QFont.Weight.DemiBold))
         self._title.setStyleSheet(f"color: {FG};")
-        self._hint = QLabel("Paste invite link or “Copy for desktop app” from the web dashboard")
+        self._hint = QLabel("You can block sites & focus right now. Paste an invite link to join a guild.")
         self._hint.setFont(font_sans(11))
         self._hint.setStyleSheet(f"color: {MUTED};")
         left.addWidget(self._title)
@@ -114,8 +207,53 @@ class WebDashboardPage(QWidget):
         self._view.loadFinished.connect(self._on_load_finished)
         layout.addWidget(self._view, 1)
 
+        self._setup_bridge()
+
         self._pull_timer = QTimer(self)
         self._pull_timer.timeout.connect(self._pull_credentials_from_web)
+
+    def _setup_bridge(self) -> None:
+        """Register the desktop blocker bridge over Qt WebChannel.
+
+        The bridge init runs at DocumentCreation via a persistent QWebEngineScript
+        so ``window.ffdesktop`` exists before the web app's React code mounts — no
+        race with the page's own readiness check.
+        """
+        if not (HAS_WEBCHANNEL and self._view and self._blocker_api):
+            return
+        try:
+            self._channel = QWebChannel(self._view.page())
+            self._bridge = DesktopBridge(self._blocker_api)
+            self._channel.registerObject("ffdesktop", self._bridge)
+            self._view.page().setWebChannel(self._channel)
+            self._qwebchannel_js = self._load_qwebchannel_js()
+            if self._qwebchannel_js:
+                script = QWebEngineScript()
+                script.setName("ffdesktop-bridge")
+                script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
+                script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+                script.setRunsOnSubFrames(False)
+                script.setSourceCode(self._qwebchannel_js + _BRIDGE_INIT_JS)
+                self._view.page().scripts().insert(script)
+        except Exception:
+            self._bridge = None
+
+    @staticmethod
+    def _load_qwebchannel_js() -> str:
+        f = QFile(":/qtwebchannel/qwebchannel.js")
+        if not f.open(QIODevice.ReadOnly):
+            return ""
+        try:
+            return bytes(f.readAll()).decode("utf-8", "replace")
+        finally:
+            f.close()
+
+    def _inject_bridge(self) -> None:
+        """Fallback injection on load-finished (the DocumentCreation script is
+        primary). Idempotent thanks to the window.__ffBridgeInit guard."""
+        if not (self._view and self._bridge and self._qwebchannel_js):
+            return
+        self._view.page().runJavaScript(self._qwebchannel_js + _BRIDGE_INIT_JS)
 
     def reload_dashboard(self) -> None:
         cfg = self._get_config()
@@ -139,9 +277,10 @@ class WebDashboardPage(QWidget):
         if not self._view:
             return
 
+        base = f"{api}/app"
         if code:
             self._injected = False
-            url = f"{api}/f/{code}"
+            url = f"{base}?code={code}"
             if token:
                 self._load_dashboard_with_auth(url, code, token, name)
             elif self._view.url().toString().rstrip("/") != url:
@@ -151,8 +290,12 @@ class WebDashboardPage(QWidget):
             if not self._pull_timer.isActive():
                 self._pull_timer.start(4000)
         else:
+            # Solo mode — the app is fully usable without a guild
+            # (block sites + focus timer + player). A guild is optional.
             self._pull_timer.stop()
-            self._view.setHtml(self._empty_html())
+            current = self._view.url().toString().rstrip("/")
+            if current != base and not current.startswith(base + "?"):
+                self._view.setUrl(QUrl(base))
 
     def _empty_html(self) -> str:
         return f"""<html><head><style>
@@ -200,6 +343,7 @@ class WebDashboardPage(QWidget):
             self._view.page().runJavaScript(js, lambda _: self._view.setUrl(QUrl(url)))
             return
 
+        self._inject_bridge()
         self._pull_credentials_from_web()
         self._push_credentials_to_web()
 

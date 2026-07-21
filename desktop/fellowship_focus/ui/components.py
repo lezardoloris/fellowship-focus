@@ -118,42 +118,46 @@ class ToggleSwitch(QWidget):
         p.end()
 
 
-class ShieldToggle(GlassCard):
+class ShieldHeroCard(GlassCard):
     """
-    Primary blocker control — setting + live arm/disarm during focus.
+    Single hero control for the blocker — brand identity, toggle, quick-off
+    and timed pause in one card. One decision for the user: ON or OFF.
     Signals:
       setting_changed(bool) — enable_website_blocker preference
       arm_requested() — turn shield on now (focus session)
       disarm_requested() — turn shield off now (may trigger guild penalty)
+      pause_requested(int) — timed unlock in minutes, then auto re-arm
     """
 
     setting_changed = Signal(bool)
     arm_requested = Signal()
     disarm_requested = Signal()
+    pause_requested = Signal(int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setObjectName("shieldToggleCard")
+        self.setObjectName("shieldHeroCard")
         self._in_focus = False
         self._active = False
         self._enabled = True
+        self._ready = True
 
         logo_path = ASSETS_DIR / "shield-logo.png"
         if not logo_path.exists():
             logo_path = ASSETS_DIR / "app-icon.png"
         self._logo = QLabel()
-        self._logo.setFixedSize(52, 52)
+        self._logo.setFixedSize(56, 56)
         if logo_path.exists():
             pix = QPixmap(str(logo_path))
             self._logo.setPixmap(
-                pix.scaled(52, 52, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                pix.scaled(56, 56, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             )
-        self._logo.setStyleSheet(f"border-radius: 10px; border: 1px solid {BORDER};")
+        self._logo.setStyleSheet(f"border-radius: 12px; border: 1px solid {BORDER};")
 
-        self._title = QLabel("Fellowship Shield")
-        self._title.setFont(font_sans(16, QFont.Weight.DemiBold))
-        self._title.setStyleSheet(f"color: {FG};")
-        self._status = QLabel("Standby")
+        self._title = QLabel("FELLOWSHIP SHIELD")
+        self._title.setFont(font_display(13, bold=True))
+        self._title.setStyleSheet(f"color: {FG}; letter-spacing: 2px;")
+        self._status = QLabel("Armed for focus")
         self._status.setFont(font_sans(12, QFont.Weight.DemiBold))
         self._hint = QLabel("Arms automatically when you start a focus session")
         self._hint.setWordWrap(True)
@@ -162,7 +166,7 @@ class ShieldToggle(GlassCard):
 
         self._switch = ToggleSwitch()
         self._switch.toggled.connect(self._on_switch_toggled)
-        self._switch_label = QLabel("OFF")
+        self._switch_label = QLabel("ON")
         self._switch_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._switch_label.setFont(font_sans(10, QFont.Weight.DemiBold))
         self._switch_label.setStyleSheet(f"color: {MUTED}; letter-spacing: 1px;")
@@ -195,7 +199,35 @@ class ShieldToggle(GlassCard):
         self._quick_off.clicked.connect(self.disarm_requested.emit)
         outer.addWidget(self._quick_off)
 
+        self._pause_row = QWidget()
+        pause_layout = QHBoxLayout(self._pause_row)
+        pause_layout.setContentsMargins(0, 0, 0, 0)
+        pause_layout.setSpacing(4)
+        pause_lbl = QLabel("Need a moment?")
+        pause_lbl.setObjectName("mutedLabel")
+        pause_layout.addWidget(pause_lbl)
+        for mins in (5, 15, 30):
+            btn = QPushButton(f"Pause {mins} min")
+            btn.setObjectName("linkBtn")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked=False, m=mins: self.pause_requested.emit(m))
+            pause_layout.addWidget(btn)
+        pause_layout.addStretch()
+        self._pause_row.setVisible(False)
+        outer.addWidget(self._pause_row)
+
+        footer = QLabel(
+            "Blocks only during focus sessions — uses the Windows system proxy, released the moment your session ends."
+        )
+        footer.setObjectName("mutedLabel")
+        footer.setWordWrap(True)
+        footer.setFont(font_sans(10))
+        outer.addWidget(footer)
+
     def _on_switch_toggled(self, on: bool) -> None:
+        if not self._ready:
+            self._sync_switch_visual()
+            return
         if self._in_focus:
             if on and not self._active:
                 self.arm_requested.emit()
@@ -207,7 +239,7 @@ class ShieldToggle(GlassCard):
         self.setting_changed.emit(on)
 
     def _sync_switch_visual(self) -> None:
-        show_on = self._active if self._in_focus else self._enabled
+        show_on = self._ready and (self._active if self._in_focus else self._enabled)
         self._switch.blockSignals(True)
         self._switch.setChecked(show_on, animate=False)
         self._switch.blockSignals(False)
@@ -216,36 +248,125 @@ class ShieldToggle(GlassCard):
             f"color: {ACCENT}; letter-spacing: 1px;" if show_on else f"color: {MUTED}; letter-spacing: 1px;"
         )
 
-    def sync_state(self, *, enabled: bool, active: bool, in_focus: bool) -> None:
+    def sync_state(self, *, enabled: bool, active: bool, in_focus: bool, ready: bool = True) -> None:
         self._enabled = enabled
         self._active = active
         self._in_focus = in_focus
+        self._ready = ready
         self._sync_switch_visual()
 
-        if in_focus and active:
+        if not ready:
+            self._status.setText("Setup required")
+            self._status.setStyleSheet(f"color: {ACCENT_HOVER};")
+            self._hint.setText("One click below arms the shield — takes about 15 seconds, once.")
+            self._quick_off.setVisible(False)
+            self._pause_row.setVisible(False)
+            self.setStyleSheet("")
+        elif in_focus and active:
             self._status.setText("● Shield active")
             self._status.setStyleSheet(f"color: {SUCCESS};")
             self._hint.setText("Twitter, YouTube Shorts, TikTok and your blocklist are filtered.")
             self._quick_off.setVisible(True)
-            self.setStyleSheet(f"#shieldToggleCard {{ border-color: rgba(45, 106, 79, 0.55); }}")
+            self._pause_row.setVisible(True)
+            self.setStyleSheet(f"#shieldHeroCard {{ border-color: rgba(45, 106, 79, 0.55); }}")
         elif in_focus and enabled and not active:
             self._status.setText("Shield paused")
             self._status.setStyleSheet(f"color: {ACCENT_HOVER};")
-            self._hint.setText("Tap the switch to re-arm — or use a timed pause below.")
+            self._hint.setText("Re-arms automatically — or tap the switch to re-arm now.")
             self._quick_off.setVisible(False)
+            self._pause_row.setVisible(False)
             self.setStyleSheet("")
         elif enabled:
             self._status.setText("Armed for focus")
             self._status.setStyleSheet(f"color: {ACCENT};")
             self._hint.setText("Starts blocking when you launch a focus session from the Focus tab.")
             self._quick_off.setVisible(False)
+            self._pause_row.setVisible(False)
             self.setStyleSheet("")
         else:
             self._status.setText("Shield off")
             self._status.setStyleSheet(f"color: {MUTED};")
             self._hint.setText("Distractions won't be blocked — guild bypass rules won't apply.")
             self._quick_off.setVisible(False)
-            self.setStyleSheet(f"#shieldToggleCard {{ border-color: {BORDER}; opacity: 0.92; }}")
+            self._pause_row.setVisible(False)
+            self.setStyleSheet(f"#shieldHeroCard {{ border-color: {BORDER}; opacity: 0.92; }}")
+
+
+class MiniShieldToggle(QWidget):
+    """Compact shield control for the Focus tab — same behavior as the hero card."""
+
+    setting_changed = Signal(bool)
+    arm_requested = Signal()
+    disarm_requested = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._in_focus = False
+        self._active = False
+        self._enabled = True
+        self._ready = True
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(4, 0, 4, 0)
+        layout.setSpacing(10)
+
+        title = QLabel("Shield")
+        title.setFont(font_sans(12, QFont.Weight.DemiBold))
+        title.setStyleSheet(f"color: {FG};")
+        self._status = QLabel("")
+        self._status.setFont(font_sans(11))
+        self._status.setStyleSheet(f"color: {MUTED};")
+
+        self._switch = ToggleSwitch()
+        self._switch.toggled.connect(self._on_switch_toggled)
+
+        layout.addStretch()
+        layout.addWidget(title)
+        layout.addWidget(self._status)
+        layout.addWidget(self._switch)
+        layout.addStretch()
+
+    def _on_switch_toggled(self, on: bool) -> None:
+        if not self._ready:
+            self._sync_switch_visual()
+            return
+        if self._in_focus:
+            if on and not self._active:
+                self.arm_requested.emit()
+            elif not on and self._active:
+                self.disarm_requested.emit()
+            else:
+                self._sync_switch_visual()
+            return
+        self.setting_changed.emit(on)
+
+    def _sync_switch_visual(self) -> None:
+        show_on = self._ready and (self._active if self._in_focus else self._enabled)
+        self._switch.blockSignals(True)
+        self._switch.setChecked(show_on, animate=False)
+        self._switch.blockSignals(False)
+
+    def sync_state(self, *, enabled: bool, active: bool, in_focus: bool, ready: bool = True) -> None:
+        self._enabled = enabled
+        self._active = active
+        self._in_focus = in_focus
+        self._ready = ready
+        self._sync_switch_visual()
+        if not ready:
+            self._status.setText("setup needed — see Blocker tab")
+            self._status.setStyleSheet(f"color: {ACCENT_HOVER};")
+        elif in_focus and active:
+            self._status.setText("● blocking distractions")
+            self._status.setStyleSheet(f"color: {SUCCESS};")
+        elif in_focus and enabled and not active:
+            self._status.setText("paused")
+            self._status.setStyleSheet(f"color: {ACCENT_HOVER};")
+        elif enabled:
+            self._status.setText("arms when you start")
+            self._status.setStyleSheet(f"color: {MUTED};")
+        else:
+            self._status.setText("off")
+            self._status.setStyleSheet(f"color: {MUTED};")
 
 
 class HeroBanner(QWidget):
@@ -301,54 +422,6 @@ class HeroBanner(QWidget):
             s.setStyleSheet("color: #9ca3af;")
             text_col.addWidget(s)
         layout.addLayout(text_col, 1)
-
-
-class BlockerIdentityPanel(GlassCard):
-    """Branded shield identity for the website blocker."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(20, 16, 20, 16)
-        layout.setSpacing(16)
-
-        logo_path = ASSETS_DIR / "shield-logo.png"
-        if not logo_path.exists():
-            logo_path = ASSETS_DIR / "app-icon.png"
-        if logo_path.exists():
-            logo = QLabel()
-            logo.setFixedSize(64, 64)
-            pix = QPixmap(str(logo_path))
-            logo.setPixmap(pix.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            layout.addWidget(logo)
-
-        col = QVBoxLayout()
-        col.setSpacing(4)
-        title = QLabel("FELLOWSHIP SHIELD")
-        title.setFont(font_display(13, bold=True))
-        title.setStyleSheet("color: #f4f4f5; letter-spacing: 2px;")
-        sub = QLabel("System-wide blocker · Shorts, Reels, distractions")
-        sub.setFont(font_sans(11))
-        sub.setObjectName("mutedLabel")
-        sub.setWordWrap(True)
-        badge = QLabel("You cannot pass.")
-        badge.setFont(font_sans(11, QFont.Weight.DemiBold))
-        badge.setStyleSheet(f"color: {ACCENT};")
-        col.addWidget(title)
-        col.addWidget(sub)
-        col.addWidget(badge)
-        layout.addLayout(col, 1)
-
-        preview_path = ASSETS_DIR / "cannot-pass.jpg"
-        if preview_path.exists():
-            preview = QLabel()
-            preview.setFixedSize(120, 72)
-            pix = QPixmap(str(preview_path))
-            preview.setPixmap(
-                pix.scaled(120, 72, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
-            )
-            preview.setStyleSheet(f"border-radius: 6px; border: 1px solid {BORDER};")
-            layout.addWidget(preview)
 
 
 class MutedLabel(QLabel):
@@ -486,6 +559,7 @@ class NavSidebar(QWidget):
         ("Focus", "Pomodoro timer"),
         ("Blocker", "Site shield"),
         ("Settings", "Connect & OKRs"),
+        ("Screen time", "App usage & focus score"),
     ]
 
     def __init__(self, parent: QWidget | None = None) -> None:

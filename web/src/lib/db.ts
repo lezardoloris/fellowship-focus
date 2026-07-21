@@ -261,6 +261,56 @@ function initSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_proofs_fellowship ON focus_proofs(fellowship_id);
     CREATE INDEX IF NOT EXISTS idx_proofs_member ON focus_proofs(member_id);
     CREATE INDEX IF NOT EXISTS idx_proofs_session ON focus_proofs(session_id);
+
+    CREATE TABLE IF NOT EXISTS app_usage (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      fellowship_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      work_seconds INTEGER NOT NULL DEFAULT 0,
+      distraction_seconds INTEGER NOT NULL DEFAULT 0,
+      personal_seconds INTEGER NOT NULL DEFAULT 0,
+      neutral_seconds INTEGER NOT NULL DEFAULT 0,
+      focus_score INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id),
+      FOREIGN KEY (fellowship_id) REFERENCES fellowships(id),
+      UNIQUE(member_id, date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_usage_fellowship ON app_usage(fellowship_id);
+    CREATE INDEX IF NOT EXISTS idx_usage_member ON app_usage(member_id);
+
+    CREATE TABLE IF NOT EXISTS member_blocklist (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      site TEXT NOT NULL,
+      category TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id),
+      UNIQUE(member_id, site)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_blocklist_member ON member_blocklist(member_id);
+
+    CREATE TABLE IF NOT EXISTS member_prefs (
+      member_id TEXT PRIMARY KEY,
+      focus_min INTEGER NOT NULL DEFAULT 25,
+      break_min INTEGER NOT NULL DEFAULT 5,
+      cycles INTEGER NOT NULL DEFAULT 4,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS member_goals (
+      member_id TEXT PRIMARY KEY,
+      focus_hours_target INTEGER NOT NULL DEFAULT 20,
+      habit_rate_target INTEGER NOT NULL DEFAULT 80,
+      revenue_target_cents INTEGER NOT NULL DEFAULT 300000,
+      revenue_current_cents INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
   `);
   try {
     database.exec(`ALTER TABLE block_events ADD COLUMN fellowship_tax INTEGER NOT NULL DEFAULT 3`);
@@ -1072,4 +1122,385 @@ export function getTrustLeaderboard(fellowshipId: string): TrustMember[] {
 
 export function getProofById(proofId: string): FocusProof | undefined {
   return getDb().prepare("SELECT * FROM focus_proofs WHERE id = ?").get(proofId) as FocusProof | undefined;
+}
+
+// ── Screen time / app usage ────────────────────────────
+
+export type AppUsage = {
+  id: string;
+  member_id: string;
+  fellowship_id: string;
+  date: string;
+  work_seconds: number;
+  distraction_seconds: number;
+  personal_seconds: number;
+  neutral_seconds: number;
+  focus_score: number;
+  updated_at: string;
+};
+
+export function recordAppUsage(
+  memberId: string,
+  fellowshipId: string,
+  usage: {
+    workSeconds: number;
+    distractionSeconds: number;
+    personalSeconds: number;
+    neutralSeconds: number;
+    focusScore: number;
+  }
+): AppUsage {
+  const database = getDb();
+  const date = new Date().toISOString().slice(0, 10);
+  const existing = database
+    .prepare("SELECT id FROM app_usage WHERE member_id = ? AND date = ?")
+    .get(memberId, date) as { id: string } | undefined;
+
+  if (existing) {
+    database
+      .prepare(
+        `UPDATE app_usage SET work_seconds = ?, distraction_seconds = ?, personal_seconds = ?,
+           neutral_seconds = ?, focus_score = ?, updated_at = datetime('now')
+         WHERE id = ?`
+      )
+      .run(
+        usage.workSeconds,
+        usage.distractionSeconds,
+        usage.personalSeconds,
+        usage.neutralSeconds,
+        usage.focusScore,
+        existing.id
+      );
+    return database.prepare("SELECT * FROM app_usage WHERE id = ?").get(existing.id) as AppUsage;
+  }
+
+  const id = nanoid();
+  database
+    .prepare(
+      `INSERT INTO app_usage
+         (id, member_id, fellowship_id, date, work_seconds, distraction_seconds, personal_seconds, neutral_seconds, focus_score)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      memberId,
+      fellowshipId,
+      date,
+      usage.workSeconds,
+      usage.distractionSeconds,
+      usage.personalSeconds,
+      usage.neutralSeconds,
+      usage.focusScore
+    );
+  return database.prepare("SELECT * FROM app_usage WHERE id = ?").get(id) as AppUsage;
+}
+
+export function getMemberUsageToday(memberId: string): AppUsage | undefined {
+  const date = new Date().toISOString().slice(0, 10);
+  return getDb()
+    .prepare("SELECT * FROM app_usage WHERE member_id = ? AND date = ?")
+    .get(memberId, date) as AppUsage | undefined;
+}
+
+// ── Block list & focus prefs (the web control center) ──
+
+export type BlocklistEntry = {
+  id: string;
+  member_id: string;
+  site: string;
+  category: string | null;
+  created_at: string;
+};
+
+export type MemberPrefs = {
+  member_id: string;
+  focus_min: number;
+  break_min: number;
+  cycles: number;
+  updated_at: string;
+};
+
+function _normSite(site: string): string {
+  return site
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/.*$/, "")
+    .slice(0, 120);
+}
+
+export function getBlocklist(memberId: string): BlocklistEntry[] {
+  return getDb()
+    .prepare("SELECT * FROM member_blocklist WHERE member_id = ? ORDER BY created_at DESC")
+    .all(memberId) as BlocklistEntry[];
+}
+
+export function addBlocklistSites(
+  memberId: string,
+  sites: string[],
+  category: string | null = null
+): BlocklistEntry[] {
+  const database = getDb();
+  const insert = database.prepare(
+    `INSERT OR IGNORE INTO member_blocklist (id, member_id, site, category) VALUES (?, ?, ?, ?)`
+  );
+  const tx = database.transaction((rows: string[]) => {
+    for (const raw of rows) {
+      const site = _normSite(raw);
+      if (site) insert.run(nanoid(), memberId, site, category);
+    }
+  });
+  tx(sites);
+  return getBlocklist(memberId);
+}
+
+export function removeBlocklistSite(memberId: string, site: string): BlocklistEntry[] {
+  getDb()
+    .prepare("DELETE FROM member_blocklist WHERE member_id = ? AND site = ?")
+    .run(memberId, _normSite(site));
+  return getBlocklist(memberId);
+}
+
+export function getMemberPrefs(memberId: string): MemberPrefs {
+  const database = getDb();
+  let row = database
+    .prepare("SELECT * FROM member_prefs WHERE member_id = ?")
+    .get(memberId) as MemberPrefs | undefined;
+  if (!row) {
+    database.prepare("INSERT INTO member_prefs (member_id) VALUES (?)").run(memberId);
+    row = database
+      .prepare("SELECT * FROM member_prefs WHERE member_id = ?")
+      .get(memberId) as MemberPrefs;
+  }
+  return row;
+}
+
+export function setMemberPrefs(
+  memberId: string,
+  prefs: { focus_min: number; break_min: number; cycles: number }
+): MemberPrefs {
+  const database = getDb();
+  getMemberPrefs(memberId); // ensure row exists
+  database
+    .prepare(
+      `UPDATE member_prefs SET focus_min = ?, break_min = ?, cycles = ?, updated_at = datetime('now')
+       WHERE member_id = ?`
+    )
+    .run(
+      Math.max(1, Math.min(180, prefs.focus_min)),
+      Math.max(1, Math.min(60, prefs.break_min)),
+      Math.max(1, Math.min(12, prefs.cycles)),
+      memberId
+    );
+  return getMemberPrefs(memberId);
+}
+
+// ── Weekly agenda, OKR & productivity ──────────────────
+
+export type MemberGoals = {
+  member_id: string;
+  focus_hours_target: number;
+  habit_rate_target: number;
+  revenue_target_cents: number;
+  revenue_current_cents: number;
+  updated_at: string;
+};
+
+export function getMemberGoals(memberId: string): MemberGoals {
+  const database = getDb();
+  let row = database
+    .prepare("SELECT * FROM member_goals WHERE member_id = ?")
+    .get(memberId) as MemberGoals | undefined;
+  if (!row) {
+    database.prepare("INSERT INTO member_goals (member_id) VALUES (?)").run(memberId);
+    row = database
+      .prepare("SELECT * FROM member_goals WHERE member_id = ?")
+      .get(memberId) as MemberGoals;
+  }
+  return row;
+}
+
+export function setMemberGoals(
+  memberId: string,
+  goals: Partial<{
+    focus_hours_target: number;
+    habit_rate_target: number;
+    revenue_target_cents: number;
+    revenue_current_cents: number;
+  }>
+): MemberGoals {
+  const current = getMemberGoals(memberId);
+  const next = {
+    focus_hours_target: clampInt(goals.focus_hours_target ?? current.focus_hours_target, 1, 80),
+    habit_rate_target: clampInt(goals.habit_rate_target ?? current.habit_rate_target, 10, 100),
+    revenue_target_cents: clampInt(
+      goals.revenue_target_cents ?? current.revenue_target_cents,
+      0,
+      100_000_00
+    ),
+    revenue_current_cents: clampInt(
+      goals.revenue_current_cents ?? current.revenue_current_cents,
+      0,
+      100_000_00
+    ),
+  };
+  getDb()
+    .prepare(
+      `UPDATE member_goals SET focus_hours_target = ?, habit_rate_target = ?,
+         revenue_target_cents = ?, revenue_current_cents = ?, updated_at = datetime('now')
+       WHERE member_id = ?`
+    )
+    .run(
+      next.focus_hours_target,
+      next.habit_rate_target,
+      next.revenue_target_cents,
+      next.revenue_current_cents,
+      memberId
+    );
+  return getMemberGoals(memberId);
+}
+
+function clampInt(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.round(Number(n) || 0)));
+}
+
+/** Monday (local server time) of the current week, as YYYY-MM-DD. */
+function getWeekStartDate(): string {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = day === 0 ? 6 : day - 1;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - diff);
+  monday.setHours(0, 0, 0, 0);
+  return monday.toISOString().slice(0, 10);
+}
+
+export type ProductivityDay = {
+  date: string;
+  weekday: string;
+  focus_minutes: number;
+  sessions: number;
+  work_seconds: number;
+  distraction_seconds: number;
+  focus_score: number;
+};
+
+export type WeeklyProductivity = {
+  week_start: string;
+  days: ProductivityDay[];
+  kpis: {
+    focus_hours: number;
+    focus_sessions: number;
+    avg_focus_score: number;
+    distraction_hours: number;
+    streak: number;
+    habit_rate: number;
+  };
+  okr: {
+    focus_hours: { current: number; target: number };
+    habit_rate: { current: number; target: number };
+    revenue: { current_cents: number; target_cents: number };
+  };
+};
+
+export function getWeeklyProductivity(memberId: string): WeeklyProductivity {
+  const database = getDb();
+  const weekStart = getWeekStartDate();
+  syncAutoHabits(memberId, "");
+
+  const sessionRows = database
+    .prepare(
+      `SELECT date(created_at) as d, COALESCE(SUM(minutes), 0) as minutes, COUNT(*) as sessions
+       FROM focus_sessions
+       WHERE member_id = ? AND completed = 1 AND date(created_at) >= ?
+       GROUP BY d`
+    )
+    .all(memberId, weekStart) as Array<{ d: string; minutes: number; sessions: number }>;
+  const byDaySessions = new Map(sessionRows.map((r) => [r.d, r]));
+
+  const usageRows = database
+    .prepare(
+      `SELECT date, work_seconds, distraction_seconds, focus_score
+       FROM app_usage WHERE member_id = ? AND date >= ?`
+    )
+    .all(memberId, weekStart) as Array<{
+    date: string;
+    work_seconds: number;
+    distraction_seconds: number;
+    focus_score: number;
+  }>;
+  const byDayUsage = new Map(usageRows.map((r) => [r.date, r]));
+
+  const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const monday = new Date(`${weekStart}T00:00:00`);
+  const today = new Date().toISOString().slice(0, 10);
+  const days: ProductivityDay[] = [];
+  let daysElapsed = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const iso = d.toISOString().slice(0, 10);
+    if (iso <= today) daysElapsed = i + 1;
+    const s = byDaySessions.get(iso);
+    const u = byDayUsage.get(iso);
+    days.push({
+      date: iso,
+      weekday: weekdays[i],
+      focus_minutes: s?.minutes ?? 0,
+      sessions: s?.sessions ?? 0,
+      work_seconds: u?.work_seconds ?? 0,
+      distraction_seconds: u?.distraction_seconds ?? 0,
+      focus_score: u?.focus_score ?? 0,
+    });
+  }
+
+  const focusMinutes = days.reduce((sum, d) => sum + d.focus_minutes, 0);
+  const focusSessions = days.reduce((sum, d) => sum + d.sessions, 0);
+  const distractionSeconds = days.reduce((sum, d) => sum + d.distraction_seconds, 0);
+  const scored = days.filter((d) => d.focus_score > 0);
+  const avgScore = scored.length
+    ? Math.round(scored.reduce((sum, d) => sum + d.focus_score, 0) / scored.length)
+    : 0;
+
+  const activeHabits = getMemberHabits(memberId).length;
+  const checkins = (
+    database
+      .prepare(
+        `SELECT COUNT(*) as c FROM habit_checkins
+         WHERE member_id = ? AND completed = 1 AND date >= ?`
+      )
+      .get(memberId, weekStart) as { c: number }
+  ).c;
+  const habitDenom = activeHabits * Math.max(1, daysElapsed);
+  const habitRate = habitDenom > 0 ? Math.round((100 * checkins) / habitDenom) : 0;
+
+  const member = database.prepare("SELECT streak FROM members WHERE id = ?").get(memberId) as
+    | { streak: number }
+    | undefined;
+  const goals = getMemberGoals(memberId);
+
+  return {
+    week_start: weekStart,
+    days,
+    kpis: {
+      focus_hours: Math.round((focusMinutes / 60) * 10) / 10,
+      focus_sessions: focusSessions,
+      avg_focus_score: avgScore,
+      distraction_hours: Math.round((distractionSeconds / 3600) * 10) / 10,
+      streak: member?.streak ?? 0,
+      habit_rate: Math.min(100, habitRate),
+    },
+    okr: {
+      focus_hours: {
+        current: Math.round((focusMinutes / 60) * 10) / 10,
+        target: goals.focus_hours_target,
+      },
+      habit_rate: { current: Math.min(100, habitRate), target: goals.habit_rate_target },
+      revenue: {
+        current_cents: goals.revenue_current_cents,
+        target_cents: goals.revenue_target_cents,
+      },
+    },
+  };
 }
