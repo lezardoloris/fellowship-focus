@@ -85,6 +85,25 @@ function isAllowlisted(domain, allowlist) {
 
 // ── declarativeNetRequest rules ─────────────────────────
 
+// Sites that live on more than one apex domain. Blocking the obvious name
+// without these leaves an open door (youtu.be links bypass a youtube.com rule).
+const DOMAIN_ALIASES = {
+  "youtube.com": ["youtu.be", "youtube-nocookie.com"],
+  "twitter.com": ["x.com", "t.co"],
+  "x.com": ["twitter.com", "t.co"],
+  "facebook.com": ["fb.com", "fb.watch"],
+  "instagram.com": ["ig.me"],
+  "reddit.com": ["redd.it"],
+  "tiktok.com": ["vm.tiktok.com"],
+};
+
+/** Expand a site into every domain that must be blocked with it. */
+function expandDomains(site) {
+  const base = normalizeSite(site);
+  if (!base) return [];
+  return [base, ...(DOMAIN_ALIASES[base] || [])];
+}
+
 function ruleForDomain(domain, id, friction) {
   return {
     id,
@@ -97,10 +116,35 @@ function ruleForDomain(domain, id, friction) {
       },
     },
     condition: {
-      urlFilter: "||" + domain + "^",
+      // requestDomains matches the apex AND every subdomain (www., m., old.…),
+      // which urlFilter "||domain^" does not do reliably for main_frame.
+      requestDomains: [domain],
       resourceTypes: ["main_frame"],
     },
   };
+}
+
+/** Higher-priority allow rule so a friction "Continue" isn't re-blocked instantly. */
+function tempAllowRule(domain, id) {
+  return {
+    id,
+    priority: 100,
+    action: { type: "allow" },
+    condition: { requestDomains: [domain], resourceTypes: ["main_frame"] },
+  };
+}
+
+const TEMP_ALLOW_ID_BASE = 900000;
+
+/** Drop expired entries from prefs.temp_allow ({domain: epochMs}). */
+function liveTempAllows(cfg) {
+  const raw = (cfg.prefs && cfg.prefs.temp_allow) || {};
+  const now = Date.now();
+  const out = {};
+  for (const [domain, until] of Object.entries(raw)) {
+    if (Number(until) > now) out[domain] = Number(until);
+  }
+  return out;
 }
 
 async function rebuildRules() {
@@ -109,17 +153,47 @@ async function rebuildRules() {
   const removeRuleIds = existing.map((r) => r.id);
   const allow = cfg.prefs.allowlist || [];
   const modes = cfg.prefs.site_modes || {};
+  const temp = liveTempAllows(cfg);
 
   let addRules = [];
   if (effectiveShield(cfg)) {
-    addRules = cfg.sites
-      .filter(Boolean)
-      .filter((site) => !isAllowlisted(site, allow))
-      .slice(0, 4000)
-      .map((site, i) => ruleForDomain(site, i + 1, modes[site] === "friction"));
+    const seen = new Set();
+    let id = 1;
+    for (const site of cfg.sites.filter(Boolean)) {
+      const friction = modes[normalizeSite(site)] === "friction";
+      for (const domain of expandDomains(site)) {
+        if (seen.has(domain)) continue;
+        if (isAllowlisted(domain, allow)) continue;
+        seen.add(domain);
+        addRules.push(ruleForDomain(domain, id++, friction));
+        if (id > 4000) break;
+      }
+      if (id > 4000) break;
+    }
+    // Temporary allows win over block rules via priority.
+    let allowId = TEMP_ALLOW_ID_BASE;
+    for (const domain of Object.keys(temp)) {
+      addRules.push(tempAllowRule(domain, allowId++));
+    }
   }
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
   updateBadge(cfg);
+  return addRules.length;
+}
+
+/** Status the web app can trust — reflects real installed rules, not a ping. */
+async function getStatus() {
+  const cfg = await getConfig();
+  const rules = await chrome.declarativeNetRequest.getDynamicRules();
+  return {
+    ready: true,
+    shieldOn: effectiveShield(cfg),
+    manualShield: !!cfg.manualShield,
+    focusOn: !!cfg.focus,
+    siteCount: (cfg.sites || []).filter(Boolean).length,
+    ruleCount: rules.filter((r) => r.id < TEMP_ALLOW_ID_BASE).length,
+    version: chrome.runtime.getManifest().version,
+  };
 }
 
 function updateBadge(cfg) {
@@ -298,15 +372,45 @@ async function connect(payload) {
     code: data.code || "",
     name: data.name || "",
   };
-  if (Array.isArray(data.sites) && data.sites.length) {
-    patch.sites = data.sites.map(normalizeSite).filter(Boolean);
-  }
   if (data.prefs && typeof data.prefs === "object") {
     patch.prefs = data.prefs;
   }
+  // Connecting IS the act of arming. Without this the shield stays off,
+  // rebuildRules() installs zero rules, and nothing is ever blocked.
+  if (data.shieldOn !== false) patch.manualShield = true;
+
   await setConfig(patch);
   await syncRemote();
+
+  // Apply the pushed list AFTER syncRemote so the freshly-sent list wins
+  // instead of being clobbered by a stale server copy.
+  const sites = Array.isArray(data.sites) ? data.sites.map(normalizeSite).filter(Boolean) : [];
+  if (sites.length) await setConfig({ sites });
+
   await rebuildRules();
+  return getConfig();
+}
+
+/** Replace the whole list — used on every web-app mutation so rules stay live. */
+async function setSites(list) {
+  const sites = (Array.isArray(list) ? list : []).map(normalizeSite).filter(Boolean);
+  await setConfig({ sites: [...new Set(sites)] });
+  await rebuildRules();
+  return getConfig();
+}
+
+/** Let a domain through for N seconds (friction "Continue"), then re-block. */
+async function allowTemporarily(domain, secs) {
+  const clean = normalizeSite(domain);
+  if (!clean) return getConfig();
+  const cfg = await getConfig();
+  const until = Date.now() + Math.max(5, Number(secs) || 60) * 1000;
+  const temp = { ...liveTempAllows(cfg) };
+  for (const d of expandDomains(clean)) temp[d] = until;
+  await setConfig({ prefs: { ...cfg.prefs, temp_allow: temp } });
+  await rebuildRules();
+  // Re-block as soon as the window closes.
+  chrome.alarms.create("tempAllow", { when: until + 500 });
   return getConfig();
 }
 
@@ -393,7 +497,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   else if (alarm.name === "sync") {
     await syncRemote();
     await rebuildRules();
-  } else if (alarm.name === "scheduleTick") {
+  } else if (alarm.name === "scheduleTick" || alarm.name === "tempAllow") {
     await rebuildRules();
   }
 });
@@ -402,7 +506,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     switch (msg?.type) {
       case "getState":
-        sendResponse({ config: await getConfig() });
+        sendResponse({ config: await getConfig(), status: await getStatus() });
+        break;
+      case "getStatus":
+        sendResponse({ status: await getStatus() });
+        break;
+      case "setSites":
+        await setSites(msg.sites);
+        sendResponse({ config: await getConfig(), status: await getStatus() });
+        break;
+      case "allowTemporarily":
+        await allowTemporarily(msg.domain, msg.secs);
+        sendResponse({ ok: true });
         break;
       case "setShield": {
         const cfg = await getConfig();
@@ -413,19 +528,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
         await setConfig({ manualShield: !!msg.on });
         await rebuildRules();
-        sendResponse({ config: await getConfig() });
+        sendResponse({ config: await getConfig(), status: await getStatus() });
         break;
       }
       case "startFocus":
         await startFocus();
-        sendResponse({ config: await getConfig() });
+        sendResponse({ config: await getConfig(), status: await getStatus() });
         break;
       case "stopFocus":
         await stopFocus();
-        sendResponse({ config: await getConfig() });
+        sendResponse({ config: await getConfig(), status: await getStatus() });
         break;
       case "connect":
-        sendResponse({ config: await connect(msg.payload) });
+        sendResponse({ config: await connect(msg.payload), status: await getStatus() });
         break;
       case "pairFromCode": {
         try {
@@ -433,7 +548,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           const res = await fetch(`${base}/api/blocker/pair?code=${encodeURIComponent(msg.code)}`);
           const json = await res.json();
           if (!res.ok) throw new Error(json.error || "pair_failed");
-          sendResponse({ config: await connect(json) });
+          sendResponse({ config: await connect(json), status: await getStatus() });
         } catch (e) {
           sendResponse({ error: String(e) });
         }

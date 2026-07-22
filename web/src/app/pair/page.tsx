@@ -17,15 +17,58 @@ export default function PairPage() {
     }
     (async () => {
       try {
+        // This page is the SINGLE consumer of the one-time code. The content
+        // script must never redeem it too, or one side gets invalid_or_expired.
         const res = await fetch(`/api/blocker/pair?code=${encodeURIComponent(code)}`);
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || "Pair failed");
-        window.postMessage(
-          { source: "fellowship-focus", type: "FF_PAIR_CONNECT", payload: json },
-          "*"
-        );
+
+        // Ship the block list with the credentials, otherwise the extension
+        // arms with an empty list and blocks nothing.
+        let sites: string[] = [];
+        try {
+          const cfg = await fetch(
+            `/api/blocker/config?token=${encodeURIComponent(json.token)}`
+          ).then((r) => (r.ok ? r.json() : null));
+          if (Array.isArray(cfg?.sites)) {
+            sites = cfg.sites.map((s: { site: string } | string) =>
+              typeof s === "string" ? s : s.site
+            );
+          }
+        } catch {
+          /* pair anyway — the extension will sync the list itself */
+        }
+
+        const result = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+          const onMsg = (e: MessageEvent) => {
+            const d = e.data;
+            if (d?.source !== "fellowship-focus-ext" || d.type !== "FF_PAIR_RESULT") return;
+            window.removeEventListener("message", onMsg);
+            clearTimeout(timer);
+            resolve({ ok: Boolean(d.ok), error: d.error });
+          };
+          const timer = setTimeout(() => {
+            window.removeEventListener("message", onMsg);
+            resolve({ ok: false, error: "Extension did not answer" });
+          }, 6000);
+          window.addEventListener("message", onMsg);
+          window.postMessage(
+            {
+              source: "fellowship-focus",
+              type: "FF_PAIR_CONNECT",
+              payload: { ...json, sites, shieldOn: true },
+            },
+            "*"
+          );
+        });
+
+        if (!result.ok) {
+          throw new Error(
+            result.error || "Extension not reachable — reload it in chrome://extensions"
+          );
+        }
         setStatus("ok");
-        setDetail(`Connected as ${json.name || "member"}.`);
+        setDetail(`Connected as ${json.name || "member"}. Shield armed.`);
         setTimeout(() => {
           window.location.href = "/app";
         }, 1500);

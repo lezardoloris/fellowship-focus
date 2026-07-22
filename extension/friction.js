@@ -24,8 +24,14 @@ function tick() {
 }
 
 btn.addEventListener("click", () => {
-  // Navigate to https://domain — user chose to proceed
-  location.href = "https://" + domain.replace(/^https?:\/\//, "");
+  // Ask the worker for a temporary allow FIRST. Navigating without it just hits
+  // the same block rule again, which looked like the page was broken.
+  btn.disabled = true;
+  hint.textContent = "Opening…";
+  const target = "https://" + domain.replace(/^https?:\/\//, "");
+  chrome.runtime.sendMessage({ type: "allowTemporarily", domain, secs: 120 }, () => {
+    location.href = target;
+  });
 });
 
 document.getElementById("back").addEventListener("click", () => {

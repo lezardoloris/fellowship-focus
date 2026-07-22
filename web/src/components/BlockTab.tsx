@@ -8,7 +8,10 @@ import {
   analyzeHistoryViaExtension,
   connectExtension,
   extensionCommand,
+  getExtensionState,
+  isArmed,
   pingExtension,
+  type ExtensionState,
   type HistorySuggestion,
 } from "@/lib/extensionBridge";
 import { useToast } from "@/components/Toasts";
@@ -77,6 +80,22 @@ type Phase = "idle" | "focus" | "break";
 
 const LOCAL_BL_KEY = "ff-local-blocklist";
 const LOCAL_PREFS_KEY = "ff-local-prefs";
+/** Live session, persisted so a closed window/tab doesn't lose the deep-work clock. */
+const SESSION_KEY = "ff-focus-session";
+
+type StoredSession = { phase: Exclude<Phase, "idle">; cycle: number; endsAt: number };
+
+function readSession(): StoredSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as StoredSession;
+    if (!s?.endsAt || (s.phase !== "focus" && s.phase !== "break")) return null;
+    return s;
+  } catch {
+    return null;
+  }
+}
 
 function normalizeSite(raw: string): string {
   return raw
@@ -110,6 +129,7 @@ export function BlockTab({
   const [cycle, setCycle] = useState(0);
   const [exceeded, setExceeded] = useState(0);
   const [extReady, setExtReady] = useState(false);
+  const [extState, setExtState] = useState<ExtensionState | null>(null);
   const [suggestions, setSuggestions] = useState<HistorySuggestion[]>([]);
   const [scanBusy, setScanBusy] = useState(false);
   const [devices, setDevices] = useState<
@@ -118,6 +138,19 @@ export function BlockTab({
   const toast = useToast();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopAlarmRef = useRef<(() => void) | null>(null);
+  const endsAtRef = useRef<number>(0);
+  const firedRef = useRef(false);
+  // Always read the freshest list when talking to the extension: a stale closure
+  // silently pushed a list missing the site the user had just added.
+  const sitesRef = useRef<BlocklistEntry[]>([]);
+  const prefsRef = useRef<Prefs>(prefs);
+
+  useEffect(() => {
+    sitesRef.current = sites;
+  }, [sites]);
+  useEffect(() => {
+    prefsRef.current = prefs;
+  }, [prefs]);
 
   const applyDesktopState = useCallback((st: DesktopState) => {
     setDt(st);
@@ -273,22 +306,25 @@ export function BlockTab({
     }
     // Solo mode: persist the blocklist locally, no server round-trip.
     if (!token) {
-      setSites((prev) => {
-        let next = prev;
-        if (body.action === "add") {
-          const existing = new Set(prev.map((s) => s.site));
-          const category = (body.category as string) ?? null;
-          const added = ((body.sites as string[]) || [])
-            .map(normalizeSite)
-            .filter((s) => s && !existing.has(s))
-            .map((s) => ({ id: s, site: s, category }));
-          next = [...prev, ...added];
-        } else if (body.action === "remove") {
-          next = prev.filter((s) => s.site !== body.site);
-        }
-        localStorage.setItem(LOCAL_BL_KEY, JSON.stringify(next));
-        return next;
-      });
+      // Compute synchronously: a setSites(prev => …) updater runs on the next
+      // render, so reading the result right after would push a stale list.
+      const prev = sitesRef.current;
+      let next = prev;
+      if (body.action === "add") {
+        const existing = new Set(prev.map((s) => s.site));
+        const category = (body.category as string) ?? null;
+        const added = ((body.sites as string[]) || [])
+          .map(normalizeSite)
+          .filter((s) => s && !existing.has(s))
+          .map((s) => ({ id: s, site: s, category }));
+        next = [...prev, ...added];
+      } else if (body.action === "remove") {
+        next = prev.filter((s) => s.site !== body.site);
+      }
+      localStorage.setItem(LOCAL_BL_KEY, JSON.stringify(next));
+      sitesRef.current = next;
+      setSites(next);
+      await syncSitesToExtension();
       return;
     }
     const res = await fetch(`/api/blocklist`, {
@@ -297,7 +333,11 @@ export function BlockTab({
       body: JSON.stringify({ token, ...body }),
     });
     const json = await res.json();
-    if (json.sites) setSites(json.sites);
+    if (json.sites) {
+      setSites(json.sites);
+      sitesRef.current = json.sites;
+    }
+    await syncSitesToExtension();
   }
 
   const addCategory = (c: (typeof CATEGORIES)[number]) => post({ action: "add", sites: c.sites, category: c.id });
@@ -339,23 +379,50 @@ export function BlockTab({
     }).catch(() => {});
   }
 
-  async function pushListToExtension(): Promise<boolean> {
-    return connectExtension({
+  /** Connect + arm in one shot, using the freshest list. Returns real state. */
+  const armExtension = useCallback(async (): Promise<ExtensionState | null> => {
+    const state = await connectExtension({
       apiUrl: window.location.origin,
       token: token || "",
       code: code || "",
       name: name || "",
-      sites: sites.map((s) => s.site),
-      prefs,
+      sites: sitesRef.current.map((s) => s.site),
+      prefs: prefsRef.current,
+      shieldOn: true,
     });
-  }
+    if (!state) return null;
+    // connect() arms the shield itself, but confirm against real rules rather
+    // than trusting the round-trip.
+    if (!isArmed(state)) {
+      await extensionCommand("setShield", { on: true });
+      return await getExtensionState();
+    }
+    return state;
+  }, [token, code, name]);
+
+  /** Mirror the current list into the extension so rules rebuild immediately. */
+  const syncSitesToExtension = useCallback(async () => {
+    if (!extReady) return;
+    await extensionCommand("setSites", { sites: sitesRef.current.map((s) => s.site) });
+    setExtState(await getExtensionState());
+  }, [extReady]);
 
   async function connectChrome() {
-    const ok = await pushListToExtension();
-    if (ok) {
+    const state = await armExtension();
+    if (state && isArmed(state)) {
       setExtReady(true);
-      await extensionCommand("setShield", { on: true });
-      toast.ok("Blocking in Chrome");
+      setExtState(state);
+      toast.ok("Shield ON in Chrome", `${state.ruleCount} rules active`);
+      return;
+    }
+    if (state && !isArmed(state)) {
+      // Extension is there but has nothing to block.
+      setExtReady(true);
+      setExtState(state);
+      toast.error(
+        "Nothing to block",
+        state.siteCount === 0 ? "Add a site or pick a preset first." : "Shield could not arm."
+      );
       return;
     }
     if (token) {
@@ -375,7 +442,7 @@ export function BlockTab({
         /* fall through */
       }
     }
-    toast.error("Install extension", "chrome://extensions → Load unpacked → extension folder");
+    toast.error("Install extension", "chrome://extensions → Load unpacked → fellowship-focus/extension");
   }
 
   // ── Focus timer ────────────────────────────────────────
@@ -408,16 +475,57 @@ export function BlockTab({
   }, [token, focusTotalSec]);
 
   const startPhase = useCallback(
-    (p: Phase, cyc: number) => {
+    (p: Phase, cyc: number, resumeSecs?: number) => {
       stopAlarm();
       setExceeded(0);
       setPhase(p);
       setCycle(cyc);
-      const secs = p === "focus" ? Math.max(1, focusTotalSec) : Math.max(1, prefs.break_min * 60);
+      const full = p === "focus" ? Math.max(1, focusTotalSec) : Math.max(1, prefs.break_min * 60);
+      const secs = resumeSecs ?? full;
       setRemaining(secs);
+      firedRef.current = false;
+      endsAtRef.current = Date.now() + secs * 1000;
+      if (p !== "idle") {
+        try {
+          localStorage.setItem(
+            SESSION_KEY,
+            JSON.stringify({ phase: p, cycle: cyc, endsAt: endsAtRef.current })
+          );
+        } catch {
+          /* storage full / private mode — timer still runs in-memory */
+        }
+      }
     },
     [focusTotalSec, prefs.break_min, stopAlarm]
   );
+
+  const clearSession = useCallback(() => {
+    endsAtRef.current = 0;
+    try {
+      localStorage.removeItem(SESSION_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // Resume a session that outlived the window being closed.
+  useEffect(() => {
+    const s = readSession();
+    if (!s) return;
+    const left = Math.ceil((s.endsAt - Date.now()) / 1000);
+    if (left <= 0) {
+      try {
+        localStorage.removeItem(SESSION_KEY);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- rehydrating a
+    // persisted session from localStorage is exactly a mount-time sync.
+    startPhase(s.phase, s.cycle, left);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
+  }, []);
 
   useEffect(() => {
     if (phase === "idle") {
@@ -426,31 +534,35 @@ export function BlockTab({
       return;
     }
     timerRef.current = setInterval(() => {
-      setRemaining((r) => {
-        if (r > 1) {
-          desktopBridge.showFloatTimer({
-            remaining: r - 1,
-            phase,
-            cycle,
-            cycles: prefs.cycles,
-            label: phase === "focus" ? "FOCUS" : "BREAK",
-          });
-          return r - 1;
+      // Derive from the stored deadline, never by decrementing: background tabs
+      // are throttled, so a counter would drift and under-report deep work.
+      const left = Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000));
+      setRemaining(left);
+      if (left > 0) {
+        desktopBridge.showFloatTimer({
+          remaining: left,
+          phase,
+          cycle,
+          cycles: prefs.cycles,
+          label: phase === "focus" ? "FOCUS" : "BREAK",
+        });
+        return;
+      }
+      if (firedRef.current) return;
+      firedRef.current = true;
+      fireAlarm();
+      if (phase === "focus") {
+        logSession();
+        if (cycle >= prefs.cycles) {
+          setPhase("idle");
+          clearSession();
+          desktopBridge.hideFloatTimer();
+          return;
         }
-        fireAlarm();
-        if (phase === "focus") {
-          logSession();
-          if (cycle >= prefs.cycles) {
-            setPhase("idle");
-            desktopBridge.hideFloatTimer();
-            return 0;
-          }
-          setTimeout(() => startPhase("break", cycle), 0);
-        } else {
-          setTimeout(() => startPhase("focus", cycle + 1), 0);
-        }
-        return 0;
-      });
+        startPhase("break", cycle);
+      } else {
+        startPhase("focus", cycle + 1);
+      }
     }, 1000);
     desktopBridge.showFloatTimer({
       remaining,
@@ -475,18 +587,33 @@ export function BlockTab({
 
   const start = () => {
     void (async () => {
-      startPhase("focus", 1);
-      if (!isDesktop) {
-        const ready = extReady || (await pingExtension(600));
-        if (ready) {
-          setExtReady(true);
-          await pushListToExtension();
-          await extensionCommand("setShield", { on: true });
-          await extensionCommand("startFocus");
-        } else {
-          toast.error("Not blocking", "Tap Connect Chrome first.");
-        }
+      // Desktop drives its own system-wide blocker — start immediately.
+      if (isDesktop) {
+        startPhase("focus", 1);
+        return;
       }
+      if (!sitesRef.current.length) {
+        toast.error("Nothing to block", "Add a site or pick a preset first.");
+        return;
+      }
+      // Arm BEFORE the timer. Starting a "focus" session that isn't blocking
+      // anything is worse than not starting at all.
+      const state = await armExtension();
+      if (!state || !isArmed(state)) {
+        setExtState(state);
+        toast.error(
+          "Blocking not armed",
+          state
+            ? "The extension could not install rules."
+            : "Install / reload the extension, then Connect Chrome.",
+        );
+        return;
+      }
+      setExtReady(true);
+      setExtState(state);
+      await extensionCommand("startFocus");
+      setExtState(await getExtensionState());
+      startPhase("focus", 1);
     })();
   };
   const stop = useCallback(() => {
@@ -504,7 +631,8 @@ export function BlockTab({
             body: JSON.stringify({ token, action: "bypass", kind: "stop_timer" }),
           }).catch(() => {});
         }
-        extensionCommand("stopFocus").catch(() => {});
+        await extensionCommand("stopFocus").catch(() => {});
+        getExtensionState().then(setExtState);
       }
       stopTimer();
       stopAlarm();
@@ -519,6 +647,7 @@ export function BlockTab({
   useEffect(() => {
     const onClosed = () => {
       // Float × bypasses anti-oops — intentional close
+      extensionCommand("stopFocus").catch(() => {});
       stopTimer();
       stopAlarm();
       setPhase("idle");
@@ -537,15 +666,31 @@ export function BlockTab({
   }
 
   useEffect(() => {
-    pingExtension().then(setExtReady);
+    if (isDesktop) return;
+    let alive = true;
+    const refresh = async () => {
+      const st = await getExtensionState();
+      if (!alive) return;
+      setExtState(st);
+      if (st) setExtReady(true);
+      else setExtReady(await pingExtension(600));
+    };
+    refresh();
     const onReady = (e: MessageEvent) => {
       if (e.data?.source === "fellowship-focus-ext" && e.data.type === "FF_EXT_READY") {
         setExtReady(true);
+        refresh();
       }
     };
     window.addEventListener("message", onReady);
-    return () => window.removeEventListener("message", onReady);
-  }, []);
+    // Keep the badge honest if the shield is changed from the popup.
+    const id = setInterval(refresh, 5000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      window.removeEventListener("message", onReady);
+    };
+  }, [isDesktop]);
 
   useEffect(() => {
     if (!token) return;
@@ -609,6 +754,7 @@ export function BlockTab({
 
   const on = Boolean(dt?.shieldOn && dt?.active);
   const inSession = phase !== "idle";
+  const extArmed = isArmed(extState);
 
   return (
     <>
@@ -668,16 +814,25 @@ export function BlockTab({
             </>
           ) : (
             <>
+              <span
+                className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                  extArmed ? "bg-emerald-400" : extReady ? "bg-amber-400" : "bg-white/25"
+                }`}
+              />
               <div className="mr-auto">
                 <p className="text-sm font-semibold text-white">
-                  {extReady ? "Chrome ready" : "Not blocking yet"}
+                  {extArmed ? "Shield ON" : extReady ? "Shield OFF" : "Not connected"}
                 </p>
                 <p className="text-[11px] text-white/45">
-                  {extReady ? `${sites.length} sites · Start or Connect` : "Connect Chrome to block"}
+                  {extArmed
+                    ? `Blocking ${extState?.ruleCount ?? 0} domains in Chrome`
+                    : extReady
+                      ? "Extension installed — press Connect Chrome to arm"
+                      : "The list alone blocks nothing. Chrome extension required."}
                 </p>
               </div>
               <button type="button" onClick={connectChrome} className="btn-primary shrink-0">
-                Connect Chrome
+                {extArmed ? "Re-sync" : "Connect Chrome"}
               </button>
             </>
           )}

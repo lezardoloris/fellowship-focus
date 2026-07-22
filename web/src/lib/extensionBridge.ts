@@ -61,14 +61,26 @@ export function analyzeHistoryViaExtension(days = 30, timeoutMs = 12000): Promis
   });
 }
 
-/** One-shot connect: push apiUrl/token/sites into the extension. */
-export function connectExtension(payload: Record<string, unknown>, timeoutMs = 4000): Promise<boolean> {
+/** Real extension state — reflects installed DNR rules, not just "is it alive". */
+export type ExtensionState = {
+  ready: boolean;
+  shieldOn: boolean;
+  manualShield: boolean;
+  focusOn: boolean;
+  siteCount: number;
+  ruleCount: number;
+  version: string;
+};
+
+export function getExtensionState(timeoutMs = 2500): Promise<ExtensionState | null> {
   return new Promise((resolve) => {
+    const id = requestId();
     const onMsg = (event: MessageEvent) => {
       const d = event.data;
-      if (d?.source !== "fellowship-focus-ext" || d.type !== "FF_PAIR_RESULT") return;
+      if (d?.source !== "fellowship-focus-ext" || d.type !== "FF_EXT_STATE_RESULT") return;
+      if (d.requestId && d.requestId !== id) return;
       cleanup();
-      resolve(Boolean(d.ok));
+      resolve(d.ok && d.status ? (d.status as ExtensionState) : null);
     };
     const cleanup = () => {
       window.removeEventListener("message", onMsg);
@@ -76,15 +88,50 @@ export function connectExtension(payload: Record<string, unknown>, timeoutMs = 4
     };
     const timer = setTimeout(() => {
       cleanup();
-      resolve(false);
+      resolve(null);
     }, timeoutMs);
     window.addEventListener("message", onMsg);
-    window.postMessage({ source: "fellowship-focus", type: "FF_PAIR_CONNECT", payload }, "*");
+    window.postMessage({ source: "fellowship-focus", type: "FF_EXT_STATE", requestId: id }, "*");
+  });
+}
+
+/** True only when the extension is actually blocking something right now. */
+export function isArmed(state: ExtensionState | null): boolean {
+  return Boolean(state?.shieldOn && state.ruleCount > 0);
+}
+
+/** One-shot connect: push apiUrl/token/sites into the extension. */
+export function connectExtension(
+  payload: Record<string, unknown>,
+  timeoutMs = 6000
+): Promise<ExtensionState | null> {
+  return new Promise((resolve) => {
+    const id = requestId();
+    const onMsg = (event: MessageEvent) => {
+      const d = event.data;
+      if (d?.source !== "fellowship-focus-ext" || d.type !== "FF_PAIR_RESULT") return;
+      if (d.requestId && d.requestId !== id) return;
+      cleanup();
+      resolve(d.ok ? ((d.status as ExtensionState) ?? null) : null);
+    };
+    const cleanup = () => {
+      window.removeEventListener("message", onMsg);
+      clearTimeout(timer);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(null);
+    }, timeoutMs);
+    window.addEventListener("message", onMsg);
+    window.postMessage(
+      { source: "fellowship-focus", type: "FF_PAIR_CONNECT", payload, requestId: id },
+      "*"
+    );
   });
 }
 
 export function extensionCommand(
-  type: "setShield" | "startFocus" | "stopFocus" | "refresh",
+  type: "setShield" | "startFocus" | "stopFocus" | "refresh" | "setSites",
   extra?: Record<string, unknown>,
   timeoutMs = 3000
 ): Promise<boolean> {

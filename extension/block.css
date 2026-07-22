@@ -76,3 +76,32 @@ h1 {
 .btn-secondary:hover { border-color: var(--muted); background: #2e3134; }
 
 .note { margin-top: 20px; font-size: 12px; color: var(--muted); min-height: 16px; }
+
+.quote {
+  margin: 18px 0 4px;
+  padding: 16px 18px;
+  border-left: 2px solid var(--accent);
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 0 8px 8px 0;
+  text-align: left;
+}
+
+.quote blockquote {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--fg);
+  font-style: italic;
+}
+
+.quote figcaption {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.quote figcaption #quote-name { font-weight: 600; color: var(--fg); }
+.quote .quote-title { opacity: 0.75; }

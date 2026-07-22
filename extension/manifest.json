@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fellowship Focus — Blocker",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Block distracting sites, schedules, friction mode, history suggestions, sync with Fellowship Focus.",
   "permissions": ["declarativeNetRequest", "storage", "alarms", "history", "notifications"],
   "host_permissions": ["<all_urls>"],
@@ -12,8 +12,10 @@
     {
       "matches": [
         "https://fellowship-focus-production.up.railway.app/*",
-        "http://localhost:3000/*",
-        "http://127.0.0.1:3000/*"
+        "https://*.up.railway.app/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://localhost/*"
       ],
       "js": ["content.js"],
       "run_at": "document_start"
