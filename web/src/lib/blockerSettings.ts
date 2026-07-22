@@ -38,9 +38,12 @@ export type BlockerSettings = {
   blocker_mode: BlockerMode;
   /** Block-page voice; "random" rotates. */
   persona: string;
+  /** How a hit is enforced: full "page" or a brief "notify" (-XP) bounce. */
+  block_style: BlockStyle;
 };
 
 export type BlockerMode = "soft" | "hard";
+export type BlockStyle = "page" | "notify";
 
 /** Feed sites worth blocking by path instead of wholesale, mirroring desktop. */
 export const SOFT_PATH_RULES: Array<{ host: string; paths: string[] }> = [
@@ -73,6 +76,7 @@ export const DEFAULT_BLOCKER_SETTINGS: BlockerSettings = {
   friction_secs: 8,
   blocker_mode: "hard",
   persona: "random",
+  block_style: "page",
 };
 
 export function mergeBlockerSettings(
@@ -92,6 +96,7 @@ export function mergeBlockerSettings(
     : "confirm";
   base.blocker_mode = base.blocker_mode === "soft" ? "soft" : "hard";
   base.persona = typeof base.persona === "string" && base.persona ? base.persona : "random";
+  base.block_style = base.block_style === "notify" ? "notify" : "page";
   return base;
 }
 

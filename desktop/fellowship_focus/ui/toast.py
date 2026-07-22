@@ -80,24 +80,44 @@ class ToastManager:
     self._parent = parent
     self._toasts: list[Toast] = []
 
-  def show(self, title: str, message: str, kind: str = "info", duration_ms: int = 4500) -> None:
+  def show(self, title: str, message: str, kind: str = "info", duration_ms: int = 2200) -> None:
     toast = Toast(self._parent, title, message, kind)
     margin = 20
     offset = sum(t.height() + 10 for t in self._toasts if t.isVisible())
     toast.adjustSize()
-    x = self._parent.width() - toast.width() - margin
-    y = self._parent.height() - toast.height() - margin - offset
+    # Anchor to the screen's bottom-right so toasts show even when the main
+    # window is hidden — same corner as the float timer and the nudge.
+    from PySide6.QtGui import QGuiApplication
+
+    screen = self._parent.screen() if self._parent else None
+    geo = (screen or QGuiApplication.primaryScreen()).availableGeometry()
+    x = geo.right() - toast.width() - margin
+    y = geo.bottom() - toast.height() - margin - offset
+    toast.setParent(None)  # top-level so it can sit at screen edge
+    from PySide6.QtCore import Qt as _Qt
+
+    toast.setWindowFlags(
+        _Qt.WindowType.Tool
+        | _Qt.WindowType.FramelessWindowHint
+        | _Qt.WindowType.WindowStaysOnTopHint
+        | _Qt.WindowType.WindowDoesNotAcceptFocus
+    )
+    toast.setAttribute(_Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
     toast.move(max(margin, x), max(margin, y))
     self._toasts.append(toast)
     toast.destroyed.connect(lambda: self._toasts.remove(toast) if toast in self._toasts else None)
     toast.show_animated(duration_ms)
 
   def reposition(self) -> None:
+    from PySide6.QtGui import QGuiApplication
+
     margin = 20
-    y = self._parent.height() - margin
+    screen = self._parent.screen() if self._parent else None
+    geo = (screen or QGuiApplication.primaryScreen()).availableGeometry()
+    y = geo.bottom() - margin
     for toast in reversed([t for t in self._toasts if t.isVisible()]):
       toast.adjustSize()
       y -= toast.height()
-      x = self._parent.width() - toast.width() - margin
+      x = geo.right() - toast.width() - margin
       toast.move(max(margin, x), y)
       y -= 10

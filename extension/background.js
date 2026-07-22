@@ -32,6 +32,10 @@ const DEFAULTS = {
     quick_lock_until: null,
     site_modes: {},
     friction_secs: 8,
+    // How a blocked hit is enforced:
+    //  "page"   — full block page (default)
+    //  "notify" — bounce the tab back + a brief "-N XP" notification
+    block_style: "page",
   },
   focus: null, // { phase, cycle, endsAt }
   stats: { date: today(), blocks: 0, focusMinutes: 0 },
@@ -234,9 +238,7 @@ async function sweepOpenTabs() {
       if (!tab.id || !tab.url) continue;
       const hit = blockDecision(tab.url, cfg);
       if (!hit) continue;
-      const page = (hit.friction ? "/friction.html?d=" : "/block.html?d=") +
-        encodeURIComponent(hit.domain);
-      chrome.tabs.update(tab.id, { url: chrome.runtime.getURL(page) }, () => void chrome.runtime.lastError);
+      await enforceBlock(tab.id, tab.url, cfg, hit);
       swept += 1;
     }
   } catch (e) {
@@ -334,6 +336,7 @@ async function getStatus() {
     siteCount: (cfg.sites || []).filter(Boolean).length,
     ruleCount: rules.filter((r) => r.id < TEMP_ALLOW_ID_BASE).length,
     mode: (cfg.prefs || {}).blocker_mode === "soft" ? "soft" : "hard",
+    blockStyle: (cfg.prefs || {}).block_style === "notify" ? "notify" : "page",
     desktopShieldOn: !!cfg.desktopShieldOn,
     lastSweep: (await chrome.storage.local.get("lastSweep")).lastSweep || null,
     // Already collected every day and never shown — surface it.
@@ -662,6 +665,68 @@ async function probeDesktopShield() {
 
 // ── Instant kill on tab activation ───────────────────────
 
+/** Enforce a block on one tab, honoring the configured style. */
+async function enforceBlock(tabId, url, cfg, hit) {
+  const style = (cfg.prefs || {}).block_style === "notify" ? "notify" : "page";
+
+  if (style === "notify" && !hit.friction) {
+    // Bounce off the site instead of showing the full page, then a brief toast.
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      // A brand-new tab has no history to go back to; close or blank it.
+      if (tab && tab.url && /^https?:/.test(tab.url)) {
+        chrome.tabs.goBack(tabId, () => {
+          if (chrome.runtime.lastError) {
+            chrome.tabs.update(tabId, { url: "about:blank" }, () => void chrome.runtime.lastError);
+          }
+        });
+      } else {
+        chrome.tabs.update(tabId, { url: "about:blank" }, () => void chrome.runtime.lastError);
+      }
+    } catch {
+      /* tab gone */
+    }
+    notifyBlocked(hit.domain);
+    return;
+  }
+
+  const page = (hit.friction ? "/friction.html?d=" : "/block.html?d=") +
+    encodeURIComponent(hit.domain);
+  chrome.tabs.update(tabId, { url: chrome.runtime.getURL(page) }, () => void chrome.runtime.lastError);
+}
+
+/** Small "-N XP" toast for notify mode; pulls the real penalty from the guild. */
+async function notifyBlocked(domain) {
+  let penalty = 10;
+  try {
+    const cfg = await getConfig();
+    if (cfg.apiUrl && cfg.token) {
+      const res = await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/api/blocks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cfg.token, site: domain }),
+      });
+      if (res.ok) {
+        const j = await res.json();
+        if (j.penalty) penalty = j.penalty;
+      }
+    }
+  } catch {
+    /* offline — default penalty */
+  }
+  try {
+    chrome.notifications.create(`ff-block-${Date.now()}`, {
+      type: "basic",
+      iconUrl: "icons/icon128.png",
+      title: `${domain} blocked`,
+      message: `−${penalty} XP · back to focus`,
+      priority: 0,
+    });
+  } catch {
+    /* notifications permission missing */
+  }
+}
+
 async function checkActiveTab(tabId) {
   try {
     const cfg = await getConfig();
@@ -670,13 +735,26 @@ async function checkActiveTab(tabId) {
     if (!tab || !tab.url) return;
     const hit = blockDecision(tab.url, cfg);
     if (!hit) return;
-    const page = (hit.friction ? "/friction.html?d=" : "/block.html?d=") +
-      encodeURIComponent(hit.domain);
-    chrome.tabs.update(tabId, { url: chrome.runtime.getURL(page) }, () => void chrome.runtime.lastError);
+    await enforceBlock(tabId, tab.url, cfg, hit);
   } catch {
     /* tab gone — nothing to do */
   }
 }
+
+// Instant kill the moment a navigation STARTS — before the page loads, as soon
+// as you hit enter in the address bar. No keystroke logging: this is the
+// browser's own navigation event.
+chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
+  if (details.frameId !== 0) return; // top frame only
+  try {
+    const cfg = await getConfig();
+    if (!effectiveShield(cfg)) return;
+    const hit = blockDecision(details.url, cfg);
+    if (hit) await enforceBlock(details.tabId, details.url, cfg, hit);
+  } catch {
+    /* ignore */
+  }
+});
 
 chrome.tabs.onActivated.addListener((info) => {
   probeDesktopShield();

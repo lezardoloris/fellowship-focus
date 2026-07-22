@@ -1089,6 +1089,37 @@ export function BlockTab({
                   : "Whole domains blocked"}
               </span>
             </div>
+            {/* How a hit is shown: the full block page, or a quiet bounce with a
+                "-XP" notification. */}
+            <div className="mb-3 flex items-center gap-1.5">
+              {(["page", "notify"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={async () => {
+                    const next = { ...prefs, block_style: s };
+                    await savePrefs(next);
+                    prefsRef.current = next;
+                    if (extReady) {
+                      await armExtension();
+                      setExtState(await getExtensionState());
+                    }
+                  }}
+                  className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${
+                    prefs.block_style === s
+                      ? "border-[#b8422e] bg-[#b8422e] text-white"
+                      : "border-white/15 bg-white/5 text-white/70 hover:bg-white/10"
+                  }`}
+                >
+                  {s === "page" ? "Block page" : "Notify (−XP)"}
+                </button>
+              ))}
+              <span className="ml-1 text-[10px] leading-tight text-white/65">
+                {prefs.block_style === "notify"
+                  ? "Bounces the tab back with a quick −XP toast"
+                  : "Full block page (Chrome only)"}
+              </span>
+            </div>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               {PRESETS.map((p) => {
                 const active = presetSites(p.cats).every((s) => blockedSet.has(s));
