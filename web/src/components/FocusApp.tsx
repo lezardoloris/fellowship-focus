@@ -189,28 +189,9 @@ export function FocusApp() {
 
   return (
     <Shell>
-      <header className="header-glass sticky top-0 z-20">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-3 md:px-8">
-          <div className="mr-auto">
-            <p className="font-display text-sm font-bold tracking-[0.2em] text-white">
-              FELLOWSHIP FOCUS
-            </p>
-            <p className="text-xs text-white/55">
-              {joined ? (
-                <>
-                  {name ? `${name} · ` : ""}
-                  <button onClick={leaveGuild} className="underline hover:text-white" title="Leave guild">
-                    {code}
-                  </button>
-                </>
-              ) : googleUser ? (
-                <>{googleUser.name || googleUser.email} · signed in</>
-              ) : (
-                "Solo · ladder & tracking need no guild"
-              )}
-            </p>
-          </div>
-          <nav className="flex items-center gap-1 rounded-full border border-white/10 bg-black/20 p-1 backdrop-blur-md">
+      <header className="sticky top-0 z-20">
+        <div className="mx-auto flex max-w-6xl items-center justify-center gap-3 px-4 py-4 md:px-8">
+          <nav className="flex items-center gap-1 rounded-full border border-white/20 bg-black/25 p-1 backdrop-blur-md">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -219,7 +200,7 @@ export function FocusApp() {
                 className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
                   tab === t.id
                     ? "bg-[#b8422e] text-white shadow-lg shadow-[#b8422e]/25"
-                    : "text-white/65 hover:text-white"
+                    : "text-white/80 hover:text-white"
                 }`}
               >
                 {t.label}
@@ -231,34 +212,47 @@ export function FocusApp() {
               type="button"
               onClick={disconnectGoogle}
               disabled={authBusy}
-              className="flex items-center gap-2 rounded-full border border-white/15 bg-black/20 px-3 py-1.5 text-xs text-white/80 hover:text-white"
+              className="flex items-center gap-2 rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-xs text-white/85 backdrop-blur-md hover:text-white"
               title={googleUser.email}
             >
               {googleUser.avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={googleUser.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
               ) : null}
-              Sign out
+              Out
             </button>
           ) : (
             <button
               type="button"
               onClick={connectGoogle}
               disabled={authBusy}
-              className="btn-secondary border-white/15 bg-black/20 text-white disabled:opacity-50"
+              className="rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-xs text-white/85 backdrop-blur-md disabled:opacity-50"
             >
               {authBusy ? "…" : "Google"}
             </button>
           )}
           {joined && (
-            <button onClick={share} className="btn-secondary border-white/15 bg-black/20 text-white">
-              {shared ? "✓ Copied" : "Share"}
+            <button
+              onClick={share}
+              className="rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-xs text-white/85 backdrop-blur-md"
+              title={code || undefined}
+            >
+              {shared ? "✓" : "Share"}
+            </button>
+          )}
+          {joined && (
+            <button
+              onClick={leaveGuild}
+              className="rounded-full border border-white/15 bg-transparent px-2 py-1.5 text-[10px] text-white/50 underline hover:text-white/80"
+              title="Leave guild"
+            >
+              {code}
             </button>
           )}
         </div>
       </header>
 
-      <div className="relative z-10 mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
+      <div className="relative z-10 mx-auto max-w-6xl px-4 py-4 md:px-8 md:py-6">
         {tab === "block" && <BlockTab code={code} token={token} name={name} />}
         {tab === "focus" && <FocusTab />}
         {tab === "guild" &&
