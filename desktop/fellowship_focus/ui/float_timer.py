@@ -13,6 +13,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QFont, QGuiApplication
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QPushButton, QWidget
 
+from fellowship_focus.config import load_config, save_config
 from fellowship_focus.ui.theme import ACCENT, BG, FG, MUTED
 
 
@@ -39,6 +40,8 @@ class FloatTimerWindow(QWidget):
         self._remaining = 0
         self._label = "FOCUS"
         self._drag_pos = None
+        self._dragged = False
+        self._placed = False
         self._last_web_sync = 0.0
 
         self.setStyleSheet(
@@ -126,7 +129,12 @@ class FloatTimerWindow(QWidget):
         self._label = (label or "FOCUS").upper()[:8]
         self._last_web_sync = time.monotonic()
         self._render()
-        self._place_bottom_right()
+        # Place ONCE per session. This used to run on every one-second sync,
+        # which teleported the widget back to bottom-right the instant after
+        # the user dragged it anywhere.
+        if not self._placed:
+            self._placed = True
+            self._restore_or_default_position()
         if not self.isVisible():
             self.show()
             self._assert_topmost()
@@ -140,6 +148,7 @@ class FloatTimerWindow(QWidget):
         self._tick.stop()
         self._topmost.stop()
         self._remaining = 0
+        self._placed = False  # next session re-restores the saved spot
         self.hide()
         self.remaining_changed.emit(0, "")
 
@@ -209,6 +218,31 @@ class FloatTimerWindow(QWidget):
         y = geo.bottom() - self.height() - 16
         self.move(x, y)
 
+    def _restore_or_default_position(self) -> None:
+        """Saved spot if it is still on a screen, bottom-right otherwise."""
+        try:
+            pos = load_config().get("float_timer_pos")
+            x, y = int(pos[0]), int(pos[1])
+        except Exception:
+            self._place_bottom_right()
+            return
+        self.adjustSize()
+        for screen in QGuiApplication.screens():
+            geo = screen.availableGeometry()
+            # Enough of the pill must remain grabbable after a monitor change.
+            if geo.contains(x + 20, y + 10) or geo.contains(x + self.width() - 20, y + 10):
+                self.move(x, y)
+                return
+        self._place_bottom_right()
+
+    def _save_position(self) -> None:
+        try:
+            cfg = load_config()
+            cfg["float_timer_pos"] = [self.x(), self.y()]
+            save_config(cfg)
+        except Exception:
+            pass  # a failed save must never break the drag
+
     def _context_menu(self, pos) -> None:
         menu = QMenu(self)
         open_a = menu.addAction("Open Fellowship Focus")
@@ -235,11 +269,15 @@ class FloatTimerWindow(QWidget):
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
             self.move(event.globalPosition().toPoint() - self._drag_pos)
+            self._dragged = True
             event.accept()
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self._dragged:
+            self._dragged = False
+            self._save_position()
         self._drag_pos = None
         super().mouseReleaseEvent(event)
 

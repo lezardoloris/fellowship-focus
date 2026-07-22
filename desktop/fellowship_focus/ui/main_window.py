@@ -112,8 +112,17 @@ class MainWindow(QMainWindow):
         self.pomodoro.session_finished.connect(self._on_pomo_finished)
 
         self.setWindowTitle("Fellowship Focus")
-        self.setMinimumSize(1080, 700)
-        self.resize(1180, 780)
+        self.setMinimumSize(980, 640)
+        self.resize(1220, 800)
+        # Reopen where the user left the window, not wherever Qt decides.
+        try:
+            from PySide6.QtCore import QByteArray
+
+            geo = self.config.get("window_geometry")
+            if geo:
+                self.restoreGeometry(QByteArray.fromBase64(geo.encode("ascii")))
+        except Exception:
+            pass
         load_fonts()
         self.setStyleSheet(app_stylesheet())
         self.setFont(font_sans())
@@ -1689,34 +1698,18 @@ class MainWindow(QMainWindow):
                 self.usage_page.refresh()
 
     def _enter_immersive_window(self) -> None:
-        """Borderless fullscreen for the embedded web app — scene fills the screen."""
-        if getattr(self, "_immersive", False):
-            return
-        self._immersive = True
-        self._pre_immersive_geo = self.geometry()
-        self._pre_immersive_flags = self.windowFlags()
-        self.setWindowFlags(
-            Qt.WindowType.Window
-            | Qt.WindowType.FramelessWindowHint
-        )
-        self.showFullScreen()
+        """The web tab used to force borderless fullscreen. For a timer and a
+        block list that is oversized — and it took away move/resize/maximize.
+        The web tab now lives in a normal framed window like every other tab;
+        only the Qt sidebar/top bar hide (the web app has its own nav)."""
+        self._immersive = False
 
     def _exit_immersive_window(self) -> None:
-        if not getattr(self, "_immersive", False):
-            return
         self._immersive = False
-        flags = getattr(self, "_pre_immersive_flags", None)
-        if flags is not None:
-            self.setWindowFlags(flags)
-        self.showNormal()
-        geo = getattr(self, "_pre_immersive_geo", None)
-        if geo is not None:
-            self.setGeometry(geo)
-        self.show()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
-        # Esc leaves borderless immersive and shows the native sidebar again
-        if event.key() == Qt.Key.Key_Escape and getattr(self, "_immersive", False):
+        # Esc on the web tab brings the native sidebar back
+        if event.key() == Qt.Key.Key_Escape and not self.sidebar.isVisible():
             self.sidebar.setVisible(True)
             self.top_bar.setVisible(True)
             self._exit_immersive_window()
@@ -1825,7 +1818,15 @@ class MainWindow(QMainWindow):
         self._on_float_timer_closed()
         self._refresh_tray_menu()
 
+    def _save_window_geometry(self) -> None:
+        try:
+            self.config["window_geometry"] = bytes(self.saveGeometry().toBase64()).decode("ascii")
+            save_config(self.config)
+        except Exception:
+            pass
+
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._save_window_geometry()
         if self.config.get("minimize_to_tray", True):
             session_on = self._float_timer.isVisible() or self.pomodoro.is_running
             # Keep focus session + floating timer alive when the window hides.
@@ -1858,6 +1859,7 @@ class MainWindow(QMainWindow):
             )
 
     def _quit_app(self) -> None:
+        self._save_window_geometry()
         self.task_tick.stop()
         if hasattr(self, "music_player"):
             self.music_player.on_session_end()
