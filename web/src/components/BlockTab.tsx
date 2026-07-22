@@ -2,10 +2,34 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { desktopBridge, type DesktopState } from "@/lib/desktop";
-import { FocusOverlay } from "@/components/FocusOverlay";
+import { playAlarm } from "@/lib/alarm";
 
 type BlocklistEntry = { id: string; site: string; category: string | null };
-type Prefs = { focus_min: number; break_min: number; cycles: number };
+type Prefs = {
+  focus_min: number;
+  focus_sec: number;
+  break_min: number;
+  cycles: number;
+  alarm_secs: number; // -1 = infinite
+  alarm_vol: number;
+};
+
+const ALARM_OPTS = [
+  { id: 2, label: "2 s" },
+  { id: 5, label: "5 s" },
+  { id: 10, label: "10 s" },
+  { id: 15, label: "15 s" },
+  { id: -1, label: "∞" },
+] as const;
+
+const DEFAULT_PREFS: Prefs = {
+  focus_min: 45,
+  focus_sec: 0,
+  break_min: 5,
+  cycles: 4,
+  alarm_secs: 10,
+  alarm_vol: 0.6,
+};
 
 const CATEGORIES: Array<{ id: string; label: string; sites: string[] }> = [
   { id: "social", label: "Social", sites: ["x.com", "twitter.com", "facebook.com", "instagram.com", "reddit.com", "tiktok.com", "linkedin.com"] },
@@ -53,7 +77,7 @@ export function BlockTab({
   name: string | null;
 }) {
   const [sites, setSites] = useState<BlocklistEntry[]>([]);
-  const [prefs, setPrefs] = useState<Prefs>({ focus_min: 25, break_min: 5, cycles: 4 });
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [custom, setCustom] = useState("");
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState<"" | "desktop" | "extension">("");
@@ -68,7 +92,9 @@ export function BlockTab({
   const [phase, setPhase] = useState<Phase>("idle");
   const [remaining, setRemaining] = useState(0);
   const [cycle, setCycle] = useState(0);
+  const [exceeded, setExceeded] = useState(0); // seconds past end when alarm is infinite
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopAlarmRef = useRef<(() => void) | null>(null);
 
   const applyDesktopState = useCallback((st: DesktopState) => {
     setDt(st);
@@ -80,8 +106,8 @@ export function BlockTab({
       try {
         const bl = JSON.parse(localStorage.getItem(LOCAL_BL_KEY) || "[]") as BlocklistEntry[];
         setSites(Array.isArray(bl) ? bl : []);
-        const pf = JSON.parse(localStorage.getItem(LOCAL_PREFS_KEY) || "null") as Prefs | null;
-        if (pf) setPrefs({ focus_min: pf.focus_min, break_min: pf.break_min, cycles: pf.cycles });
+        const pf = JSON.parse(localStorage.getItem(LOCAL_PREFS_KEY) || "null") as Partial<Prefs> | null;
+        if (pf) setPrefs({ ...DEFAULT_PREFS, ...pf });
       } catch {
         /* ignore */
       }
@@ -93,7 +119,13 @@ export function BlockTab({
       fetch(`/api/prefs?token=${encodeURIComponent(token)}`).then((r) => r.json()),
     ]);
     if (bl.sites) setSites(bl.sites);
-    if (pf.prefs) setPrefs({ focus_min: pf.prefs.focus_min, break_min: pf.prefs.break_min, cycles: pf.prefs.cycles });
+    if (pf.prefs)
+      setPrefs({
+        ...DEFAULT_PREFS,
+        focus_min: pf.prefs.focus_min ?? DEFAULT_PREFS.focus_min,
+        break_min: pf.prefs.break_min ?? DEFAULT_PREFS.break_min,
+        cycles: pf.prefs.cycles ?? DEFAULT_PREFS.cycles,
+      });
     setLoading(false);
   }, [token]);
 
@@ -226,39 +258,69 @@ export function BlockTab({
   }
 
   // ── Focus timer ────────────────────────────────────────
+  const focusTotalSec = prefs.focus_min * 60 + (prefs.focus_sec || 0);
+
+  const stopAlarm = useCallback(() => {
+    stopAlarmRef.current?.();
+    stopAlarmRef.current = null;
+  }, []);
+
+  const fireAlarm = useCallback(() => {
+    stopAlarm();
+    stopAlarmRef.current = playAlarm(prefs.alarm_secs, prefs.alarm_vol);
+  }, [prefs.alarm_secs, prefs.alarm_vol, stopAlarm]);
+
   const stopTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = null;
   }, []);
 
   const logSession = useCallback(() => {
-    if (!token) return; // solo mode: nothing to report to a guild
+    if (!token) return;
+    const mins = Math.max(1, Math.round(focusTotalSec / 60));
     fetch(`/api/sessions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, minutes: prefs.focus_min, completed: true }),
+      body: JSON.stringify({ token, minutes: mins, completed: true }),
     }).catch(() => {});
-  }, [token, prefs.focus_min]);
+  }, [token, focusTotalSec]);
 
-  const startPhase = useCallback((p: Phase, cyc: number) => {
-    setPhase(p);
-    setCycle(cyc);
-    setRemaining((p === "focus" ? prefs.focus_min : prefs.break_min) * 60);
-  }, [prefs.focus_min, prefs.break_min]);
+  const startPhase = useCallback(
+    (p: Phase, cyc: number) => {
+      stopAlarm();
+      setExceeded(0);
+      setPhase(p);
+      setCycle(cyc);
+      const secs = p === "focus" ? Math.max(1, focusTotalSec) : Math.max(1, prefs.break_min * 60);
+      setRemaining(secs);
+    },
+    [focusTotalSec, prefs.break_min, stopAlarm]
+  );
 
   useEffect(() => {
     if (phase === "idle") {
       stopTimer();
+      desktopBridge.hideFloatTimer();
       return;
     }
     timerRef.current = setInterval(() => {
       setRemaining((r) => {
-        if (r > 1) return r - 1;
-        // phase finished
+        if (r > 1) {
+          desktopBridge.showFloatTimer({
+            remaining: r - 1,
+            phase,
+            cycle,
+            cycles: prefs.cycles,
+            label: phase === "focus" ? "FOCUS" : "BREAK",
+          });
+          return r - 1;
+        }
+        fireAlarm();
         if (phase === "focus") {
           logSession();
           if (cycle >= prefs.cycles) {
             setPhase("idle");
+            desktopBridge.hideFloatTimer();
             return 0;
           }
           setTimeout(() => startPhase("break", cycle), 0);
@@ -268,102 +330,241 @@ export function BlockTab({
         return 0;
       });
     }, 1000);
+    desktopBridge.showFloatTimer({
+      remaining,
+      phase,
+      cycle,
+      cycles: prefs.cycles,
+      label: phase === "focus" ? "FOCUS" : "BREAK",
+    });
     return stopTimer;
-  }, [phase, cycle, prefs.cycles, startPhase, stopTimer, logSession]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tick only on phase/cycle changes
+  }, [phase, cycle, prefs.cycles, startPhase, stopTimer, logSession, fireAlarm]);
+
+  // Track exceeded seconds when sitting at 0 (infinite alarm style)
+  useEffect(() => {
+    if (phase === "idle" || remaining > 0) {
+      setExceeded(0);
+      return;
+    }
+    const id = setInterval(() => setExceeded((e) => e + 1), 1000);
+    return () => clearInterval(id);
+  }, [phase, remaining]);
 
   const start = () => startPhase("focus", 1);
   const stop = useCallback(() => {
     stopTimer();
+    stopAlarm();
     setPhase("idle");
     setRemaining(0);
     setCycle(0);
+    setExceeded(0);
     desktopBridge.hideFloatTimer();
-  }, [stopTimer]);
+  }, [stopTimer, stopAlarm]);
 
-  // OS float timer × → end session
   useEffect(() => {
     const onClosed = () => stop();
     window.addEventListener("ff-float-closed", onClosed);
     return () => window.removeEventListener("ff-float-closed", onClosed);
   }, [stop]);
 
+  function testAlarm() {
+    stopAlarm();
+    stopAlarmRef.current = playAlarm(prefs.alarm_secs < 0 ? 2 : prefs.alarm_secs, prefs.alarm_vol);
+  }
+
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
   const ss = String(remaining % 60).padStart(2, "0");
+  const idleMm = String(prefs.focus_min).padStart(2, "0");
+  const idleSs = String(prefs.focus_sec || 0).padStart(2, "0");
 
-  if (loading) return <p className="animate-pulse text-sm text-[#9ca3af]">Loading your shield…</p>;
+  if (loading) return <p className="animate-pulse text-sm text-white/50">Loading your shield…</p>;
 
   const on = Boolean(dt?.shieldOn && dt?.active);
   const inSession = phase !== "idle";
 
   return (
     <>
-    <FocusOverlay
-      open={inSession}
-      phase={phase}
-      remaining={remaining}
-      cycle={cycle}
-      cycles={prefs.cycles}
-      onStop={stop}
-    />
-    <div className="space-y-5">
-        {/* Header: wordmark + compact shield — floats on the full-bleed scene */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="hero-title">
-            <p className="font-display text-xs font-semibold tracking-[0.35em] text-white/70">
-              THE FELLOWSHIP
-            </p>
-            <h1 className="mt-1 font-display text-2xl font-bold leading-tight text-white md:text-3xl">
-              Stay on the path.
-            </h1>
+    {/* Compact float timer — bottom right, no fullscreen */}
+    {inSession && (
+      <div className="fixed bottom-5 right-5 z-[9999]">
+        <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-[#141618]/95 px-1.5 py-1.5 shadow-2xl backdrop-blur-md">
+          <div className="flex items-center gap-3 rounded-lg px-3.5 py-2">
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#b8422e]" />
+            <span className="font-display text-base font-semibold tabular-nums text-white">
+              {mm}:{ss}
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-white/55">
+              {phase === "focus" ? "FOCUS" : "BREAK"}
+            </span>
           </div>
-          <ShieldPill
-            isDesktop={isDesktop}
-            on={on}
-            certReady={Boolean(dt?.certReady)}
-            busy={shieldBusy}
-            count={sites.length}
-            onToggle={toggleShield}
-          />
+          <button
+            type="button"
+            onClick={stop}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white/55 hover:bg-white/10 hover:text-white"
+            aria-label="Close timer"
+            title="Stop"
+          >
+            ×
+          </button>
         </div>
+      </div>
+    )}
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,340px)_1fr]">
-          {/* Focus timer — frosted, secondary */}
+    <div className="space-y-5">
+        {/* Shield — always a real toggle when desktop is connected */}
+        <ShieldCard
+          isDesktop={isDesktop}
+          on={on}
+          certReady={Boolean(dt?.certReady)}
+          busy={shieldBusy}
+          count={sites.length}
+          onToggle={toggleShield}
+        />
+
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_1fr]">
+          {/* Timer with timerform-style settings */}
           <div className="glass-panel p-6">
             <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-white/50">
-              {phase === "idle" ? "Focus session" : phase === "focus" ? `Cycle ${cycle}/${prefs.cycles} · deep work` : `Cycle ${cycle}/${prefs.cycles} · break`}
+              {phase === "idle"
+                ? "Timer"
+                : phase === "focus"
+                ? `Cycle ${cycle}/${prefs.cycles} · focus`
+                : `Cycle ${cycle}/${prefs.cycles} · break`}
             </p>
-            <div className="my-7 text-center">
-              <div className={`font-display text-7xl font-bold tabular-nums ${phase === "break" ? "text-white/60" : "text-white"}`}>
-                {phase === "idle" ? `${String(prefs.focus_min).padStart(2, "0")}:00` : `${mm}:${ss}`}
+
+            <div className="my-6 text-center">
+              <div
+                className={`font-display text-7xl font-bold tabular-nums ${
+                  phase === "idle" ? "text-white" : remaining === 0 ? "text-[#f87171]" : "text-white"
+                }`}
+              >
+                {phase === "idle" ? `${idleMm}:${idleSs}` : `${mm}:${ss}`}
               </div>
+              {phase !== "idle" && remaining === 0 && exceeded > 0 && (
+                <p className="mt-2 text-sm text-[#f87171]">
+                  exceeded {String(Math.floor(exceeded / 60)).padStart(2, "0")}:{String(exceeded % 60).padStart(2, "0")}
+                </p>
+              )}
               <p className="mt-2 text-[11px] uppercase tracking-[0.4em] text-white/45">
                 {phase === "idle" ? "Ready" : phase}
               </p>
             </div>
+
             {phase === "idle" ? (
-              <button onClick={start} className="btn-primary w-full">Start focus · fullscreen</button>
+              <button onClick={start} className="btn-primary w-full">
+                Start the timer
+              </button>
             ) : (
-              <button onClick={stop} className="btn-secondary w-full">Stop</button>
+              <button onClick={stop} className="btn-secondary w-full">
+                Stop
+              </button>
             )}
-            <div className="mt-5 grid grid-cols-3 gap-2 text-center text-xs">
-              {([
-                ["Focus", "focus_min", 1, 120],
-                ["Break", "break_min", 1, 60],
-                ["Cycles", "cycles", 1, 12],
-              ] as const).map(([label, key, min, max]) => (
-                <label key={key} className="flex flex-col gap-1">
-                  <span className="text-white/45">{label}</span>
-                  <input
-                    type="number"
-                    min={min}
-                    max={max}
-                    value={prefs[key]}
-                    disabled={phase !== "idle"}
-                    onChange={(e) => savePrefs({ ...prefs, [key]: Math.max(min, Math.min(max, Number(e.target.value) || min)) })}
-                    className="input-premium w-full bg-white/5 text-center"
-                  />
-                </label>
-              ))}
+
+            {/* Duration */}
+            <div className="mt-5">
+              <p className="mb-2 text-[11px] uppercase tracking-wider text-white/45">Duration</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  max={180}
+                  disabled={inSession}
+                  value={prefs.focus_min}
+                  onChange={(e) =>
+                    savePrefs({ ...prefs, focus_min: Math.max(0, Math.min(180, Number(e.target.value) || 0)) })
+                  }
+                  className="input-premium w-20 bg-white/5 text-center"
+                  title="Minutes"
+                />
+                <span className="text-white/40">min</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={59}
+                  disabled={inSession}
+                  value={prefs.focus_sec}
+                  onChange={(e) =>
+                    savePrefs({ ...prefs, focus_sec: Math.max(0, Math.min(59, Number(e.target.value) || 0)) })
+                  }
+                  className="input-premium w-20 bg-white/5 text-center"
+                  title="Seconds"
+                />
+                <span className="text-white/40">sec</span>
+              </div>
+            </div>
+
+            {/* Alarm duration */}
+            <div className="mt-4">
+              <p className="mb-2 text-[11px] uppercase tracking-wider text-white/45">Duration alarm</p>
+              <div className="flex flex-wrap gap-1.5">
+                {ALARM_OPTS.map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    disabled={inSession}
+                    onClick={() => savePrefs({ ...prefs, alarm_secs: o.id })}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                      prefs.alarm_secs === o.id
+                        ? "border-[#b8422e] bg-[#b8422e] text-white"
+                        : "border-white/15 text-white/70 hover:bg-white/10"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Alarm volume */}
+            <div className="mt-4">
+              <p className="mb-2 text-[11px] uppercase tracking-wider text-white/45">Alarm volume</p>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={prefs.alarm_vol}
+                  onChange={(e) => savePrefs({ ...prefs, alarm_vol: Number(e.target.value) })}
+                  className="flex-1 accent-[#b8422e]"
+                />
+                <button type="button" onClick={testAlarm} className="btn-secondary py-1.5! text-xs!">
+                  Test
+                </button>
+              </div>
+            </div>
+
+            {/* Cycles / break — compact */}
+            <div className="mt-4 grid grid-cols-2 gap-2 text-center text-xs">
+              <label className="flex flex-col gap-1">
+                <span className="text-white/45">Break (min)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  disabled={inSession}
+                  value={prefs.break_min}
+                  onChange={(e) =>
+                    savePrefs({ ...prefs, break_min: Math.max(1, Math.min(60, Number(e.target.value) || 1)) })
+                  }
+                  className="input-premium w-full bg-white/5 text-center"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-white/45">Cycles</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  disabled={inSession}
+                  value={prefs.cycles}
+                  onChange={(e) =>
+                    savePrefs({ ...prefs, cycles: Math.max(1, Math.min(12, Number(e.target.value) || 1)) })
+                  }
+                  className="input-premium w-full bg-white/5 text-center"
+                />
+              </label>
             </div>
           </div>
 
@@ -374,17 +575,14 @@ export function BlockTab({
                 <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-white/50">Block list</p>
                 <p className="mt-1 max-w-md text-xs text-white/55">
                   {isDesktop
-                    ? `${sites.length} site${sites.length === 1 ? "" : "s"} blocked system-wide when the Shield is on.`
-                    : `${sites.length} site${sites.length === 1 ? "" : "s"} on your shield. Enforced by the extension & desktop app.`}
+                    ? `${sites.length} site${sites.length === 1 ? "" : "s"} — blocked system-wide when Shield is ON.`
+                    : `${sites.length} site${sites.length === 1 ? "" : "s"} on your list. Shield needs the desktop app to block X / YouTube.`}
                 </p>
               </div>
               {!isDesktop && (
                 <div className="flex gap-2">
                   <button onClick={() => copyPairing("extension")} className="btn-secondary whitespace-nowrap py-1.5! text-xs!">
                     {copied === "extension" ? "✓ Copied" : "Connect extension"}
-                  </button>
-                  <button onClick={() => copyPairing("desktop")} className="btn-secondary whitespace-nowrap py-1.5! text-xs!">
-                    {copied === "desktop" ? "✓ Copied" : "Sync desktop"}
                   </button>
                 </div>
               )}
@@ -477,7 +675,7 @@ export function BlockTab({
   );
 }
 
-function ShieldPill({
+function ShieldCard({
   isDesktop,
   on,
   certReady,
@@ -492,34 +690,54 @@ function ShieldPill({
   count: number;
   onToggle: () => void;
 }) {
-  // Browser mode — the page can't block other sites itself.
   if (!isDesktop) {
     return (
-      <div className="pill-glass flex items-center gap-2 rounded-full px-3.5 py-2">
-        <span className="h-2 w-2 rounded-full bg-white/40" />
-        <span className="text-xs text-white/70">Not enforcing here</span>
+      <div className="glass-panel flex flex-wrap items-center gap-4 p-5">
+        <div className="mr-auto">
+          <h2 className="text-base font-semibold text-white">Shield offline</h2>
+          <p className="mt-1 max-w-xl text-xs text-white/60">
+            « Not enforcing here » = cette page web ne peut pas bloquer X/YouTube toute seule.
+            Relance l’app <span className="text-white/90">desktop</span> (Fellowship) pour activer
+            le toggle Shield et bloquer réellement les sites.
+          </p>
+        </div>
+        <span className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/50">
+          No desktop bridge
+        </span>
       </div>
     );
   }
 
   return (
-    <div className={`pill-glass flex items-center gap-3 rounded-full py-2 pl-4 pr-2 ${on ? "ring-1 ring-[#b8422e]/70" : ""}`}>
-      <div className="text-right">
-        <p className="text-xs font-semibold leading-none text-white">Shield {on ? "ON" : "OFF"}</p>
-        <p className="mt-0.5 text-[10px] leading-none text-white/50">
-          {!certReady ? "setup needed" : on ? `${count} blocked` : "tap to arm"}
+    <div className={`glass-panel flex flex-wrap items-center gap-4 p-5 ${on ? "ring-1 ring-[#b8422e]/60" : ""}`}>
+      <div className="mr-auto">
+        <h2 className="text-base font-semibold text-white">
+          Shield {on ? "ON" : "OFF"}
+        </h2>
+        <p className="mt-1 text-xs text-white/60">
+          {!certReady
+            ? "Setup one-time: open Blocker in the desktop sidebar → Activate Shield."
+            : on
+            ? `Blocking ${count} site${count === 1 ? "" : "s"} system-wide (including x.com). Tap to disable.`
+            : "Turn ON to block your list across the whole computer — including x.com."}
         </p>
       </div>
       <button
         type="button"
         role="switch"
         aria-checked={on}
-        disabled={busy}
+        disabled={busy || !certReady}
         onClick={onToggle}
-        className={`relative h-7 w-12 shrink-0 rounded-full transition disabled:opacity-50 ${on ? "bg-[#b8422e]" : "bg-white/20"}`}
-        title={certReady ? "Toggle the shield" : "Setup needed"}
+        className={`relative h-9 w-16 shrink-0 rounded-full transition disabled:opacity-40 ${
+          on ? "bg-[#b8422e]" : "bg-white/20"
+        }`}
+        title={certReady ? "Toggle the shield" : "Certificate setup needed"}
       >
-        <span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${on ? "left-6" : "left-1"}`} />
+        <span
+          className={`absolute top-1 h-7 w-7 rounded-full bg-white transition-all ${
+            on ? "left-8" : "left-1"
+          }`}
+        />
       </button>
     </div>
   );
