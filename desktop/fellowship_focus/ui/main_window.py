@@ -87,6 +87,11 @@ class MainWindow(QMainWindow):
         self.config = load_config()
         self.mitm_process = None
         self.blocker_active = False
+        self._blocker_arming = False
+        # Detects a dead engine and releases the system proxy so a crash can
+        # never leave the whole machine without internet.
+        self._blocker_watchdog = QTimer(self)
+        self._blocker_watchdog.timeout.connect(self._watchdog_tick)
         self._wizard_running = False
         self._cert_ok = is_cert_installed()
         force_release_blocker()
@@ -999,6 +1004,7 @@ class MainWindow(QMainWindow):
         return {
             "shieldOn": bool(self.blocker_active),
             "active": bool(self.blocker_active),
+            "arming": bool(self._blocker_arming),
             "certReady": bool(self._cert_ok and proxy_engine_available()),
             "sites": list(self.config.get("blocked_sites", [])),
         }
@@ -1249,7 +1255,7 @@ class MainWindow(QMainWindow):
         return effective_block_lists(self.config)
 
     def _enable_blocker(self) -> None:
-        if self.blocker_active:
+        if self.blocker_active or self._blocker_arming:
             return
         sites, path_rules = self._effective_block_lists()
         redirects = self.config.get("block_redirects", DEFAULT_REDIRECTS)
@@ -1264,24 +1270,48 @@ class MainWindow(QMainWindow):
         if not self.mitm_process:
             self._on_blocker_failed("The blocking engine could not start on this PC.")
             return
-        set_system_proxy(True)
-        self.blocker_active = True
-        self._blocker_on_for_session = True
+        # CRITICAL ORDER: the system proxy is only switched on once the engine
+        # answers. Flipping it first cut the whole machine off the internet for
+        # the entire engine boot (ERR_PROXY_CONNECTION_FAILED everywhere), and
+        # left it stranded if the engine never came up.
+        self._blocker_arming = True
         self._update_blocker_status()
-        # The proxy child (the frozen exe re-launched with --run-proxy) can take a
-        # few seconds to accept connections, so poll before declaring failure.
-        QTimer.singleShot(4000, lambda: self._verify_blocker_running(attempts=3))
+        QTimer.singleShot(1000, lambda: self._wait_engine_then_arm(attempts=25))
 
-    def _verify_blocker_running(self, attempts: int = 3) -> None:
-        """A blocker that fails silently is worse than none — confirm the proxy answers."""
-        if not self.blocker_active:
+    def _wait_engine_then_arm(self, attempts: int) -> None:
+        if not self._blocker_arming:
+            return
+        if self.mitm_process and self.mitm_process.poll() is not None:
+            self._blocker_arming = False
+            self._on_blocker_failed(
+                "The blocking engine crashed while starting (see ~/.fellowship-focus/proxy.log)."
+            )
             return
         if is_mitmdump_running():
+            self._blocker_arming = False
+            set_system_proxy(True)
+            self.blocker_active = True
+            self._blocker_on_for_session = True
+            self._update_blocker_status()
+            self._blocker_watchdog.start(15000)
+            self.toasts.show("Shield up", "Distracting sites are now blocked.", "success", 2500)
             return
-        if attempts > 1:
-            QTimer.singleShot(3000, lambda: self._verify_blocker_running(attempts=attempts - 1))
+        if attempts > 0:
+            QTimer.singleShot(1000, lambda: self._wait_engine_then_arm(attempts - 1))
             return
-        self._on_blocker_failed("The shield started but isn't filtering traffic.")
+        self._blocker_arming = False
+        self._on_blocker_failed("The blocking engine did not come up.")
+
+    def _watchdog_tick(self) -> None:
+        """The engine dying while armed must never strand the machine offline:
+        release the system proxy the moment it stops answering."""
+        if not self.blocker_active:
+            self._blocker_watchdog.stop()
+            return
+        if self.mitm_process and self.mitm_process.poll() is None and is_mitmdump_running():
+            return
+        self._blocker_watchdog.stop()
+        self._on_blocker_failed("The blocking engine stopped (see ~/.fellowship-focus/proxy.log).")
 
     def _on_blocker_failed(self, detail: str) -> None:
         self._release_blocker_infra()
@@ -1333,6 +1363,8 @@ class MainWindow(QMainWindow):
         self._release_blocker_infra()
 
     def _release_blocker_infra(self) -> None:
+        self._blocker_arming = False
+        self._blocker_watchdog.stop()
         force_release_blocker()
         self.mitm_process = None
         self.blocker_active = False
