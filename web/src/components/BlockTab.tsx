@@ -130,6 +130,10 @@ export function BlockTab({
   const [exceeded, setExceeded] = useState(0);
   const [extReady, setExtReady] = useState(false);
   const [extState, setExtState] = useState<ExtensionState | null>(null);
+  // Arming failed once: offer an explicit unprotected start rather than
+  // trapping the user with a timer that refuses to run (desktop webview,
+  // Firefox, extension not installed…).
+  const [armFailed, setArmFailed] = useState(false);
   const [suggestions, setSuggestions] = useState<HistorySuggestion[]>([]);
   const [scanBusy, setScanBusy] = useState(false);
   const [devices, setDevices] = useState<
@@ -224,17 +228,24 @@ export function BlockTab({
     setLoading(false);
 
     let alive = true;
+    const adopt = async () => {
+      if (!alive || !desktopBridge.present()) return;
+      const st = await desktopBridge.getState();
+      if (!alive || !st.available) return;
+      applyDesktopState(st);
+    };
     desktopBridge.ready().then(async () => {
       if (!alive) return;
-      if (desktopBridge.present()) {
-        const st = await desktopBridge.getState();
-        if (!alive) return;
-        applyDesktopState(st);
-      }
+      await adopt();
       setDtReady(true);
     });
+    // The WebChannel handshake can still land after the timeout; switching to
+    // desktop mode late is far better than demanding a Chrome extension that
+    // can never exist inside the desktop webview.
+    window.addEventListener("ffdesktop-ready", adopt);
     return () => {
       alive = false;
+      window.removeEventListener("ffdesktop-ready", adopt);
     };
   }, [applyDesktopState]);
 
@@ -592,6 +603,14 @@ export function BlockTab({
         startPhase("focus", 1);
         return;
       }
+      // Second press after a failed arm: the user has been told it won't block.
+      // Never hold the timer hostage to the extension.
+      if (armFailed) {
+        setArmFailed(false);
+        toast.info("Timer running unprotected", "Sites are NOT blocked.");
+        startPhase("focus", 1);
+        return;
+      }
       if (!sitesRef.current.length) {
         toast.error("Nothing to block", "Add a site or pick a preset first.");
         return;
@@ -601,14 +620,16 @@ export function BlockTab({
       const state = await armExtension();
       if (!state || !isArmed(state)) {
         setExtState(state);
+        setArmFailed(true);
         toast.error(
           "Blocking not armed",
           state
-            ? "The extension could not install rules."
-            : "Install / reload the extension, then Connect Chrome.",
+            ? "The extension could not install rules — press Start again to run unprotected."
+            : "Extension unreachable. Press Start again to run the timer without blocking.",
         );
         return;
       }
+      setArmFailed(false);
       setExtReady(true);
       setExtState(state);
       await extensionCommand("startFocus");
@@ -904,7 +925,13 @@ export function BlockTab({
               </div>
               <div className="flex justify-end">
                 {phase === "idle" ? (
-                  <button onClick={start} className="btn-primary px-5">Start</button>
+                  <button
+                    onClick={start}
+                    className={armFailed ? "btn-secondary px-5" : "btn-primary px-5"}
+                    title={armFailed ? "Runs the timer without blocking any site" : undefined}
+                  >
+                    {armFailed ? "Start without blocking" : "Start"}
+                  </button>
                 ) : (
                   <button onClick={stop} className="btn-secondary px-5">Stop</button>
                 )}
@@ -964,7 +991,9 @@ export function BlockTab({
                       : "border-white/15 bg-white/5 text-white/70 hover:bg-white/10"
                   }`}
                 >
-                  {m === "hard" ? "Lockdown" : "Deep Work"}
+                  {/* Not "Deep Work": a preset already owns that name above,
+                      and this control answers "how", not "what". */}
+                  {m === "hard" ? "Whole sites" : "Feeds only"}
                 </button>
               ))}
               <span className="ml-1 text-[10px] leading-tight text-white/40">

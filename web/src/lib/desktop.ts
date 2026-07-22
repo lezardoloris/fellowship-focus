@@ -118,7 +118,10 @@ export const desktopBridge = {
       poll = setInterval(() => {
         if (raw()) finish();
       }, 150);
-      timeout = setTimeout(finish, 500);
+      // 500 ms was not enough: loading the remote dashboard and completing the
+      // WebChannel handshake regularly lands later, which stranded the desktop
+      // app in browser mode and made it demand the Chrome extension.
+      timeout = setTimeout(finish, 6000);
     });
   },
 

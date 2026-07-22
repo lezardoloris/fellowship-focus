@@ -102,63 +102,15 @@ function SceneLayer({
     el.defaultMuted = true;
     el.playsInline = true;
 
-    if (!play) {
+    // The ping-pong is baked into the file itself (scripts/make-pingpong.mjs),
+    // so plain native looping gives a seamless forward/backward cycle. Driving
+    // the reverse leg from JS forced a seek per frame and stuttered.
+    if (play) {
+      const p = el.play();
+      if (p) p.catch(() => {});
+    } else {
       el.pause();
-      return;
     }
-
-    // Ping-pong loop: forward to the end, then backwards to the start, forever.
-    // `loop` would hard-cut from the last frame to the first; playing in reverse
-    // makes the seam invisible. Browsers ignore a negative playbackRate, so the
-    // reverse leg is driven by stepping currentTime each frame.
-    let raf = 0;
-    let lastTs = 0;
-    let reversing = false;
-
-    const stepBack = (ts: number) => {
-      if (!lastTs) lastTs = ts;
-      const dt = (ts - lastTs) / 1000;
-      lastTs = ts;
-      const next = el.currentTime - dt;
-      if (next <= 0) {
-        el.currentTime = 0;
-        reversing = false;
-        lastTs = 0;
-        const p = el.play();
-        if (p) p.catch(() => {});
-        return;
-      }
-      el.currentTime = next;
-      raf = requestAnimationFrame(stepBack);
-    };
-
-    const startReverse = () => {
-      if (reversing) return;
-      reversing = true;
-      lastTs = 0;
-      el.pause();
-      raf = requestAnimationFrame(stepBack);
-    };
-
-    const onTimeUpdate = () => {
-      if (reversing) return;
-      const dur = el.duration;
-      if (!Number.isFinite(dur) || dur <= 0) return;
-      // Turn around slightly early — `ended` never fires reliably mid-seek.
-      if (el.currentTime >= dur - 0.1) startReverse();
-    };
-
-    el.addEventListener("timeupdate", onTimeUpdate);
-    el.addEventListener("ended", startReverse);
-
-    const p = el.play();
-    if (p) p.catch(() => {});
-
-    return () => {
-      cancelAnimationFrame(raf);
-      el.removeEventListener("timeupdate", onTimeUpdate);
-      el.removeEventListener("ended", startReverse);
-    };
   }, [play, useVideo, scene]);
 
   return (
@@ -176,6 +128,7 @@ function SceneLayer({
           src={video}
           poster={poster}
           muted
+          loop
           playsInline
           preload="auto"
           disablePictureInPicture

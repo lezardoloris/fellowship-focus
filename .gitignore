@@ -35,3 +35,6 @@ desktop/dist/
 # Bundled/added audio (keep the folder + README, ignore large tracks)
 desktop/assets/music/*
 !desktop/assets/music/README.txt
+
+# Baked originals for the ping-pong script (not served)
+public/scenes/_original/
