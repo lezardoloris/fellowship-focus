@@ -419,6 +419,14 @@ function initSchema(database: Database.Database) {
     /* column exists */
   }
   try {
+    // Which block of work the session belonged to (PERSO.xlsx Quotidien).
+    database.exec(
+      `ALTER TABLE focus_sessions ADD COLUMN activity TEXT NOT NULL DEFAULT 'other'`
+    );
+  } catch {
+    /* column exists */
+  }
+  try {
     database.exec(`ALTER TABLE fellowships ADD COLUMN niche TEXT NOT NULL DEFAULT 'deep-work'`);
   } catch {
     /* column exists */

@@ -455,13 +455,47 @@ export function BlockTab({
         toast.ok("Shield ON", `${st.ruleCount} rules active`);
       } else {
         toast.error(
-          "Could not arm",
-          st?.siteCount === 0 ? "Add a site first." : "Reload the extension and retry.",
+          "Could not block",
+          st?.siteCount === 0
+            ? "Add a site first."
+            : st
+              ? "The extension could not install rules — reload it in chrome://extensions."
+              : "No blocker found. Install the desktop app, or load the Chrome extension.",
         );
       }
     } finally {
       setShieldBusy(false);
     }
+  }
+
+  /**
+   * The one button. Picks whichever engine is available and, when none is,
+   * says exactly what is missing instead of sitting there greyed out.
+   */
+  async function blockNow() {
+    if (shieldBusy) return;
+
+    if (useDesktopUi) {
+      if (!isDesktop) {
+        toast.error("Blocker not connected", "The app is still starting. Try again in a second.");
+        return;
+      }
+      if (!dt?.certReady) {
+        toast.error(
+          "Setup needed",
+          "Open the Blocker tab in the app and install the certificate once.",
+        );
+        return;
+      }
+      await toggleShield();
+      return;
+    }
+
+    if (!sites.length) {
+      toast.error("Nothing to block", "Add a site or pick a preset first.");
+      return;
+    }
+    await toggleExtensionShield();
   }
 
   async function connectChrome() {
@@ -881,48 +915,32 @@ export function BlockTab({
               Shield {shieldLive ? "ON" : "OFF"}
             </span>
 
-            {!useDesktopUi && !extReady ? (
-              <>
-                <a
-                  href="/download"
-                  className="rounded-full bg-[#b8422e] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#c46551]"
-                >
-                  Get the app
-                </a>
-                <button
-                  type="button"
-                  onClick={connectChrome}
-                  className="rounded-full px-2.5 py-1.5 text-xs text-white/55 transition hover:text-white"
-                >
-                  Chrome
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                role="switch"
-                aria-checked={shieldLive}
-                aria-label={shieldLive ? "Turn shield off" : "Turn shield on"}
-                disabled={shieldBusy || (useDesktopUi && (!isDesktop || !dt?.certReady))}
-                onClick={useDesktopUi ? toggleShield : toggleExtensionShield}
-                title={
-                  useDesktopUi && !isDesktop
-                    ? "Connecting to the blocker…"
-                    : shieldLive
-                      ? "Turn the shield off"
-                      : "Turn the shield on"
-                }
-                className={`relative h-7 w-12 shrink-0 rounded-full transition disabled:opacity-40 ${
-                  shieldLive ? "bg-[#b8422e]" : "bg-white/20"
-                }`}
+            {!useDesktopUi && !extReady && (
+              <a
+                href="/download"
+                className="rounded-full px-2.5 py-1.5 text-xs text-white/55 transition hover:text-white"
               >
-                <span
-                  className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${
-                    shieldLive ? "left-6" : "left-1"
-                  }`}
-                />
-              </button>
+                Get the app
+              </a>
             )}
+            {/* One unmistakable action. A bare switch read as decoration and
+                left people thinking nothing could be blocked. */}
+            <button
+              type="button"
+              disabled={shieldBusy}
+              onClick={blockNow}
+              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
+                shieldLive
+                  ? "bg-white/10 text-white/80 hover:bg-white/15"
+                  : "bg-[#b8422e] text-white hover:bg-[#c46551]"
+              }`}
+            >
+              {shieldBusy
+                ? "…"
+                : shieldLive
+                  ? "Stop blocking"
+                  : `Block ${sites.length} site${sites.length === 1 ? "" : "s"}`}
+            </button>
           </div>
         </div>
 
