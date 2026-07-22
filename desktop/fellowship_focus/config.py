@@ -1,7 +1,13 @@
 import json
 from pathlib import Path
 
-from fellowship_focus.constants import DEFAULT_BLOCKED_SITES, DEFAULT_PATH_RULES, DEFAULT_REDIRECTS, HARD_HOSTS_OPTIONAL
+from fellowship_focus.constants import (
+    DEFAULT_BLOCKED_SITES,
+    DEFAULT_PATH_RULES,
+    DEFAULT_REDIRECTS,
+    HARD_HOSTS_OPTIONAL,
+    canonical_host,
+)
 
 CONFIG_DIR = Path.home() / ".fellowship-focus"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -13,11 +19,16 @@ def load_config() -> dict:
     try:
         data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         merged = {**default_config(), **data}
-        # Merge new default sites into saved config (don't remove user additions)
-        sites = list(merged.get("blocked_sites", []))
-        for site in DEFAULT_BLOCKED_SITES:
-            if site not in sites:
-                sites.append(site)
+        # Merge new default sites into saved config (don't remove user additions),
+        # folding variant hosts to their canonical apex (fb.com -> facebook.com)
+        # so the list, the web categories and the matcher share one vocabulary.
+        sites: list[str] = []
+        seen: set[str] = set()
+        for site in list(merged.get("blocked_sites", [])) + list(DEFAULT_BLOCKED_SITES):
+            host = canonical_host(site)
+            if host and host not in seen:
+                seen.add(host)
+                sites.append(host)
         merged["blocked_sites"] = sites
         merged["member_name"] = _repair_member_name(merged)
         return merged

@@ -30,14 +30,50 @@
     "trimEnd": 16
   },
   {
-    "title": "Deep Work Mix",
-    "youtubeId": "UDTmUzu05BE",
-    "trimStart": 14,
-    "trimEnd": 18
-  },
-  {
     "title": "Dwarf Mountain Journey",
     "youtubeId": "4WIMyqBG9gs",
+    "trimStart": 10,
+    "trimEnd": 14
+  },
+  {
+    "title": "Immortal",
+    "youtubeId": "Ykem_yAFh2A",
+    "trimStart": 10,
+    "trimEnd": 14
+  },
+  {
+    "title": "Inquisitor",
+    "youtubeId": "hmQWkH12CD4",
+    "trimStart": 10,
+    "trimEnd": 14
+  },
+  {
+    "title": "Mechanicus",
+    "youtubeId": "6Pxlq32dGtQ",
+    "trimStart": 8,
+    "trimEnd": 12
+  },
+  {
+    "title": "Dark Monastery",
+    "youtubeId": "VWGr_89_xdU",
+    "trimStart": 10,
+    "trimEnd": 14
+  },
+  {
+    "title": "Still Loyal",
+    "youtubeId": "k_YK5V2WxIA",
+    "trimStart": 10,
+    "trimEnd": 14
+  },
+  {
+    "title": "Chaos Ritual",
+    "youtubeId": "MDy0IrSJrlM",
+    "trimStart": 8,
+    "trimEnd": 12
+  },
+  {
+    "title": "Holy Terra",
+    "youtubeId": "k5xDyG72wHE",
     "trimStart": 10,
     "trimEnd": 14
   },

@@ -69,6 +69,63 @@ HARD_HOSTS_OPTIONAL = list(_DATA.get("hard_hosts_optional") or [])
 PROXY_PORT = 8080
 MITMDUMP_PORT = 8080
 
+# Sites that live on more than one apex domain. Blocking any one form must block
+# them all — otherwise blocking twitter.com leaves x.com wide open, which is
+# exactly how "the blocker doesn't work" happened. Kept in sync with the Chrome
+# extension's DOMAIN_ALIASES (extension/background.js).
+DOMAIN_ALIASES = {
+    "youtube.com": ["youtu.be", "youtube-nocookie.com"],
+    "twitter.com": ["x.com", "t.co"],
+    "x.com": ["twitter.com", "t.co"],
+    "facebook.com": ["fb.com", "fb.watch"],
+    "instagram.com": ["ig.me"],
+    "reddit.com": ["redd.it"],
+    "tiktok.com": ["vm.tiktok.com"],
+}
+
+# Legacy / variant forms folded to a single canonical host so the block list,
+# the web categories and the matcher all speak one vocabulary.
+CANONICAL_HOST = {
+    "fb.com": "facebook.com",
+    "m.facebook.com": "facebook.com",
+    "old.reddit.com": "reddit.com",
+    "m.youtube.com": "youtube.com",
+    "music.youtube.com": "youtube.com",
+    "youtu.be": "youtube.com",
+    "mobile.twitter.com": "twitter.com",
+}
+
+
+def _norm_host(site: str) -> str:
+    return (
+        str(site or "")
+        .strip()
+        .lower()
+        .replace("https://", "")
+        .replace("http://", "")
+        .removeprefix("www.")
+        .split("/")[0]
+        .strip()
+    )
+
+
+def canonical_host(site: str) -> str:
+    """Fold a known variant to its canonical apex (fb.com -> facebook.com)."""
+    h = _norm_host(site)
+    return CANONICAL_HOST.get(h, h)
+
+
+def expand_domains(site: str) -> list[str]:
+    """A site plus every apex that must die with it (twitter.com -> +x.com,t.co)."""
+    base = canonical_host(site)
+    if not base:
+        return []
+    out = [base]
+    for alias in DOMAIN_ALIASES.get(base, []):
+        if alias not in out:
+            out.append(alias)
+    return out
+
 
 def effective_block_lists(config: dict) -> tuple[list[str], list]:
     """Resolve the (domains, path_rules) to block for the given config.
@@ -76,15 +133,30 @@ def effective_block_lists(config: dict) -> tuple[list[str], list]:
     Soft mode (Deep Work): distraction hosts like YouTube/Instagram are filtered
     only by path (Shorts/Reels), so they drop out of the full-domain list.
     Hard mode (Lockdown): those hosts get blocked entirely.
+
+    Every site is alias-expanded, so blocking one form blocks them all.
     """
-    sites = list(config.get("blocked_sites", DEFAULT_BLOCKED_SITES))
+    raw = list(config.get("blocked_sites", DEFAULT_BLOCKED_SITES))
     path_rules = list(config.get("blocked_path_rules", DEFAULT_PATH_RULES))
     mode = config.get("blocker_mode", "soft")
+
     if mode == "hard":
         for host in HARD_HOSTS_OPTIONAL:
-            if host not in sites:
-                sites.append(host)
+            if host not in raw:
+                raw.append(host)
+        soft_hosts: set[str] = set()
     else:
-        soft_hosts = set(HARD_HOSTS_OPTIONAL)
-        sites = [s for s in sites if s not in soft_hosts]
+        soft_hosts = {canonical_host(h) for h in HARD_HOSTS_OPTIONAL}
+
+    sites: list[str] = []
+    seen: set[str] = set()
+    for site in raw:
+        for domain in expand_domains(site):
+            # Soft mode spares the feed hosts at the domain level (path rules
+            # handle them); don't re-add them via an alias either.
+            if mode != "hard" and domain in soft_hosts:
+                continue
+            if domain not in seen:
+                seen.add(domain)
+                sites.append(domain)
     return sites, path_rules

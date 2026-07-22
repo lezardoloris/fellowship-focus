@@ -1357,12 +1357,65 @@ class MainWindow(QMainWindow):
             self._update_blocker_status()
             self._blocker_watchdog.start(15000)
             self.toasts.show("Shield up", "Distracting sites are now blocked.", "success", 2500)
+            # Prove it actually filters, not just that the engine answers.
+            self._verify_filtering()
             return
         if attempts > 0:
             QTimer.singleShot(1000, lambda: self._wait_engine_then_arm(attempts - 1))
             return
         self._blocker_arming = False
         self._on_blocker_failed("The blocking engine did not come up.")
+
+    def _verify_filtering(self) -> None:
+        """Confirm the proxy really serves the block page for a listed domain.
+
+        The engine answering != the engine filtering. This hits one real
+        blocked domain through the proxy on a worker thread and warns loudly if
+        the block page does not come back.
+        """
+        import threading
+
+        sites, _ = self._effective_block_lists()
+        if not sites:
+            return
+        target = sites[0]
+        self._filter_ok = None
+
+        def worker() -> None:
+            import ssl
+            import urllib.request
+
+            proxy = f"http://127.0.0.1:{PROXY_PORT}"
+            opener = urllib.request.build_opener(
+                urllib.request.ProxyHandler({"http": proxy, "https": proxy}),
+                urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
+            )
+            ok = False
+            try:
+                with opener.open(f"http://{target}/", timeout=8) as resp:
+                    ok = "Blocked — Fellowship Focus" in resp.read().decode("utf-8", "replace")
+            except Exception as e:
+                blocker_log(f"verify: request error {e}")
+            self._filter_ok = ok
+
+        def poll(attempts: int) -> None:
+            if self._filter_ok is None:
+                if attempts > 0:
+                    QTimer.singleShot(500, lambda: poll(attempts - 1))
+                return
+            if self._filter_ok:
+                blocker_log(f"verify: filtering confirmed on {target}")
+            else:
+                blocker_log(f"verify: NOT filtering {target}")
+                self.toasts.show(
+                    "Shield armed but not filtering",
+                    "Sites may still load. See ~/.fellowship-focus/proxy.log.",
+                    "warning",
+                    7000,
+                )
+
+        threading.Thread(target=worker, daemon=True, name="verify-filter").start()
+        QTimer.singleShot(1000, lambda: poll(20))
 
     def _watchdog_tick(self) -> None:
         """Release the system proxy only if the engine PROCESS actually died.
@@ -1728,6 +1781,54 @@ class MainWindow(QMainWindow):
                 self._refresh_journey()
             elif index == 6:
                 self.usage_page.refresh()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if not getattr(self, "_media_hotkeys_done", False):
+            self._media_hotkeys_done = True
+            self._register_media_hotkeys()
+
+    def _register_media_hotkeys(self) -> None:
+        """Global Play/Pause for the focus music, even when the app is hidden.
+
+        The music runs in this app's native player, so the keyboard's media
+        Play/Pause key did nothing here. RegisterHotKey routes it to us; if
+        another app already owns it, we fall back to Ctrl+Alt+Space.
+        """
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+
+            self._media_hotkey_ids = []
+            hwnd = int(self.winId())
+            VK_MEDIA_PLAY_PAUSE = 0xB3
+            MOD_CONTROL, MOD_ALT, MOD_NOREPEAT = 0x0002, 0x0001, 0x4000
+            VK_SPACE = 0x20
+            # id 1: the dedicated media key (no modifier)
+            if ctypes.windll.user32.RegisterHotKey(hwnd, 1, MOD_NOREPEAT, VK_MEDIA_PLAY_PAUSE):
+                self._media_hotkey_ids.append(1)
+            # id 2: Ctrl+Alt+Space fallback that no media app steals
+            if ctypes.windll.user32.RegisterHotKey(
+                hwnd, 2, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_SPACE
+            ):
+                self._media_hotkey_ids.append(2)
+        except Exception:
+            pass
+
+    def nativeEvent(self, event_type, message):  # noqa: N802
+        # WM_HOTKEY = 0x0312 — toggle the music player.
+        if sys.platform == "win32" and event_type == "windows_generic_MSG":
+            try:
+                import ctypes
+                import ctypes.wintypes
+
+                msg = ctypes.wintypes.MSG.from_address(int(message))
+                if msg.message == 0x0312 and hasattr(self, "music_player"):
+                    self.music_player.toggle_play()
+            except Exception:
+                pass
+        return super().nativeEvent(event_type, message)
 
     def _enter_immersive_window(self) -> None:
         """The web tab used to force borderless fullscreen. For a timer and a

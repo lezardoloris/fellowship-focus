@@ -44,7 +44,6 @@ FOCUS_TITLES: dict[str, str] = {
     "TIqsKXQHvFI": "When the Stakes Are High",
     "WMdhPtS5vio": "Force",
     "R75oWuI4te4": "Spice Meditation",
-    "UDTmUzu05BE": "Deep Work Mix",
     "4WIMyqBG9gs": "Dwarf Mountain Journey",
     "7VAUDImpqGQ": "Trap Beats for Work",
     "MYW0TgV67RE": "Serious Grind",
@@ -59,6 +58,13 @@ FOCUS_TITLES: dict[str, str] = {
     "UpPmnnJcy6A": "Dreamlight 30m",
     "-sZqtdT-GVw": "Chill Deep Focus",
     "mdJU5ogrPMY": "Classical Study",
+    "Ykem_yAFh2A": "Immortal",
+    "hmQWkH12CD4": "Inquisitor",
+    "6Pxlq32dGtQ": "Mechanicus",
+    "VWGr_89_xdU": "Dark Monastery",
+    "k_YK5V2WxIA": "Still Loyal",
+    "MDy0IrSJrlM": "Chaos Ritual",
+    "k5xDyG72wHE": "Holy Terra",
 }
 
 

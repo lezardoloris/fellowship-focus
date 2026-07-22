@@ -263,9 +263,11 @@ class WebDashboardPage(QWidget):
         w = self._view.width()
         if w <= 0:
             return
-        # 1.0 at the design width (~1366), scaling down to a 0.62 floor so a
-        # tiny window shrinks the UI instead of clipping it.
-        zoom = max(0.62, min(1.0, w / 1366))
+        # Scale the UI with the window in BOTH directions: shrink so a small
+        # window doesn't clip, and grow so a large window fills with bigger
+        # text instead of a sea of empty background. 1.0 at ~1150px, floor
+        # 0.62, ceiling 1.7.
+        zoom = max(0.62, min(1.7, w / 1150))
         try:
             if abs(self._view.zoomFactor() - zoom) > 0.01:
                 self._view.setZoomFactor(zoom)

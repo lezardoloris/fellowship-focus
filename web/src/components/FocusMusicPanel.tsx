@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FOCUS_MUSIC_KEY, matchLocalTrack, niceFocusTitle } from "@/lib/focusMusic";
+import { FOCUS_MUSIC_KEY, matchLocalTrack } from "@/lib/focusMusic";
 import { desktopBridge, isDesktopShell, type MusicState } from "@/lib/desktop";
 
 type ManifestEntry = { title: string; src: string; id?: string; youtubeId?: string };
@@ -32,10 +32,21 @@ export function FocusMusicPanel({ autoPlay = false }: { autoPlay?: boolean }) {
     return () => clearInterval(id);
   }, [inShell, refreshMusic]);
 
+  // Auto-play ONCE when a focus phase begins — on the rising edge of autoPlay,
+  // never on every state change. The old effect depended on `music`, so pausing
+  // (or the 2 s poll) re-ran it and instantly restarted playback: pause could
+  // never stick during a session.
+  const autoPlayedRef = useRef(false);
   useEffect(() => {
-    if (!inShell || !autoPlay || !music || music.playing || !music.tracks.length) return;
+    if (!inShell) return;
+    if (!autoPlay) {
+      autoPlayedRef.current = false;
+      return;
+    }
+    if (autoPlayedRef.current) return;
+    autoPlayedRef.current = true;
     desktopBridge.musicCmd({ cmd: "play" }).then((s) => s && setMusic(s));
-  }, [inShell, autoPlay, music]);
+  }, [inShell, autoPlay]);
 
   // ── Browser (HTML audio over /audio) ──
   const [manifest, setManifest] = useState<ManifestEntry[]>([]);
@@ -210,8 +221,4 @@ function Volume({ value, onChange }: { value: number; onChange: (v: number) => v
       />
     </div>
   );
-}
-
-function niceTitle(raw: string): string {
-  return niceFocusTitle(raw);
 }
