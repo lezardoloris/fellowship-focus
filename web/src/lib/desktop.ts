@@ -18,7 +18,17 @@ type RawBridge = {
   removeSite: (site: string, cb: (r: string) => void) => void;
   weeklyStats?: (cb: (r: string) => void) => void;
   setOkr?: (json: string, cb: (r: string) => void) => void;
+  showFloatTimer?: (json: string, cb?: (r: string) => void) => void;
+  hideFloatTimer?: (cb?: (r: string) => void) => void;
 } & Record<string, QtSlot>;
+
+export type FloatTimerPayload = {
+  remaining: number;
+  phase: string;
+  cycle: number;
+  cycles: number;
+  label: string;
+};
 
 export type WeeklyStatsDay = {
   date: string;
@@ -182,6 +192,26 @@ export const desktopBridge = {
         resolve(null);
       }
     });
+  },
+
+  showFloatTimer(payload: FloatTimerPayload): void {
+    const b = raw();
+    if (!b || typeof b.showFloatTimer !== "function") return;
+    try {
+      b.showFloatTimer!(JSON.stringify(payload));
+    } catch {
+      /* ignore */
+    }
+  },
+
+  hideFloatTimer(): void {
+    const b = raw();
+    if (!b || typeof b.hideFloatTimer !== "function") return;
+    try {
+      b.hideFloatTimer!();
+    } catch {
+      /* ignore */
+    }
   },
 };
 

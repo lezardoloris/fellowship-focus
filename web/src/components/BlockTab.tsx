@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { desktopBridge, type DesktopState } from "@/lib/desktop";
+import { FocusOverlay } from "@/components/FocusOverlay";
 
 type BlocklistEntry = { id: string; site: string; category: string | null };
 type Prefs = { focus_min: number; break_min: number; cycles: number };
@@ -271,12 +272,20 @@ export function BlockTab({
   }, [phase, cycle, prefs.cycles, startPhase, stopTimer, logSession]);
 
   const start = () => startPhase("focus", 1);
-  const stop = () => {
+  const stop = useCallback(() => {
     stopTimer();
     setPhase("idle");
     setRemaining(0);
     setCycle(0);
-  };
+    desktopBridge.hideFloatTimer();
+  }, [stopTimer]);
+
+  // OS float timer × → end session
+  useEffect(() => {
+    const onClosed = () => stop();
+    window.addEventListener("ff-float-closed", onClosed);
+    return () => window.removeEventListener("ff-float-closed", onClosed);
+  }, [stop]);
 
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
   const ss = String(remaining % 60).padStart(2, "0");
@@ -284,8 +293,18 @@ export function BlockTab({
   if (loading) return <p className="animate-pulse text-sm text-[#9ca3af]">Loading your shield…</p>;
 
   const on = Boolean(dt?.shieldOn && dt?.active);
+  const inSession = phase !== "idle";
 
   return (
+    <>
+    <FocusOverlay
+      open={inSession}
+      phase={phase}
+      remaining={remaining}
+      cycle={cycle}
+      cycles={prefs.cycles}
+      onStop={stop}
+    />
     <div className="relative overflow-hidden rounded-2xl border border-white/5">
       {/* HD fellowship image — the hero, everything else floats over it */}
       <div
@@ -331,7 +350,7 @@ export function BlockTab({
               </p>
             </div>
             {phase === "idle" ? (
-              <button onClick={start} className="btn-primary w-full">Start focus</button>
+              <button onClick={start} className="btn-primary w-full">Start focus · fullscreen</button>
             ) : (
               <button onClick={stop} className="btn-secondary w-full">Stop</button>
             )}
@@ -464,6 +483,7 @@ export function BlockTab({
         </div>
       </div>
     </div>
+    </>
   );
 }
 

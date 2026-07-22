@@ -71,6 +71,7 @@ from fellowship_focus.ui.components import (
 )
 from fellowship_focus.ui.dashboard import DashboardPage
 from fellowship_focus.ui.music_player import FocusMusicPlayer
+from fellowship_focus.ui.float_timer import FloatTimerWindow
 from fellowship_focus.ui.theme import ASSETS_DIR, app_stylesheet, font_sans, load_fonts, resolve_app_icon_path
 from fellowship_focus.ui.toast import ToastManager
 from fellowship_focus.ui.usage_page import UsagePage
@@ -167,6 +168,8 @@ class MainWindow(QMainWindow):
                 "remove_site": self._web_remove_site,
                 "weekly_stats": self._web_weekly_stats,
                 "set_okr": self._web_set_okr,
+                "show_float_timer": self._web_show_float_timer,
+                "hide_float_timer": self._web_hide_float_timer,
             },
         )
         self.stack.addWidget(self.web_dashboard)
@@ -176,6 +179,9 @@ class MainWindow(QMainWindow):
         self._build_pomodoro_page()
         self._build_blocker_page()
         self._build_fellowship_page()
+
+        self._float_timer = FloatTimerWindow()
+        self._float_timer.closed_by_user.connect(self._on_float_timer_closed)
 
         self.usage_tracker = UsageTracker(lambda: self.config)
         self.usage_page = UsagePage(self.usage_tracker, self.config, save_config)
@@ -1173,6 +1179,30 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         return self._web_weekly_stats()
+
+    def _web_show_float_timer(self, payload: dict) -> dict:
+        try:
+            remaining = int(payload.get("remaining", 0))
+        except (TypeError, ValueError):
+            remaining = 0
+        label = str(payload.get("label") or payload.get("phase") or "FOCUS")
+        self._float_timer.update_timer(remaining, label)
+        return {"ok": True, "remaining": remaining}
+
+    def _web_hide_float_timer(self) -> dict:
+        self._float_timer.hide_timer()
+        return {"ok": True}
+
+    def _on_float_timer_closed(self) -> None:
+        """User hit × on the OS float timer — ask the web app to end the session."""
+        try:
+            view = getattr(self.web_dashboard, "_view", None)
+            if view is not None:
+                view.page().runJavaScript(
+                    "window.dispatchEvent(new CustomEvent('ff-float-closed'));"
+                )
+        except Exception:
+            pass
 
     def _sync_settings_from_config(self) -> None:
         """Reflect OKR edits made from the web app back into the settings spinboxes."""

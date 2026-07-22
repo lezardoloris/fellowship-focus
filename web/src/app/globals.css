@@ -132,6 +132,32 @@ body {
   -webkit-backdrop-filter: blur(12px);
 }
 
+/* Cinematic "video" feel without fighting the website blocker */
+@keyframes kenburns {
+  0% { transform: scale(1) translate(0, 0); }
+  50% { transform: scale(1.12) translate(-2%, -1%); }
+  100% { transform: scale(1.08) translate(1%, -2%); }
+}
+
+.focus-kenburns {
+  animation: kenburns 48s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes fog-drift {
+  0% { opacity: 0.25; transform: translateX(-4%); }
+  50% { opacity: 0.4; transform: translateX(3%); }
+  100% { opacity: 0.3; transform: translateX(-2%); }
+}
+
+.focus-fog {
+  background:
+    radial-gradient(ellipse 80% 40% at 50% 100%, rgba(255, 220, 180, 0.12), transparent 60%),
+    radial-gradient(ellipse 60% 30% at 20% 40%, rgba(255, 255, 255, 0.06), transparent 50%);
+  animation: fog-drift 22s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
 .input-premium {
   background: var(--surface-elevated);
   border: 1px solid var(--border);

@@ -107,6 +107,20 @@ class DesktopBridge(QObject):
             patch = {}
         return self._call("set_okr", patch)
 
+    @Slot(str, result=str)
+    def showFloatTimer(self, payload_json: str) -> str:
+        try:
+            payload = json.loads(payload_json)
+        except (TypeError, json.JSONDecodeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        return self._call("show_float_timer", payload)
+
+    @Slot(result=str)
+    def hideFloatTimer(self) -> str:
+        return self._call("hide_float_timer")
+
 
 class WebDashboardPage(QWidget):
     def __init__(self, get_config, on_open_external, on_config_updated, blocker_api=None) -> None:
