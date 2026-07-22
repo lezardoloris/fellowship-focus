@@ -121,6 +121,20 @@ class DesktopBridge(QObject):
     def hideFloatTimer(self) -> str:
         return self._call("hide_float_timer")
 
+    @Slot(result=str)
+    def musicState(self) -> str:
+        return self._call("music_state")
+
+    @Slot(str, result=str)
+    def musicCmd(self, payload_json: str) -> str:
+        try:
+            payload = json.loads(payload_json)
+        except (TypeError, json.JSONDecodeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        return self._call("music_cmd", payload)
+
 
 class WebDashboardPage(QWidget):
     def __init__(self, get_config, on_open_external, on_config_updated, blocker_api=None) -> None:

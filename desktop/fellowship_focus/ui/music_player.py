@@ -230,6 +230,53 @@ class FocusMusicPlayer(GlassCard):
         self._load_current()
         self.play()
 
+    # ── Web-bridge API (drives this native player from the embedded web UI) ──
+
+    def is_playing(self) -> bool:
+        return bool(
+            self._player
+            and self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+        )
+
+    def bridge_state(self) -> dict:
+        return {
+            "available": bool(MULTIMEDIA_OK),
+            "tracks": [p.stem for p in self._tracks],
+            "index": self._index if self._tracks else -1,
+            "playing": self.is_playing(),
+            "volume": float(self._audio.volume()) if self._audio else 0.5,
+        }
+
+    def bridge_cmd(self, payload: dict) -> dict:
+        cmd = str(payload.get("cmd", ""))
+        if cmd == "toggle":
+            self.toggle_play()
+        elif cmd == "play":
+            self.play()
+        elif cmd == "pause":
+            self.pause()
+        elif cmd == "next":
+            self.next()
+        elif cmd == "prev":
+            self.previous()
+        elif cmd == "select":
+            try:
+                i = int(payload.get("value", -1))
+            except (TypeError, ValueError):
+                i = -1
+            if self._tracks and 0 <= i < len(self._tracks):
+                self._index = i
+                self.track_combo.setCurrentIndex(i)
+                self._load_current()
+                self.play()
+        elif cmd == "volume":
+            try:
+                v = max(0.0, min(1.0, float(payload.get("value", 0.5))))
+            except (TypeError, ValueError):
+                v = 0.5
+            self.volume_slider.setValue(int(v * 100))
+        return self.bridge_state()
+
     # ── Session hooks (called by the Pomodoro engine) ───────
 
     def on_focus_start(self) -> None:

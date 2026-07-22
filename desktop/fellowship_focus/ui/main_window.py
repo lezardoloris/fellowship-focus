@@ -189,6 +189,8 @@ class MainWindow(QMainWindow):
                 "set_okr": self._web_set_okr,
                 "show_float_timer": self._web_show_float_timer,
                 "hide_float_timer": self._web_hide_float_timer,
+                "music_state": self._web_music_state,
+                "music_cmd": self._web_music_cmd,
             },
         )
         self.stack.addWidget(self.web_dashboard)
@@ -1038,6 +1040,12 @@ class MainWindow(QMainWindow):
             s = s[4:]
         return s.split("/", 1)[0].strip()
 
+    def _web_music_state(self) -> dict:
+        return self.music_player.bridge_state()
+
+    def _web_music_cmd(self, payload: dict) -> dict:
+        return self.music_player.bridge_cmd(payload if isinstance(payload, dict) else {})
+
     def _web_blocker_state(self) -> dict:
         return {
             "shieldOn": bool(self.blocker_active),
@@ -1343,30 +1351,21 @@ class MainWindow(QMainWindow):
         self._on_blocker_failed("The blocking engine did not come up.")
 
     def _watchdog_tick(self) -> None:
-        """The engine dying while armed must never strand the machine offline:
-        release the system proxy when it stops answering."""
+        """Release the system proxy only if the engine PROCESS actually died.
+
+        The liveness signal is the child process, nothing else. An earlier
+        version pinged the engine over HTTP with a 3 s timeout, but a busy
+        proxy (many concurrent TLS handshakes) flunks that ping while working
+        perfectly — so the watchdog kept killing healthy shields a couple of
+        minutes in. A live process IS a live engine.
+        """
         if not self.blocker_active:
             self._blocker_watchdog.stop()
             return
-        # A dead child process is unambiguous — release immediately.
         if self.mitm_process and self.mitm_process.poll() is not None:
             self._blocker_watchdog.stop()
-            blocker_log("WATCHDOG trip: engine process is dead")
+            blocker_log("WATCHDOG trip: engine process exited")
             self._on_blocker_failed("The blocking engine stopped (see ~/.fellowship-focus/proxy.log).")
-            return
-        if is_mitmdump_running():
-            self._watchdog_misses = 0
-            return
-        # One failed HTTP check can just be a busy engine (3 s timeout under
-        # load). Releasing on a single miss disarmed a healthy shield.
-        self._watchdog_misses = getattr(self, "_watchdog_misses", 0) + 1
-        blocker_log(f"watchdog miss {self._watchdog_misses}/2 (engine slow or gone)")
-        if self._watchdog_misses < 2:
-            return
-        self._watchdog_misses = 0
-        self._blocker_watchdog.stop()
-        blocker_log("WATCHDOG trip: engine not answering twice in a row")
-        self._on_blocker_failed("The blocking engine stopped (see ~/.fellowship-focus/proxy.log).")
 
     def _on_blocker_failed(self, detail: str) -> None:
         self._release_blocker_infra()

@@ -22,7 +22,17 @@ type RawBridge = {
   setOkr?: (json: string, cb: (r: string) => void) => void;
   showFloatTimer?: (json: string, cb?: (r: string) => void) => void;
   hideFloatTimer?: (cb?: (r: string) => void) => void;
+  musicState?: (cb: (r: string) => void) => void;
+  musicCmd?: (json: string, cb: (r: string) => void) => void;
 } & Record<string, QtSlot>;
+
+export type MusicState = {
+  available: boolean;
+  tracks: string[];
+  index: number;
+  playing: boolean;
+  volume: number;
+};
 
 export type FloatTimerPayload = {
   remaining: number;
@@ -149,6 +159,44 @@ export const desktopBridge = {
         b.state((r) => resolve(parse(r)));
       } catch {
         resolve(EMPTY);
+      }
+    });
+  },
+
+  /** Native Qt player state — drives the web music panel inside the app,
+   * where the actual .mp3 files live (they are too large to ship to the web). */
+  musicState(): Promise<MusicState | null> {
+    const b = raw();
+    if (!b?.musicState) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      try {
+        b.musicState!((r) => {
+          try {
+            resolve(JSON.parse(r) as MusicState);
+          } catch {
+            resolve(null);
+          }
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+  },
+
+  musicCmd(payload: Record<string, unknown>): Promise<MusicState | null> {
+    const b = raw();
+    if (!b?.musicCmd) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      try {
+        b.musicCmd!(JSON.stringify(payload), (r) => {
+          try {
+            resolve(JSON.parse(r) as MusicState);
+          } catch {
+            resolve(null);
+          }
+        });
+      } catch {
+        resolve(null);
       }
     });
   },

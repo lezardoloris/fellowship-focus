@@ -970,7 +970,7 @@ export function BlockTab({
 
         {/* One horizontal band: Timer | Block list | Music. Equal heights, no
             floating half-empty panel, stacks vertically under xl. */}
-        <div className="mx-auto grid w-full max-w-7xl items-stretch gap-4 xl:grid-cols-3">
+        <div className="mx-auto grid w-full max-w-7xl items-start gap-4 xl:grid-cols-3">
           <div className="glass-panel overflow-hidden">
             {inSession && (
               <div className={`px-5 pt-5 text-center ${remaining === 0 ? "text-[#f87171]" : "text-white"}`}>
