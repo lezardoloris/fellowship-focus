@@ -246,6 +246,32 @@ class WebDashboardPage(QWidget):
         self._pull_timer = QTimer(self)
         self._pull_timer.timeout.connect(self._pull_credentials_from_web)
 
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._apply_zoom()
+
+    def _apply_zoom(self) -> None:
+        """Scale the whole web UI with the window, like a responsive app.
+
+        The web layout was built for a wide immersive window; in a small
+        window the cards stayed full-size and overflowed. Zooming the view
+        proportionally to its width keeps everything readable and in-frame at
+        any size — the real fix for 'les encarts doivent être proportionnels'.
+        """
+        if not self._view:
+            return
+        w = self._view.width()
+        if w <= 0:
+            return
+        # 1.0 at the design width (~1366), scaling down to a 0.62 floor so a
+        # tiny window shrinks the UI instead of clipping it.
+        zoom = max(0.62, min(1.0, w / 1366))
+        try:
+            if abs(self._view.zoomFactor() - zoom) > 0.01:
+                self._view.setZoomFactor(zoom)
+        except Exception:
+            pass
+
     def _setup_bridge(self) -> None:
         """Register the desktop blocker bridge over Qt WebChannel.
 
@@ -377,6 +403,7 @@ class WebDashboardPage(QWidget):
             return
 
         self._inject_bridge()
+        self._apply_zoom()
         self._pull_credentials_from_web()
         self._push_credentials_to_web()
 

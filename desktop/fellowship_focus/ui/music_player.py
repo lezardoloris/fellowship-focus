@@ -9,6 +9,7 @@ the shield. The same tracks power the long-form focus videos on YouTube.
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -34,27 +35,77 @@ except Exception:  # pragma: no cover - platform without the multimedia plugin
 
 AUDIO_EXTS = {".mp3", ".ogg", ".oga", ".wav", ".m4a", ".flac", ".opus", ".aac"}
 USER_MUSIC_DIR = Path.home() / ".fellowship-focus" / "music"
+_YT_IN_NAME = re.compile(r"\[([A-Za-z0-9_-]{6,})\]|^focus-([A-Za-z0-9_-]{6,})$", re.I)
+
+# Short labels keyed by YouTube id (kept in sync with web/src/lib/focusMusic.ts).
+FOCUS_TITLES: dict[str, str] = {
+    "OWz7HiR6H-0": "CEO Penthouse",
+    "hpAD6SGi3j8": "Hyperfocus Café",
+    "TIqsKXQHvFI": "When the Stakes Are High",
+    "WMdhPtS5vio": "Force",
+    "R75oWuI4te4": "Spice Meditation",
+    "UDTmUzu05BE": "Deep Work Mix",
+    "4WIMyqBG9gs": "Dwarf Mountain Journey",
+    "7VAUDImpqGQ": "Trap Beats for Work",
+    "MYW0TgV67RE": "Serious Grind",
+    "EN0A5derVo0": "Lock In",
+    "5_4KRUx2iKY": "Peak Performance",
+    "eo1gKGt6h9M": "Hyper Focus Mode",
+    "ahawPLh4epk": "CEO Zero Distraction",
+    "GaTy0vRmT9E": "Brain Performance",
+    "p2_zDvtPQ-g": "Super Focus Alpha",
+    "am1VJP0RnmQ": "Flow State Chillstep",
+    "T2QZpy07j4s": "Deep Future Garage",
+    "UpPmnnJcy6A": "Dreamlight 30m",
+    "-sZqtdT-GVw": "Chill Deep Focus",
+    "mdJU5ogrPMY": "Classical Study",
+}
 
 
 def _bundled_music_dir() -> Path:
     return ASSETS_DIR / "music"
 
 
+def _youtube_id(stem: str) -> str | None:
+    m = _YT_IN_NAME.search(stem)
+    if not m:
+        return None
+    return m.group(1) or m.group(2)
+
+
+def display_title(path: Path) -> str:
+    yt = _youtube_id(path.stem)
+    if yt and yt in FOCUS_TITLES:
+        return FOCUS_TITLES[yt]
+    stem = path.stem
+    if stem.lower().startswith("focus-"):
+        return stem[6:]
+    cut = re.sub(r"\s*[[（(][A-Za-z0-9_-]{6,}[)）\]]\s*$", "", stem)
+    cut = re.sub(r"\s*[|｜~•·].*$", "", cut).strip()
+    return cut or stem
+
+
 def discover_tracks() -> list[Path]:
-    """Tracks from the user's music folder first, then any bundled soundscapes."""
-    tracks: list[Path] = []
-    seen: set[str] = set()
+    """Tracks from the user's music folder first, then bundled — deduped by YouTube id / name."""
+    by_key: dict[str, Path] = {}
     for folder in (USER_MUSIC_DIR, _bundled_music_dir()):
         try:
             if not folder.exists():
                 continue
             for path in sorted(folder.iterdir()):
-                if path.suffix.lower() in AUDIO_EXTS and path.name.lower() not in seen:
-                    tracks.append(path)
-                    seen.add(path.name.lower())
+                if path.suffix.lower() not in AUDIO_EXTS:
+                    continue
+                yt = _youtube_id(path.stem)
+                key = f"yt:{yt}" if yt else f"name:{path.name.lower()}"
+                existing = by_key.get(key)
+                # Prefer clean focus-{id}.mp3 names; otherwise keep first (user folder).
+                if existing is None:
+                    by_key[key] = path
+                elif path.name.lower().startswith("focus-") and not existing.name.lower().startswith("focus-"):
+                    by_key[key] = path
         except Exception:
             continue
-    return tracks
+    return sorted(by_key.values(), key=lambda p: display_title(p).lower())
 
 
 class FocusMusicPlayer(GlassCard):
@@ -146,7 +197,7 @@ class FocusMusicPlayer(GlassCard):
         self.track_combo.blockSignals(True)
         self.track_combo.clear()
         for path in self._tracks:
-            self.track_combo.addItem(path.stem)
+            self.track_combo.addItem(display_title(path), path.name)
         self.track_combo.blockSignals(False)
         if self._tracks:
             saved = self._config.get("focus_music_track", "")
@@ -241,7 +292,7 @@ class FocusMusicPlayer(GlassCard):
     def bridge_state(self) -> dict:
         return {
             "available": bool(MULTIMEDIA_OK),
-            "tracks": [p.stem for p in self._tracks],
+            "tracks": [display_title(p) for p in self._tracks],
             "index": self._index if self._tracks else -1,
             "playing": self.is_playing(),
             "volume": float(self._audio.volume()) if self._audio else 0.5,

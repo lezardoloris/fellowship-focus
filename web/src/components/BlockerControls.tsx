@@ -272,8 +272,9 @@ export async function requestHardUnlock(
   actionLabel: string
 ): Promise<boolean> {
   if (settings.hard_mode === "off") {
-    if (settings.anti_oops) return window.confirm(`${actionLabel}?`);
-    return true;
+    // A plain "are you sure?" so a stray click can't end a session. This used
+    // to hang off an unlabeled "Anti-Oops" toggle nobody understood.
+    return window.confirm(`${actionLabel}?`);
   }
   if (settings.hard_mode === "confirm") {
     return window.confirm(`${actionLabel}?`);

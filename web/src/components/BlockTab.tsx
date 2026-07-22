@@ -970,7 +970,7 @@ export function BlockTab({
 
         {/* One horizontal band: Timer | Block list | Music. Equal heights, no
             floating half-empty panel, stacks vertically under xl. */}
-        <div className="mx-auto grid w-full max-w-7xl items-start gap-4 xl:grid-cols-3">
+        <div className="mx-auto grid w-full max-w-7xl items-start gap-4 md:grid-cols-2 lg:grid-cols-3">
           <div className="glass-panel overflow-hidden">
             {inSession && (
               <div className={`px-5 pt-5 text-center ${remaining === 0 ? "text-[#f87171]" : "text-white"}`}>
@@ -1051,16 +1051,8 @@ export function BlockTab({
                 <button type="button" onClick={testAlarm} className="btn-secondary py-1! text-xs!">Test</button>
               </div>
               <div className="flex items-center gap-2">
+                <span className="text-[10px] text-white/55">Vol</span>
                 <input type="range" min={0} max={1} step={0.01} value={prefs.alarm_vol} onChange={(e) => savePrefs({ ...prefs, alarm_vol: Number(e.target.value) })} className="h-1.5 flex-1 accent-[#b8422e]" />
-                <button
-                  type="button"
-                  onClick={() => savePrefs({ ...prefs, anti_oops: !prefs.anti_oops })}
-                  className={`rounded-md border px-2 py-1 text-xs ${
-                    prefs.anti_oops ? "border-[#b8422e] text-white" : "border-white/15 text-white/70"
-                  }`}
-                >
-                  Anti-Oops
-                </button>
               </div>
             </div>
           </div>

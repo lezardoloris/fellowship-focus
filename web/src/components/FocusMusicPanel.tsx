@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FOCUS_MUSIC_KEY, matchLocalTrack } from "@/lib/focusMusic";
+import { FOCUS_MUSIC_KEY, matchLocalTrack, niceFocusTitle } from "@/lib/focusMusic";
 import { desktopBridge, isDesktopShell, type MusicState } from "@/lib/desktop";
 
 type ManifestEntry = { title: string; src: string; id?: string; youtubeId?: string };
@@ -60,7 +60,7 @@ export function FocusMusicPanel({ autoPlay = false }: { autoPlay?: boolean }) {
   if (inShell) {
     const available = music?.available && music.tracks.length > 0;
     const label =
-      music && music.index >= 0 ? niceTitle(music.tracks[music.index]) : "No tracks";
+      music && music.index >= 0 ? music.tracks[music.index] : "No tracks";
     return (
       <Shell count={music?.tracks.length ?? 0}>
         <div className="flex items-center gap-2">
@@ -77,7 +77,7 @@ export function FocusMusicPanel({ autoPlay = false }: { autoPlay?: boolean }) {
             {!available && <option value={-1}>Add tracks in the app</option>}
             {music?.tracks.map((t, i) => (
               <option key={i} value={i}>
-                {niceTitle(t)}
+                {t}
               </option>
             ))}
           </select>
@@ -103,7 +103,7 @@ export function FocusMusicPanel({ autoPlay = false }: { autoPlay?: boolean }) {
   // ── Render: browser ──
   const options = manifest.map((m) => ({
     src: m.src,
-    label: matchLocalTrack(m.src)?.title ? matchLocalTrack(m.src)!.title : m.title,
+    label: matchLocalTrack(m.src)?.title || matchLocalTrack(m.youtubeId || "")?.title || m.title,
   }));
   const hasLocal = options.length > 0;
   const current = options.find((o) => o.src === trackSrc) || options[0];
@@ -213,9 +213,5 @@ function Volume({ value, onChange }: { value: number; onChange: (v: number) => v
 }
 
 function niceTitle(raw: string): string {
-  // Strip the "[youtubeId]" suffix and "focus-" prefix from filenames.
-  return raw
-    .replace(/\s*[[（(][A-Za-z0-9_-]{6,}[)）\]]\s*$/, "")
-    .replace(/^focus-/, "")
-    .trim();
+  return niceFocusTitle(raw);
 }
