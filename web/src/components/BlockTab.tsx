@@ -418,6 +418,52 @@ export function BlockTab({
     setExtState(await getExtensionState());
   }, [extReady]);
 
+  /** ON/OFF switch for the extension shield, mirroring the desktop toggle. */
+  async function toggleExtensionShield() {
+    if (shieldBusy) return;
+    const turningOff = extArmed;
+    if (turningOff) {
+      const ok = await requestHardUnlock(prefs, "Turn Shield OFF");
+      if (!ok) {
+        toast.error("Unlock cancelled");
+        return;
+      }
+      if (token) {
+        fetch("/api/blocker/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, action: "bypass", kind: "shield_off" }),
+        }).catch(() => {});
+      }
+    }
+    setShieldBusy(true);
+    try {
+      if (turningOff) {
+        const ok = await extensionCommand("setShield", { on: false });
+        const st = await getExtensionState();
+        setExtState(st);
+        // The extension refuses to disarm during a focus session or a locked schedule.
+        if (!ok || isArmed(st)) toast.error("Shield locked", "Stop the focus session first.");
+        else toast.info("Shield OFF", "Sites are no longer blocked.");
+        return;
+      }
+      const st = await armExtension();
+      setExtState(st);
+      if (st && isArmed(st)) {
+        setExtReady(true);
+        setArmFailed(false);
+        toast.ok("Shield ON", `${st.ruleCount} rules active`);
+      } else {
+        toast.error(
+          "Could not arm",
+          st?.siteCount === 0 ? "Add a site first." : "Reload the extension and retry.",
+        );
+      }
+    } finally {
+      setShieldBusy(false);
+    }
+  }
+
   async function connectChrome() {
     const state = await armExtension();
     if (state && isArmed(state)) {
@@ -776,6 +822,8 @@ export function BlockTab({
   const on = Boolean(dt?.shieldOn && dt?.active);
   const inSession = phase !== "idle";
   const extArmed = isArmed(extState);
+  // Whichever engine is in play, this is "are sites actually blocked right now".
+  const shieldLive = isDesktop ? on : extArmed;
 
   return (
     <>
@@ -813,66 +861,56 @@ export function BlockTab({
     )}
 
     <div className="space-y-4">
-        <div className="glass-panel flex flex-wrap items-center gap-3 px-4 py-3">
-          {isDesktop ? (
-            <>
-              <div className="mr-auto">
-                <p className="text-sm font-semibold text-white">Shield {on ? "ON" : "OFF"}</p>
-                <p className="text-[11px] text-white/45">{sites.length} sites</p>
-              </div>
+        {/* One control, one line, right-aligned. The shield state is the only
+            thing that matters here; everything else is a quiet fallback. */}
+        <div className="flex justify-end">
+          <div className="inline-flex items-center gap-2.5 rounded-full border border-white/12 bg-black/35 py-1.5 pl-3.5 pr-1.5 backdrop-blur">
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${
+                shieldLive ? "bg-emerald-400" : "bg-white/25"
+              }`}
+            />
+            <span className="text-xs font-medium text-white/85">
+              Shield {shieldLive ? "ON" : "OFF"}
+            </span>
+
+            {!isDesktop && !extReady ? (
+              <>
+                <a
+                  href="/download"
+                  className="rounded-full bg-[#b8422e] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#c46551]"
+                >
+                  Get the app
+                </a>
+                <button
+                  type="button"
+                  onClick={connectChrome}
+                  className="rounded-full px-2.5 py-1.5 text-xs text-white/55 transition hover:text-white"
+                >
+                  Chrome
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
                 role="switch"
-                aria-checked={on}
-                disabled={shieldBusy || !dt?.certReady}
-                onClick={toggleShield}
-                className={`relative h-9 w-16 shrink-0 rounded-full transition disabled:opacity-40 ${
-                  on ? "bg-[#b8422e]" : "bg-white/20"
+                aria-checked={shieldLive}
+                aria-label={shieldLive ? "Turn shield off" : "Turn shield on"}
+                disabled={shieldBusy || (isDesktop && !dt?.certReady)}
+                onClick={isDesktop ? toggleShield : toggleExtensionShield}
+                title={shieldLive ? "Turn the shield off" : "Turn the shield on"}
+                className={`relative h-7 w-12 shrink-0 rounded-full transition disabled:opacity-40 ${
+                  shieldLive ? "bg-[#b8422e]" : "bg-white/20"
                 }`}
               >
-                <span className={`absolute top-1 h-7 w-7 rounded-full bg-white transition-all ${on ? "left-8" : "left-1"}`} />
+                <span
+                  className={`absolute top-1 h-5 w-5 rounded-full bg-white transition-all ${
+                    shieldLive ? "left-6" : "left-1"
+                  }`}
+                />
               </button>
-            </>
-          ) : (
-            <>
-              <span
-                className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                  extArmed ? "bg-emerald-400" : extReady ? "bg-amber-400" : "bg-white/25"
-                }`}
-              />
-              <div className="mr-auto">
-                <p className="text-sm font-semibold text-white">
-                  {extArmed ? "Shield ON" : extReady ? "Shield OFF" : "Not connected"}
-                </p>
-                <p className="text-[11px] text-white/45">
-                  {extArmed
-                    ? `${extState?.ruleCount ?? 0} rules active${
-                        extState?.blocksToday
-                          ? ` · ${extState.blocksToday} distraction${
-                              extState.blocksToday > 1 ? "s" : ""
-                            } deflected today`
-                          : ""
-                      }`
-                    : extReady
-                      ? "Extension installed — press Connect Chrome to arm"
-                      : "The list alone blocks nothing. Chrome extension required."}
-                </p>
-              </div>
-              {extArmed && (
-                <button
-                  type="button"
-                  onClick={() => window.open("https://www.youtube.com", "_blank", "noopener")}
-                  className="btn-secondary shrink-0"
-                  title="Opens a blocked site — you should land on the block page"
-                >
-                  Test
-                </button>
-              )}
-              <button type="button" onClick={connectChrome} className="btn-primary shrink-0">
-                {extArmed ? "Re-sync" : "Connect Chrome"}
-              </button>
-            </>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,400px)_1fr]">
