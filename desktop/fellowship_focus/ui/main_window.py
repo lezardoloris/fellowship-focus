@@ -280,9 +280,31 @@ class MainWindow(QMainWindow):
     def _check_updates_silent(self) -> None:
         if not self.config.get("auto_update", True):
             return
-        info = check_for_updates()
-        if info.available:
-            self.toasts.show("Update available", info.message, "info", 8000)
+        # check_for_updates() does a network request plus a `git fetch` with a
+        # 30 s timeout. Run on the GUI thread it froze the whole app right
+        # after launch — a full-screen window stuck at "not responding".
+        import threading
+
+        self._update_info_pending = None
+
+        def worker() -> None:
+            try:
+                self._update_info_pending = check_for_updates()
+            except Exception:
+                self._update_info_pending = None
+
+        threading.Thread(target=worker, daemon=True, name="update-check").start()
+        self._poll_update_result(attempts=120)
+
+    def _poll_update_result(self, attempts: int) -> None:
+        info = getattr(self, "_update_info_pending", None)
+        if info is not None:
+            self._update_info_pending = None
+            if info.available:
+                self.toasts.show("Update available", info.message, "info", 8000)
+            return
+        if attempts > 0:
+            QTimer.singleShot(500, lambda: self._poll_update_result(attempts - 1))
 
     def _apply_update(self) -> None:
         ok, msg = apply_git_update()
@@ -1849,6 +1871,25 @@ class MainWindow(QMainWindow):
 def run(start_minimized: bool = False) -> None:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+
+    # Single instance. Without this, every extra double-click piled up another
+    # app, and each newcomer's startup cleanup killed the previous instance's
+    # proxy engine (seen live in proxy.log: shutdown 50 ms after listen).
+    from PySide6.QtCore import QLockFile
+    from pathlib import Path as _Path
+
+    lock_dir = _Path.home() / ".fellowship-focus"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    _lock = QLockFile(str(lock_dir / "app.lock"))
+    _lock.setStaleLockTime(0)  # a dead process must never block a relaunch
+    if not _lock.tryLock(100):
+        QMessageBox.information(
+            None,
+            "Fellowship Focus",
+            "Fellowship Focus is already running — look for it in the system tray.",
+        )
+        sys.exit(0)
+    run._lock = _lock  # keep a reference for the process lifetime
     icon_file = resolve_app_icon_path()
     if icon_file:
         app.setWindowIcon(QIcon(str(icon_file)))
