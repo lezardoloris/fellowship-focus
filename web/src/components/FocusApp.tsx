@@ -96,17 +96,17 @@ export function FocusApp() {
 
   return (
     <Shell>
-      <header className="sticky top-0 z-10 border-b border-[#3a3d40] bg-[#1a1c1e]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-4 px-4 py-3 md:px-6">
+      <header className="header-glass sticky top-0 z-20">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-3 md:px-8">
           <div className="mr-auto">
-            <p className="font-display text-sm font-bold tracking-[0.2em] text-[#f4f4f5]">
+            <p className="font-display text-sm font-bold tracking-[0.2em] text-white">
               FELLOWSHIP FOCUS
             </p>
-            <p className="text-xs text-[#9ca3af]">
+            <p className="text-xs text-white/55">
               {joined ? (
                 <>
                   {name ? `${name} · ` : ""}
-                  <button onClick={leaveGuild} className="underline hover:text-[#f4f4f5]" title="Leave guild">
+                  <button onClick={leaveGuild} className="underline hover:text-white" title="Leave guild">
                     {code}
                   </button>
                 </>
@@ -115,16 +115,16 @@ export function FocusApp() {
               )}
             </p>
           </div>
-          <nav className="flex items-center gap-1 rounded-lg border border-[#3a3d40] bg-[#242628] p-1">
+          <nav className="flex items-center gap-1 rounded-full border border-white/10 bg-black/20 p-1 backdrop-blur-md">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 title={t.hint}
-                className={`rounded-md px-4 py-1.5 text-sm font-medium transition ${
+                className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
                   tab === t.id
-                    ? "bg-[#b8422e] text-white"
-                    : "text-[#9ca3af] hover:text-[#f4f4f5]"
+                    ? "bg-[#b8422e] text-white shadow-lg shadow-[#b8422e]/25"
+                    : "text-white/65 hover:text-white"
                 }`}
               >
                 {t.label}
@@ -132,14 +132,14 @@ export function FocusApp() {
             ))}
           </nav>
           {joined && (
-            <button onClick={share} className="btn-secondary">
+            <button onClick={share} className="btn-secondary border-white/15 bg-black/20 text-white">
               {shared ? "✓ Copied" : "Share"}
             </button>
           )}
         </div>
       </header>
 
-      <div className="mx-auto max-w-5xl px-4 py-6 md:px-6">
+      <div className="relative z-10 mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-8">
         {tab === "block" && <BlockTab code={code} token={token} name={name} />}
         {tab === "focus" && <FocusTab />}
         {tab === "guild" &&
@@ -249,5 +249,17 @@ function GuildGate({
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return <main className="min-h-screen bg-[#1a1c1e] text-[#f4f4f5]">{children}</main>;
+  return (
+    <main className="relative min-h-screen overflow-hidden text-white">
+      {/* Full-bleed cinematic scene — the product, not a black box */}
+      <div className="pointer-events-none fixed inset-0 -z-10" aria-hidden>
+        <div
+          className="focus-kenburns absolute inset-[-6%] bg-cover bg-center"
+          style={{ backgroundImage: "url('/fellowship-hero.png')" }}
+        />
+        <div className="app-scrim absolute inset-0" />
+      </div>
+      {children}
+    </main>
+  );
 }

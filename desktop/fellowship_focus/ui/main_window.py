@@ -152,6 +152,10 @@ class MainWindow(QMainWindow):
         top_row.addSpacing(8)
         top_row.addWidget(self.status_blocker)
         right_layout.addWidget(top)
+        self.top_bar = top
+        self._immersive = False
+        self._pre_immersive_geo = None
+        self._pre_immersive_flags = None
 
         self.stack = QStackedWidget()
         right_layout.addWidget(self.stack, 1)
@@ -1604,12 +1608,61 @@ class MainWindow(QMainWindow):
         titles = NavSidebar.NAV
         if 0 <= index < len(titles):
             self.page_title.setText(titles[index][0])
-        if index == 0:
+        # Fellowship web app: borderless immersive chrome
+        immersive = index == 0
+        self.sidebar.setVisible(not immersive)
+        self.top_bar.setVisible(not immersive)
+        if immersive:
+            self._enter_immersive_window()
             self.web_dashboard.reload_dashboard()
-        elif index == 1:
+        else:
+            self._exit_immersive_window()
+            if index == 1:
+                self._refresh_journey()
+            elif index == 6:
+                self.usage_page.refresh()
+
+    def _enter_immersive_window(self) -> None:
+        """Borderless fullscreen for the embedded web app — scene fills the screen."""
+        if getattr(self, "_immersive", False):
+            return
+        self._immersive = True
+        self._pre_immersive_geo = self.geometry()
+        self._pre_immersive_flags = self.windowFlags()
+        self.setWindowFlags(
+            Qt.WindowType.Window
+            | Qt.WindowType.FramelessWindowHint
+        )
+        self.showFullScreen()
+
+    def _exit_immersive_window(self) -> None:
+        if not getattr(self, "_immersive", False):
+            return
+        self._immersive = False
+        flags = getattr(self, "_pre_immersive_flags", None)
+        if flags is not None:
+            self.setWindowFlags(flags)
+        self.showNormal()
+        geo = getattr(self, "_pre_immersive_geo", None)
+        if geo is not None:
+            self.setGeometry(geo)
+        self.show()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        # Esc leaves borderless immersive and shows the native sidebar again
+        if event.key() == Qt.Key.Key_Escape and getattr(self, "_immersive", False):
+            self.sidebar.setVisible(True)
+            self.top_bar.setVisible(True)
+            self._exit_immersive_window()
+            # Jump to Dashboard without re-entering immersive
+            self.sidebar.blockSignals(True)
+            self.sidebar.set_current(1)
+            self.sidebar.blockSignals(False)
+            self.stack.setCurrentIndex(1)
+            self.page_title.setText(NavSidebar.NAV[1][0])
             self._refresh_journey()
-        elif index == 6:
-            self.usage_page.refresh()
+            return
+        super().keyPressEvent(event)
 
     # ── Tray & lifecycle ───────────────────────────────────
 

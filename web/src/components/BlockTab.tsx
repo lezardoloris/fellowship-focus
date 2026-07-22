@@ -305,18 +305,9 @@ export function BlockTab({
       cycles={prefs.cycles}
       onStop={stop}
     />
-    <div className="relative overflow-hidden rounded-2xl border border-white/5">
-      {/* HD fellowship image — the hero, everything else floats over it */}
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: "url('/fellowship-hero.png')" }}
-        aria-hidden
-      />
-      <div className="absolute inset-0 block-scrim" aria-hidden />
-
-      <div className="relative p-5 md:p-8">
-        {/* Header: wordmark + compact shield */}
-        <div className="mb-8 flex items-start justify-between gap-4">
+    <div className="space-y-5">
+        {/* Header: wordmark + compact shield — floats on the full-bleed scene */}
+        <div className="flex items-start justify-between gap-4">
           <div className="hero-title">
             <p className="font-display text-xs font-semibold tracking-[0.35em] text-white/70">
               THE FELLOWSHIP
@@ -481,7 +472,6 @@ export function BlockTab({
             </ul>
           </div>
         </div>
-      </div>
     </div>
     </>
   );

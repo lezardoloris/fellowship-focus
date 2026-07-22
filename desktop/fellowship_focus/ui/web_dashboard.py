@@ -175,6 +175,7 @@ class WebDashboardPage(QWidget):
         setup_layout.addWidget(self._status)
 
         layout.addWidget(self._setup)
+        self._setup.setVisible(False)  # immersive: guild connect lives in the web UI
 
         # ── Connected bar (compact, no secrets) ────────────────
         self._connected_bar = QWidget()
@@ -216,6 +217,11 @@ class WebDashboardPage(QWidget):
             return
 
         self._view = QWebEngineView()
+        from PySide6.QtGui import QColor
+
+        # Match the cinematic scene edge — no solid black panel behind the page
+        self._view.page().setBackgroundColor(QColor("#0c0e10"))
+        self.setStyleSheet("background: #0c0e10;")
         profile = QWebEngineProfile.defaultProfile()
         profile.setHttpUserAgent(profile.httpUserAgent() + " FellowshipFocusDesktop/1.3.2")
         self._view.loadFinished.connect(self._on_load_finished)
@@ -280,13 +286,12 @@ class WebDashboardPage(QWidget):
             self._invite_input.clear()
             label = name if name else code
             self._connected_label.setText(f"Connected · {label}")
-            self._setup.setVisible(False)
-            self._connected_bar.setVisible(True)
             self._status.setText("")
         else:
-            self._setup.setVisible(True)
-            self._connected_bar.setVisible(False)
             self._status.setText("Not connected")
+        # Immersive: no Qt chrome — guild connect is inside the web app
+        self._setup.setVisible(False)
+        self._connected_bar.setVisible(False)
 
         if not self._view:
             return

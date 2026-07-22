@@ -145,7 +145,7 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
     <>
       {immersive && (
         <div
-          className="fixed inset-0 z-[9999] flex flex-col bg-black text-white"
+          className="fixed inset-0 z-[9999] flex flex-col text-white"
           role="dialog"
           aria-modal="true"
           aria-label="Focus session"
@@ -155,7 +155,7 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
               className="focus-kenburns absolute inset-[-8%] bg-cover bg-center"
               style={{ backgroundImage: "url('/fellowship-hero.png')" }}
             />
-            <div className="absolute inset-0 bg-linear-to-b from-black/40 via-black/30 to-black/75" />
+            <div className="app-scrim absolute inset-0" />
             <div className="focus-fog absolute inset-0" />
           </div>
 
