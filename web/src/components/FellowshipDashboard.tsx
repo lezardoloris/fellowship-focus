@@ -159,7 +159,7 @@ export function FellowshipDashboard({
       <div className="glass-panel mx-auto max-w-md p-8 text-center">
         <p className="text-lg font-semibold text-white">Guild unavailable</p>
         <p className="mt-2 text-sm text-[#fca5a5]">{error || "Not found"}</p>
-        <p className="mt-3 text-xs text-white/50">
+        <p className="mt-3 text-xs text-white/70">
           Code: <code className="text-white/70">{code}</code>
         </p>
         <div className="mt-5 flex flex-wrap justify-center gap-2">
@@ -192,7 +192,7 @@ export function FellowshipDashboard({
   return (
     <div className="space-y-6">
       <header className="glass-panel px-5 py-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/50">Guild</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/70">Guild</p>
         <h1 className="font-display mt-1 text-2xl font-bold text-white md:text-3xl">{fellowship.name}</h1>
         {myName && (
           <p className="mt-1 text-sm text-white/60">
@@ -200,7 +200,7 @@ export function FellowshipDashboard({
           </p>
         )}
         {(fellowship.blocker_bypass_penalty ?? 0) > 0 && (
-          <p className="mt-2 max-w-xl text-sm text-white/55">
+          <p className="mt-2 max-w-xl text-sm text-white/75">
             Rule: −{fellowship.blocker_bypass_penalty} XP if blocker is off during focus.
           </p>
         )}

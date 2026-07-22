@@ -187,8 +187,8 @@ export function SettingsPanel({
         </div>
 
         <section className="space-y-3 border-b border-white/10 pb-5">
-          <p className="text-xs font-medium uppercase tracking-wider text-white/50">Background</p>
-          <p className="text-[11px] text-white/40">One loop for the whole app — tabs won’t change it.</p>
+          <p className="text-xs font-medium uppercase tracking-wider text-white/70">Background</p>
+          <p className="text-[11px] text-white/65">One loop for the whole app — tabs won’t change it.</p>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
             {VIDEO_SCENES.map((id) => {
               const s = SCENES[id];
@@ -237,7 +237,7 @@ export function SettingsPanel({
         </section>
 
         <section className="border-b border-white/10 py-5">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/50">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/70">
             Lock · schedule · allowlist
           </p>
           <BlockerControls
@@ -258,7 +258,7 @@ export function SettingsPanel({
 
         {oauthGithub && (
           <section className="pt-4">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/50">GitHub</p>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/70">GitHub</p>
             <button
               type="button"
               onClick={() => signIn("github", { callbackUrl: "/app?tab=focus" })}

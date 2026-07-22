@@ -876,7 +876,7 @@ export function BlockTab({
             <span className="font-display text-base font-semibold tabular-nums text-white">
               {mm}:{ss}
             </span>
-            <span className="text-[10px] uppercase tracking-wider text-white/55">
+            <span className="text-[10px] uppercase tracking-wider text-white/75">
               {phase === "focus" ? "FOCUS" : "BREAK"}
             </span>
           </div>
@@ -891,7 +891,7 @@ export function BlockTab({
               setExceeded(0);
               desktopBridge.hideFloatTimer();
             }}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white/55 hover:bg-white/10 hover:text-white"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white/75 hover:bg-white/10 hover:text-white"
             aria-label="Close timer"
             title="Stop"
           >
@@ -905,7 +905,7 @@ export function BlockTab({
         {/* One control, one line, right-aligned. The shield state is the only
             thing that matters here; everything else is a quiet fallback. */}
         <div className="flex justify-end">
-          <div className="inline-flex items-center gap-2.5 rounded-full border border-white/12 bg-black/35 py-1.5 pl-3.5 pr-1.5 backdrop-blur">
+          <div className="inline-flex items-center gap-2.5 rounded-full border border-white/15 bg-[#0c0e10]/90 py-1.5 pl-3.5 pr-1.5 shadow-lg">
             <span
               className={`h-2 w-2 shrink-0 rounded-full ${
                 shieldLive ? "bg-emerald-400" : "bg-white/25"
@@ -918,7 +918,7 @@ export function BlockTab({
             {!useDesktopUi && !extReady && (
               <a
                 href="/download"
-                className="rounded-full px-2.5 py-1.5 text-xs text-white/55 transition hover:text-white"
+                className="rounded-full px-2.5 py-1.5 text-xs text-white/75 transition hover:text-white"
               >
                 Get the app
               </a>
@@ -949,7 +949,7 @@ export function BlockTab({
             {inSession && (
               <div className={`px-5 pt-5 text-center ${remaining === 0 ? "text-[#f87171]" : "text-white"}`}>
                 <div className="font-display text-5xl font-bold tabular-nums">{mm}:{ss}</div>
-                <p className="mt-1 text-[10px] uppercase tracking-[0.3em] text-white/45">
+                <p className="mt-1 text-[10px] uppercase tracking-[0.3em] text-white/70">
                   {phase} · {cycle}/{prefs.cycles}
                 </p>
               </div>
@@ -1030,7 +1030,7 @@ export function BlockTab({
                   type="button"
                   onClick={() => savePrefs({ ...prefs, anti_oops: !prefs.anti_oops })}
                   className={`rounded-md border px-2 py-1 text-xs ${
-                    prefs.anti_oops ? "border-[#b8422e] text-white" : "border-white/15 text-white/50"
+                    prefs.anti_oops ? "border-[#b8422e] text-white" : "border-white/15 text-white/70"
                   }`}
                 >
                   Anti-Oops
@@ -1065,7 +1065,7 @@ export function BlockTab({
                   {m === "hard" ? "Whole sites" : "Feeds only"}
                 </button>
               ))}
-              <span className="ml-1 text-[10px] leading-tight text-white/40">
+              <span className="ml-1 text-[10px] leading-tight text-white/65">
                 {prefs.blocker_mode === "soft"
                   ? "Shorts, Reels and feeds blocked — tutorials and DMs still work"
                   : "Whole domains blocked"}
@@ -1099,7 +1099,7 @@ export function BlockTab({
                     type="button"
                     onClick={() => toggleCategory(c)}
                     className={`rounded-full border px-2.5 py-1 text-[11px] ${
-                      active ? "border-[#b8422e] bg-[#b8422e]/20 text-white" : "border-white/15 text-white/60"
+                      active ? "border-[#b8422e] bg-[#b8422e]/20 text-white" : "border-white/15 text-white/78"
                     }`}
                   >
                     {active ? "✓ " : ""}{c.label}
@@ -1113,12 +1113,12 @@ export function BlockTab({
             </form>
             <ul className="mt-3 max-h-56 space-y-1 overflow-y-auto pr-1">
               {sites.length === 0 ? (
-                <li className="text-xs text-white/40">Pick a preset above.</li>
+                <li className="text-xs text-white/65">Pick a preset above.</li>
               ) : (
                 sites.map((s) => (
                   <li key={s.id} className="flex items-center gap-2 rounded-md bg-white/5 px-2.5 py-1.5">
                     <span className="flex-1 truncate text-sm text-white/85">{s.site}</span>
-                    <button onClick={() => removeSite(s.site)} className="text-white/40 hover:text-red-400" aria-label={`Remove ${s.site}`}>✕</button>
+                    <button onClick={() => removeSite(s.site)} className="text-white/65 hover:text-red-400" aria-label={`Remove ${s.site}`}>✕</button>
                   </li>
                 ))
               )}
@@ -1177,7 +1177,7 @@ function Stepper({
   return (
     <div className={compact ? "flex items-center gap-1" : "flex flex-col gap-1.5"}>
       {label ? (
-        <span className="text-center text-[11px] font-medium uppercase tracking-wider text-white/45">
+        <span className="text-center text-[11px] font-medium uppercase tracking-wider text-white/70">
           {label}
         </span>
       ) : null}
@@ -1233,7 +1233,7 @@ function Stepper({
             }}
             className="w-full bg-transparent text-center text-lg font-semibold tabular-nums leading-none text-white outline-none disabled:cursor-not-allowed"
           />
-          {suffix ? <span className="mt-0.5 text-[10px] text-white/40">{suffix}</span> : null}
+          {suffix ? <span className="mt-0.5 text-[10px] text-white/65">{suffix}</span> : null}
         </div>
         <button
           type="button"

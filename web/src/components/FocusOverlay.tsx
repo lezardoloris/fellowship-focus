@@ -192,7 +192,7 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
           </div>
 
           <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6">
-            <p className="mb-3 text-[11px] uppercase tracking-[0.35em] text-white/55">{sub}</p>
+            <p className="mb-3 text-[11px] uppercase tracking-[0.35em] text-white/75">{sub}</p>
             <div className="font-display text-[6.5rem] font-bold leading-none tabular-nums tracking-tight sm:text-[8rem] md:text-[9rem]">
               {fmt(remaining)}
             </div>
@@ -200,7 +200,7 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
 
             {playerOpen && (
               <div className="glass-panel mt-8 w-full max-w-md p-4">
-                <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.2em] text-white/50">
+                <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.2em] text-white/70">
                   Ambient / vibrations
                 </p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -216,7 +216,7 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
                       }`}
                     >
                       <span className="block text-xs font-semibold">{p.label}</span>
-                      <span className="block text-[10px] text-white/45">{p.hint}</span>
+                      <span className="block text-[10px] text-white/70">{p.hint}</span>
                     </button>
                   ))}
                 </div>
@@ -232,7 +232,7 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
                     className="flex-1 accent-[#b8422e]"
                   />
                 </label>
-                <p className="mt-2 text-[10px] text-white/40">
+                <p className="mt-2 text-[10px] text-white/65">
                   Generated in-app — works offline, no YouTube fight with the shield.
                 </p>
               </div>
@@ -263,12 +263,12 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
               <span className="font-display text-base font-semibold tabular-nums text-white">
                 {fmt(remaining)}
               </span>
-              <span className="text-[10px] uppercase tracking-wider text-white/55">{label}</span>
+              <span className="text-[10px] uppercase tracking-wider text-white/75">{label}</span>
             </button>
             <button
               type="button"
               onClick={closeAll}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white/55 hover:bg-white/10 hover:text-white"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white/75 hover:bg-white/10 hover:text-white"
               aria-label="Close timer"
               title="End session"
             >

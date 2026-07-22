@@ -118,7 +118,7 @@ export function BlockerControls({
   return (
     <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-white/50">Lock</span>
+        <span className="text-xs text-white/70">Lock</span>
         {[0.5, 1, 2, 4].map((h) => (
           <button
             key={h}
@@ -131,14 +131,14 @@ export function BlockerControls({
           </button>
         ))}
         {force.on && (
-          <button type="button" onClick={() => patch({ quick_lock_until: null })} className="text-xs text-white/40 underline">
+          <button type="button" onClick={() => patch({ quick_lock_until: null })} className="text-xs text-white/65 underline">
             clear
           </button>
         )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-white/50">Hard</span>
+        <span className="text-xs text-white/70">Hard</span>
         {hardModes.map((m) => (
           <button
             key={m.id}
@@ -157,7 +157,7 @@ export function BlockerControls({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-white/50">Schedule</span>
+        <span className="text-xs text-white/70">Schedule</span>
         <button type="button" onClick={addWorkdaySchedule} className="rounded-md border border-white/15 px-2.5 py-1 text-xs text-white/80">
           + Work 9–18
         </button>
@@ -167,7 +167,7 @@ export function BlockerControls({
             type="button"
             title="Remove"
             onClick={() => patch({ schedules: settings.schedules.filter((s) => s.id !== r.id) })}
-            className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-white/55"
+            className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-white/75"
           >
             {r.days.map((d) => DAY_LABELS[d]).join("")} {r.start}–{r.end} ✕
           </button>
@@ -234,7 +234,7 @@ export function BlockerControls({
             }}
           />
         </label>
-        <label className="flex items-center gap-1 text-xs text-white/50">
+        <label className="flex items-center gap-1 text-xs text-white/70">
           Friction
           <input
             type="number"
@@ -251,7 +251,7 @@ export function BlockerControls({
       {suggestions.length > 0 && (
         <ul className="grid gap-1 sm:grid-cols-2">
           {suggestions.slice(0, 8).map((s) => (
-            <li key={s.domain} className="truncate text-xs text-white/50">
+            <li key={s.domain} className="truncate text-xs text-white/70">
               {s.domain} · {s.visits}
             </li>
           ))}
@@ -259,7 +259,7 @@ export function BlockerControls({
       )}
 
       {devices.length > 0 && (
-        <p className="text-[10px] text-white/35">
+        <p className="text-[10px] text-white/62">
           Devices: {devices.map((d) => `${d.kind}${d.shield_on ? "●" : ""}`).join(" · ")}
         </p>
       )}

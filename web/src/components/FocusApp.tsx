@@ -261,7 +261,7 @@ export function FocusApp() {
           {joined && (
             <button
               onClick={leaveGuild}
-              className="rounded-full border border-white/15 bg-transparent px-2 py-1.5 text-[10px] text-white/50 underline hover:text-white/80"
+              className="rounded-full border border-white/15 bg-transparent px-2 py-1.5 text-[10px] text-white/70 underline hover:text-white/80"
               title="Leave guild"
             >
               {code}

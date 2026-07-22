@@ -114,7 +114,7 @@ export function FocusTab() {
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="font-display text-2xl font-bold text-white">Your week</h1>
-          <p className="mt-1 text-xs text-white/50">
+          <p className="mt-1 text-xs text-white/70">
             Ladder · calendar · OKRs — no guild.{" "}
             {source === "desktop" ? "Desktop screen-time live." : "Filled by timers you finish on Block."}
           </p>
@@ -243,7 +243,7 @@ function LadderCard({ stats }: { stats: WeeklyStats }) {
 
   return (
     <div className="glass-panel p-6">
-      <p className="text-xs font-medium uppercase tracking-wider text-white/50">Your ladder</p>
+      <p className="text-xs font-medium uppercase tracking-wider text-white/70">Your ladder</p>
       <div className="mt-3 flex items-center gap-3">
         <span
           className="flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold"
@@ -441,7 +441,7 @@ function GitHubCard() {
   return (
     <div className="glass-panel p-6">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wider text-white/50">GitHub coding</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-white/70">GitHub coding</p>
         {data?.avatarUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={data.avatarUrl} alt="" className="h-6 w-6 rounded-full" />
@@ -459,7 +459,7 @@ function GitHubCard() {
         </button>
       )}
       {oauthLogin && (
-        <p className="mt-3 text-[11px] text-white/50">
+        <p className="mt-3 text-[11px] text-white/70">
           Connected as <span className="text-white/80">@{oauthLogin}</span>
           {data?.privateIncluded ? " · private + public" : ""}
         </p>
@@ -478,7 +478,7 @@ function GitHubCard() {
         </button>
       </div>
       {user && (
-        <button type="button" onClick={clearTracking} className="mt-2 text-[11px] text-white/40 underline">
+        <button type="button" onClick={clearTracking} className="mt-2 text-[11px] text-white/65 underline">
           Clear
         </button>
       )}
@@ -493,17 +493,17 @@ function GitHubCard() {
               ["Repos", data.repos],
             ].map(([label, val]) => (
               <div key={label as string} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                <p className="text-[10px] uppercase tracking-wider text-white/45">{label} · 7d</p>
+                <p className="text-[10px] uppercase tracking-wider text-white/70">{label} · 7d</p>
                 <p className="mt-0.5 text-xl font-semibold text-white">{val}</p>
               </div>
             ))}
           </div>
           {data.topRepos.length > 0 && (
-            <p className="mt-3 truncate text-[11px] text-white/45">
+            <p className="mt-3 truncate text-[11px] text-white/70">
               {data.topRepos.join(" · ")}
             </p>
           )}
-          <p className="mt-2 text-[11px] text-white/40">
+          <p className="mt-2 text-[11px] text-white/65">
             @{data.user}
             {!oauthLogin && (data.privateIncluded ? " · private + public" : " · public events")}
             {" · "}
@@ -514,7 +514,7 @@ function GitHubCard() {
 
       {data?.error && <p className="mt-3 text-[11px] text-[#f87171]">{data.error}</p>}
       {!data && !user && (
-        <p className="mt-3 text-[11px] text-white/40">
+        <p className="mt-3 text-[11px] text-white/65">
           Track commits, PRs, and reviews from the last 7 days.
         </p>
       )}
