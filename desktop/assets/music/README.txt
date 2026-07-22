@@ -7,8 +7,12 @@ app as built-in soundscapes. Users can also add their own tracks at:
     %USERPROFILE%\.fellowship-focus\music\
 
 The in-app player (Focus tab) auto-plays these during focus sessions, pauses on
-breaks, and loops the playlist. Keep tracks long and seamless (LOTR / DUNE-style
-cinematic ambient works best) — the same tracks power the long-form focus videos
-on YouTube.
+breaks, and loops the playlist.
 
-Suggested naming: "Rivendell Nights.mp3", "Arrakeen Keep.mp3", etc.
+Royalty-free focus mixes (YouTube → local mp3) live in the user music folder.
+Re-sync into this folder + web/public/audio with:
+
+    powershell -ExecutionPolicy Bypass -File desktop/scripts/sync_focus_music.ps1
+
+Large .mp3 files are gitignored — do not commit them.
+

@@ -28,14 +28,20 @@ export function FocusMusicPanel({ autoPlay = false }: { autoPlay?: boolean }) {
   }, []);
 
   const options = useMemo(() => {
-    // Prefer local manifest entries; fall back to catalog labels (disabled until downloaded).
+    // Prefer local manifest entries; use curated catalog titles when we can match.
     if (manifest.length) {
-      return manifest.map((m) => ({
-        key: m.src,
-        label: m.title,
-        src: m.src,
-        meta: matchLocalTrack(m.src) || matchLocalTrack(m.title),
-      }));
+      return manifest.map((m) => {
+        const meta =
+          matchLocalTrack(m.src) ||
+          matchLocalTrack(m.youtubeId || "") ||
+          matchLocalTrack(m.title);
+        return {
+          key: m.src,
+          label: meta ? `${meta.title} · ${meta.duration}` : m.title,
+          src: m.src,
+          meta,
+        };
+      });
     }
     return FOCUS_TRACKS.map((t) => ({
       key: t.id,

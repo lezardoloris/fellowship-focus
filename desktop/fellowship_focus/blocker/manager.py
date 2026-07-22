@@ -201,6 +201,30 @@ def set_system_proxy(enable: bool) -> None:
         proxy.join()
     else:
         proxy.delete_proxy()
+    _broadcast_proxy_change()
+
+
+def _broadcast_proxy_change() -> None:
+    """Tell WinINET the proxy settings changed, NOW.
+
+    uniproxy only writes the registry. Without this broadcast, already-running
+    browsers keep their cached proxy config and pick the change up minutes
+    later or never — which made arming work 'one time out of ten' depending on
+    whether Chrome happened to re-poll.
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        INTERNET_OPTION_SETTINGS_CHANGED = 39
+        INTERNET_OPTION_REFRESH = 37
+        wininet = ctypes.windll.wininet
+        wininet.InternetSetOptionW(None, INTERNET_OPTION_SETTINGS_CHANGED, None, 0)
+        wininet.InternetSetOptionW(None, INTERNET_OPTION_REFRESH, None, 0)
+        blocker_log("WinINET proxy-change broadcast sent")
+    except Exception as e:
+        blocker_log(f"WinINET broadcast FAILED: {e}")
 
 
 def force_release_blocker() -> None:

@@ -1344,14 +1344,28 @@ class MainWindow(QMainWindow):
 
     def _watchdog_tick(self) -> None:
         """The engine dying while armed must never strand the machine offline:
-        release the system proxy the moment it stops answering."""
+        release the system proxy when it stops answering."""
         if not self.blocker_active:
             self._blocker_watchdog.stop()
             return
-        if self.mitm_process and self.mitm_process.poll() is None and is_mitmdump_running():
+        # A dead child process is unambiguous — release immediately.
+        if self.mitm_process and self.mitm_process.poll() is not None:
+            self._blocker_watchdog.stop()
+            blocker_log("WATCHDOG trip: engine process is dead")
+            self._on_blocker_failed("The blocking engine stopped (see ~/.fellowship-focus/proxy.log).")
             return
+        if is_mitmdump_running():
+            self._watchdog_misses = 0
+            return
+        # One failed HTTP check can just be a busy engine (3 s timeout under
+        # load). Releasing on a single miss disarmed a healthy shield.
+        self._watchdog_misses = getattr(self, "_watchdog_misses", 0) + 1
+        blocker_log(f"watchdog miss {self._watchdog_misses}/2 (engine slow or gone)")
+        if self._watchdog_misses < 2:
+            return
+        self._watchdog_misses = 0
         self._blocker_watchdog.stop()
-        blocker_log("WATCHDOG trip: engine not answering while armed")
+        blocker_log("WATCHDOG trip: engine not answering twice in a row")
         self._on_blocker_failed("The blocking engine stopped (see ~/.fellowship-focus/proxy.log).")
 
     def _on_blocker_failed(self, detail: str) -> None:
