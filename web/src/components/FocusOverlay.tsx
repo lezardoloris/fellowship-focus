@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ambientPlayer, AMBIENT_PRESETS, type AmbientId } from "@/lib/ambient";
 import { desktopBridge } from "@/lib/desktop";
 
@@ -26,19 +27,28 @@ function fmt(seconds: number) {
 }
 
 /**
- * Fullscreen cinematic focus mode + bottom-right float timer.
- * Video feel via Ken Burns on the fellowship hero; ambient "vibrations"
- * via Web Audio. Desktop gets an always-on-top float timer via the bridge.
+ * Immersive focus stage + bottom-right float timer.
+ * Portaled to document.body so parent overflow/transform can't clip it.
+ * Qt WebEngine often rejects the Fullscreen API — we never auto-collapse on that.
  */
 export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, onMinimize }: Props) {
   const [immersive, setImmersive] = useState(true);
   const [ambient, setAmbient] = useState<AmbientId>("brown");
   const [volume, setVolume] = useState(0.35);
-  const [playerOpen, setPlayerOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const startedRef = useRef(false);
+  const [playerOpen, setPlayerOpen] = useState(true);
+  const [mounted, setMounted] = useState(false);
+  const enteredFs = useRef(false);
 
-  // Sync float timer to desktop (always-on-top OS widget).
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (open && phase !== "idle") {
+      setImmersive(true);
+      setPlayerOpen(true);
+      enteredFs.current = false;
+    }
+  }, [open, phase !== "idle"]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!open || phase === "idle") {
       desktopBridge.hideFloatTimer();
@@ -53,7 +63,6 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
     });
   }, [open, phase, remaining, cycle, cycles]);
 
-  // Ambient audio while session is active.
   useEffect(() => {
     if (!open || phase === "idle") {
       ambientPlayer.stop();
@@ -62,42 +71,44 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
     const saved = (localStorage.getItem(AMBIENT_KEY) as AmbientId) || "brown";
     const vol = Number(localStorage.getItem(VOL_KEY) || "0.35");
     setAmbient(saved);
-    setVolume(vol);
-    ambientPlayer.setVolume(vol);
-    ambientPlayer.set(saved);
+    setVolume(Number.isFinite(vol) ? vol : 0.35);
+    ambientPlayer.setVolume(Number.isFinite(vol) ? vol : 0.35);
+    void ambientPlayer.set(saved);
     return () => {
       ambientPlayer.stop();
     };
   }, [open, phase === "idle"]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Enter browser fullscreen once when session starts.
   useEffect(() => {
-    if (!open || phase === "idle") {
-      startedRef.current = false;
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      return;
-    }
-    if (!startedRef.current && immersive) {
-      startedRef.current = true;
-      const el = rootRef.current;
-      if (el && el.requestFullscreen) {
-        el.requestFullscreen().catch(() => {});
-      }
+    if (!open || phase === "idle" || !immersive) return;
+    const el = document.documentElement;
+    if (el.requestFullscreen && !document.fullscreenElement) {
+      el.requestFullscreen()
+        .then(() => {
+          enteredFs.current = true;
+        })
+        .catch(() => {
+          enteredFs.current = false;
+        });
     }
   }, [open, phase, immersive]);
 
   useEffect(() => {
     const onFs = () => {
-      if (!document.fullscreenElement) setImmersive(false);
+      if (enteredFs.current && !document.fullscreenElement) {
+        enteredFs.current = false;
+        setImmersive(false);
+      }
     };
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
 
-  if (!open || phase === "idle") return null;
+  if (!open || phase === "idle" || !mounted) return null;
 
   const label = phase === "focus" ? "FOCUS" : "BREAK";
-  const sub = phase === "focus" ? `Cycle ${cycle}/${cycles} · deep work` : `Cycle ${cycle}/${cycles} · break`;
+  const sub =
+    phase === "focus" ? `Cycle ${cycle}/${cycles} · deep work` : `Cycle ${cycle}/${cycles} · break`;
 
   async function pickAmbient(id: AmbientId) {
     setAmbient(id);
@@ -113,25 +124,30 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
 
   function minimize() {
     setImmersive(false);
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    if (enteredFs.current && document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      enteredFs.current = false;
+    }
     onMinimize?.();
   }
 
   function closeAll() {
     ambientPlayer.stop();
     desktopBridge.hideFloatTimer();
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    if (enteredFs.current && document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+      enteredFs.current = false;
+    }
     onStop();
   }
 
-  return (
+  const ui = (
     <>
-      {/* Immersive fullscreen stage */}
       {immersive && (
         <div
-          ref={rootRef}
-          className="fixed inset-0 z-50 flex flex-col bg-black text-white"
+          className="fixed inset-0 z-[9999] flex flex-col bg-black text-white"
           role="dialog"
+          aria-modal="true"
           aria-label="Focus session"
         >
           <div className="absolute inset-0 overflow-hidden" aria-hidden>
@@ -139,11 +155,11 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
               className="focus-kenburns absolute inset-[-8%] bg-cover bg-center"
               style={{ backgroundImage: "url('/fellowship-hero.png')" }}
             />
-            <div className="absolute inset-0 bg-linear-to-b from-black/35 via-black/25 to-black/70" />
+            <div className="absolute inset-0 bg-linear-to-b from-black/40 via-black/30 to-black/75" />
             <div className="focus-fog absolute inset-0" />
           </div>
 
-          <div className="relative z-10 flex items-center justify-between px-6 py-4">
+          <div className="relative z-10 flex items-center justify-between px-5 py-4 md:px-8">
             <p className="font-display text-xs font-semibold tracking-[0.35em] text-white/70">
               THE FELLOWSHIP
             </p>
@@ -151,22 +167,22 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
               <button
                 type="button"
                 onClick={() => setPlayerOpen((v) => !v)}
-                className="pill-glass rounded-full px-3 py-1.5 text-xs text-white/80 hover:text-white"
+                className="pill-glass rounded-full px-3 py-1.5 text-xs text-white/85 hover:text-white"
               >
                 {playerOpen ? "Hide sound" : "Sound · vibrations"}
               </button>
               <button
                 type="button"
                 onClick={minimize}
-                className="pill-glass rounded-full px-3 py-1.5 text-xs text-white/80 hover:text-white"
-                title="Keep timer, leave fullscreen"
+                className="pill-glass rounded-full px-3 py-1.5 text-xs text-white/85 hover:text-white"
+                title="Keep timer bottom-right"
               >
                 Minimize
               </button>
               <button
                 type="button"
                 onClick={closeAll}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-lg text-white/80 hover:bg-black/60 hover:text-white"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-black/45 text-lg text-white/85 hover:bg-black/70 hover:text-white"
                 aria-label="Close session"
                 title="End session"
               >
@@ -177,13 +193,13 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
 
           <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6">
             <p className="mb-3 text-[11px] uppercase tracking-[0.35em] text-white/55">{sub}</p>
-            <div className="font-display text-[7rem] font-bold leading-none tabular-nums tracking-tight md:text-[9rem]">
+            <div className="font-display text-[6.5rem] font-bold leading-none tabular-nums tracking-tight sm:text-[8rem] md:text-[9rem]">
               {fmt(remaining)}
             </div>
             <p className="mt-4 text-sm uppercase tracking-[0.45em] text-white/60">{label}</p>
 
             {playerOpen && (
-              <div className="glass-panel mt-10 w-full max-w-md p-4">
+              <div className="glass-panel mt-8 w-full max-w-md p-4">
                 <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.2em] text-white/50">
                   Ambient / vibrations
                 </p>
@@ -223,37 +239,36 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
             )}
           </div>
 
-          <div className="relative z-10 flex justify-center pb-8">
-            <button type="button" onClick={closeAll} className="btn-secondary px-8">
+          <div className="relative z-10 flex justify-center gap-3 pb-8">
+            <button type="button" onClick={minimize} className="btn-secondary px-6">
+              Work with timer
+            </button>
+            <button type="button" onClick={closeAll} className="btn-primary px-6">
               End session
             </button>
           </div>
         </div>
       )}
 
-      {/* Bottom-right float timer (browser) — mirrors Cursor-style compact bar */}
       {!immersive && (
-        <div className="fixed bottom-4 right-4 z-50">
-          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-[#1a1c1e]/92 px-1 py-1 shadow-2xl backdrop-blur-md">
+        <div className="fixed bottom-5 right-5 z-[9999]">
+          <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-[#141618]/95 px-1.5 py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-md">
             <button
               type="button"
-              onClick={() => {
-                setImmersive(true);
-                startedRef.current = false;
-              }}
-              className="flex items-center gap-3 rounded-md px-3 py-1.5 text-left hover:bg-white/5"
-              title="Back to fullscreen"
+              onClick={() => setImmersive(true)}
+              className="flex items-center gap-3 rounded-lg px-3.5 py-2 text-left hover:bg-white/5"
+              title="Back to immersive"
             >
-              <span className="h-2 w-2 rounded-full bg-[#b8422e]" />
-              <span className="font-display text-sm font-semibold tabular-nums text-white">
+              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#b8422e]" />
+              <span className="font-display text-base font-semibold tabular-nums text-white">
                 {fmt(remaining)}
               </span>
-              <span className="text-[10px] uppercase tracking-wider text-white/50">{label}</span>
+              <span className="text-[10px] uppercase tracking-wider text-white/55">{label}</span>
             </button>
             <button
               type="button"
               onClick={closeAll}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-white/55 hover:bg-white/10 hover:text-white"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white/55 hover:bg-white/10 hover:text-white"
               aria-label="Close timer"
               title="End session"
             >
@@ -264,4 +279,6 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
       )}
     </>
   );
+
+  return createPortal(ui, document.body);
 }
