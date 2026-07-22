@@ -861,6 +861,8 @@ export function BlockTab({
   const useDesktopUi = isDesktop || inShell;
   // Whichever engine is in play, this is "are sites actually blocked right now".
   const shieldLive = useDesktopUi ? on : extArmed;
+  // Engine boot window: not blocking yet, but not OFF either — say so.
+  const shieldArming = Boolean(useDesktopUi && dt?.arming && !on);
 
   return (
     <>
@@ -925,11 +927,15 @@ export function BlockTab({
           <div className="inline-flex items-center gap-2.5 rounded-full border border-white/15 bg-[#0c0e10]/90 py-1.5 pl-3.5 pr-1.5 shadow-lg">
             <span
               className={`h-2 w-2 shrink-0 rounded-full ${
-                shieldLive ? "bg-emerald-400" : "bg-white/25"
+                shieldLive
+                  ? "bg-emerald-400"
+                  : shieldArming
+                    ? "animate-pulse bg-amber-400"
+                    : "bg-white/25"
               }`}
             />
             <span className="text-xs font-medium text-white/85">
-              Shield {shieldLive ? "ON" : "OFF"}
+              {shieldArming ? "Arming…" : `Shield ${shieldLive ? "ON" : "OFF"}`}
             </span>
 
             {!useDesktopUi && !extReady && (
@@ -944,7 +950,7 @@ export function BlockTab({
                 left people thinking nothing could be blocked. */}
             <button
               type="button"
-              disabled={shieldBusy}
+              disabled={shieldBusy || shieldArming}
               onClick={blockNow}
               className={`rounded-full px-4 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
                 shieldLive
@@ -952,8 +958,8 @@ export function BlockTab({
                   : "bg-[#b8422e] text-white hover:bg-[#c46551]"
               }`}
             >
-              {shieldBusy
-                ? "…"
+              {shieldBusy || shieldArming
+                ? "Arming…"
                 : shieldLive
                   ? "Stop blocking"
                   : `Block ${sites.length} site${sites.length === 1 ? "" : "s"}`}

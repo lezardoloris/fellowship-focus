@@ -6,6 +6,8 @@ export type DesktopState = {
   available: boolean;
   shieldOn: boolean;
   active: boolean;
+  /** Engine is booting: proxy not yet switched on, shield not yet ON. */
+  arming?: boolean;
   certReady: boolean;
   sites: string[];
 };

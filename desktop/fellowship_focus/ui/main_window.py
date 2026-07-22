@@ -935,7 +935,12 @@ class MainWindow(QMainWindow):
             return
         self._enable_blocker()
         self._sync_shield_toggle()
-        self.toasts.show("Shield on", "Distractions are blocked.", "success", 2500)
+        # No success toast here: the engine is still booting. Claiming
+        # "distractions are blocked" while the pill honestly said OFF was a
+        # visible contradiction — _wait_engine_then_arm announces the real
+        # "Shield up" the moment the proxy answers.
+        if self._blocker_arming:
+            self.toasts.show("Arming…", "Starting the blocking engine.", "info", 2000)
 
     def _on_shield_disarm(self) -> None:
         if not self.blocker_active:
