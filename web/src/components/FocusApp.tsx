@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { signIn, signOut } from "next-auth/react";
 import { BlockTab } from "@/components/BlockTab";
 import { FocusTab } from "@/components/FocusTab";
 import { FellowshipDashboard } from "@/components/FellowshipDashboard";
+import { GuildDirectory } from "@/components/GuildDirectory";
 
 type Tab = "block" | "focus" | "guild";
 
@@ -15,6 +17,15 @@ const TABS: Array<{ id: Tab; label: string; hint: string }> = [
 ];
 
 const LAST_CODE_KEY = "ff-app-code";
+const GOOGLE_USER_KEY = "ff-google-user";
+
+type GoogleUserInfo = {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl: string | null;
+  token: string;
+};
 
 export function FocusApp() {
   const params = useSearchParams();
@@ -24,67 +35,146 @@ export function FocusApp() {
   const [name, setName] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [shared, setShared] = useState(false);
+  const [googleUser, setGoogleUser] = useState<GoogleUserInfo | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
 
-  // Resolve identity only when we have a real member (token). A leftover code
-  // without a token must NOT force the Guild join screen.
+  // Resolve guild membership, then optional Google solo identity.
   useEffect(() => {
     const urlCode = (params.get("code") || "").trim().toLowerCase();
     const urlToken = (params.get("token") || "").trim();
     const urlName = (params.get("name") || "").trim();
     const stored = (localStorage.getItem(LAST_CODE_KEY) || "").trim().toLowerCase();
 
+    let resolvedToken: string | null = null;
+    let resolvedCode: string | null = null;
+    let resolvedName: string | null = null;
+
     if (urlCode && urlToken) {
       localStorage.setItem(LAST_CODE_KEY, urlCode);
       localStorage.setItem(`ff-member-${urlCode}`, JSON.stringify({ token: urlToken, name: urlName }));
-      setCode(urlCode);
-      setToken(urlToken);
-      setName(urlName || null);
-      setReady(true);
-      return;
+      resolvedCode = urlCode;
+      resolvedToken = urlToken;
+      resolvedName = urlName || null;
+    } else {
+      const candidate = urlCode || stored;
+      if (candidate) {
+        const raw = localStorage.getItem(`ff-member-${candidate}`);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw) as { token: string; name: string };
+            if (parsed.token) {
+              resolvedCode = candidate;
+              resolvedToken = parsed.token;
+              resolvedName = parsed.name || null;
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        if (!resolvedToken && !urlToken) localStorage.removeItem(LAST_CODE_KEY);
+      }
     }
 
-    const candidate = urlCode || stored;
-    if (candidate) {
-      const raw = localStorage.getItem(`ff-member-${candidate}`);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw) as { token: string; name: string };
-          if (parsed.token) {
-            setCode(candidate);
-            setToken(parsed.token);
-            setName(parsed.name || null);
-            setReady(true);
-            return;
+    setCode(resolvedCode);
+    setToken(resolvedToken);
+    setName(resolvedName);
+
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/session-user");
+        const json = await res.json();
+        if (json.authenticated && json.user?.token) {
+          const gu = json.user as GoogleUserInfo;
+          setGoogleUser(gu);
+          localStorage.setItem(GOOGLE_USER_KEY, JSON.stringify(gu));
+          if (resolvedToken && resolvedToken !== gu.token) {
+            await fetch("/api/auth/session-user", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ token: resolvedToken }),
+            }).catch(() => {});
+          } else if (!resolvedToken) {
+            setToken(gu.token);
+            setName(gu.name);
           }
-        } catch {
-          /* ignore */
+        } else {
+          const cached = localStorage.getItem(GOOGLE_USER_KEY);
+          if (cached && !resolvedToken) {
+            try {
+              const gu = JSON.parse(cached) as GoogleUserInfo;
+              if (gu.token) {
+                setGoogleUser(gu);
+                setToken(gu.token);
+                setName(gu.name);
+              }
+            } catch {
+              /* ignore */
+            }
+          }
         }
+      } catch {
+        /* auth optional until env configured */
+      } finally {
+        setReady(true);
       }
-      // Stale invite code without membership — clear so Guild stays optional
-      if (!urlToken) localStorage.removeItem(LAST_CODE_KEY);
-    }
-    setCode(null);
-    setToken(null);
-    setName(null);
-    setReady(true);
+    })();
   }, [params]);
 
-  const onJoined = useCallback((c: string, t: string, n: string) => {
-    const clean = c.trim().toLowerCase();
-    localStorage.setItem(LAST_CODE_KEY, clean);
-    localStorage.setItem(`ff-member-${clean}`, JSON.stringify({ token: t, name: n }));
-    setCode(clean);
-    setToken(t);
-    setName(n);
-  }, []);
+  const onJoined = useCallback(
+    (c: string, t: string, n: string) => {
+      const clean = c.trim().toLowerCase();
+      localStorage.setItem(LAST_CODE_KEY, clean);
+      localStorage.setItem(`ff-member-${clean}`, JSON.stringify({ token: t, name: n }));
+      setCode(clean);
+      setToken(t);
+      setName(n);
+      if (googleUser) {
+        fetch("/api/auth/session-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: t }),
+        }).catch(() => {});
+      }
+    },
+    [googleUser]
+  );
 
   const leaveGuild = useCallback(() => {
     if (code) localStorage.removeItem(`ff-member-${code}`);
     localStorage.removeItem(LAST_CODE_KEY);
     setCode(null);
-    setToken(null);
-    setName(null);
-  }, [code]);
+    if (googleUser?.token) {
+      setToken(googleUser.token);
+      setName(googleUser.name);
+    } else {
+      setToken(null);
+      setName(null);
+    }
+  }, [code, googleUser]);
+
+  async function connectGoogle() {
+    setAuthBusy(true);
+    try {
+      await signIn("google", { callbackUrl: "/app" });
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function disconnectGoogle() {
+    setAuthBusy(true);
+    try {
+      localStorage.removeItem(GOOGLE_USER_KEY);
+      setGoogleUser(null);
+      if (!code) {
+        setToken(null);
+        setName(null);
+      }
+      await signOut({ callbackUrl: "/app" });
+    } finally {
+      setAuthBusy(false);
+    }
+  }
 
   function share() {
     if (!code) return;
@@ -113,6 +203,8 @@ export function FocusApp() {
                     {code}
                   </button>
                 </>
+              ) : googleUser ? (
+                <>{googleUser.name || googleUser.email} · signed in</>
               ) : (
                 "Solo · ladder & tracking need no guild"
               )}
@@ -134,6 +226,30 @@ export function FocusApp() {
               </button>
             ))}
           </nav>
+          {googleUser ? (
+            <button
+              type="button"
+              onClick={disconnectGoogle}
+              disabled={authBusy}
+              className="flex items-center gap-2 rounded-full border border-white/15 bg-black/20 px-3 py-1.5 text-xs text-white/80 hover:text-white"
+              title={googleUser.email}
+            >
+              {googleUser.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={googleUser.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
+              ) : null}
+              Sign out
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={connectGoogle}
+              disabled={authBusy}
+              className="btn-secondary border-white/15 bg-black/20 text-white disabled:opacity-50"
+            >
+              {authBusy ? "…" : "Google"}
+            </button>
+          )}
           {joined && (
             <button onClick={share} className="btn-secondary border-white/15 bg-black/20 text-white">
               {shared ? "✓ Copied" : "Share"}
@@ -149,130 +265,14 @@ export function FocusApp() {
           (joined ? (
             <FellowshipDashboard code={code!} />
           ) : (
-            <GuildGate onJoined={onJoined} onGoFocus={() => setTab("focus")} />
+            <GuildDirectory
+              onJoined={onJoined}
+              onGoFocus={() => setTab("focus")}
+              defaultName={googleUser?.name || name}
+            />
           ))}
       </div>
     </Shell>
-  );
-}
-
-// ── Guild is optional social — never a gate to productivity ─
-function GuildGate({
-  onJoined,
-  onGoFocus,
-}: {
-  onJoined: (code: string, token: string, name: string) => void;
-  onGoFocus: () => void;
-}) {
-  const [step, setStep] = useState<"home" | "code" | "name">("home");
-  const [code, setCode] = useState("");
-  const [joinName, setJoinName] = useState("");
-  const [joining, setJoining] = useState(false);
-  const [error, setError] = useState("");
-
-  async function join(e: React.FormEvent) {
-    e.preventDefault();
-    if (!code || !joinName.trim()) return;
-    setJoining(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/fellowship/${code}/join`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: joinName.trim() }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to join");
-      onJoined(code, json.member.token, json.member.name);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to join");
-    } finally {
-      setJoining(false);
-    }
-  }
-
-  if (step === "home") {
-    return (
-      <div className="mx-auto max-w-lg space-y-4">
-        <div className="glass-panel p-6">
-          <h2 className="font-display text-xl font-semibold text-white">Guild is optional</h2>
-          <p className="mt-2 text-sm text-white/65">
-            Your ladder, focus calendar, OKRs and tracking live in the{" "}
-            <button type="button" onClick={onGoFocus} className="text-white underline">
-              Focus
-            </button>{" "}
-            tab — no invite code required. A guild is only if you want friends on the same quest.
-          </p>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <button type="button" onClick={onGoFocus} className="btn-primary">
-              Open Focus (ladder & calendar)
-            </button>
-            <button type="button" onClick={() => setStep("code")} className="btn-secondary">
-              Join a guild anyway
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (step === "code") {
-    return (
-      <div className="mx-auto max-w-md">
-        <div className="glass-panel p-6">
-          <h2 className="text-lg font-semibold text-white">Join a guild</h2>
-          <p className="mt-1 mb-4 text-sm text-white/55">Paste a fellowship code — optional.</p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const clean = code.trim().toLowerCase();
-              if (clean) {
-                setCode(clean);
-                setStep("name");
-              }
-            }}
-            className="flex gap-2"
-          >
-            <input
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="fellowship-abc12345"
-              className="input-premium flex-1 bg-white/5"
-            />
-            <button type="submit" className="btn-primary whitespace-nowrap">
-              Continue
-            </button>
-          </form>
-          <button type="button" onClick={() => setStep("home")} className="mt-4 text-xs text-white/55 underline">
-            Back
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mx-auto max-w-md">
-      <div className="glass-panel p-6">
-        <h2 className="text-lg font-semibold text-white">Join {code}</h2>
-        <p className="mt-1 mb-4 text-sm text-white/55">Pick your name to enter this fellowship.</p>
-        <form onSubmit={join} className="flex gap-2">
-          <input
-            value={joinName}
-            onChange={(e) => setJoinName(e.target.value)}
-            placeholder="Your name"
-            className="input-premium flex-1 bg-white/5"
-          />
-          <button type="submit" disabled={joining} className="btn-primary">
-            {joining ? "…" : "Join"}
-          </button>
-        </form>
-        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-        <button type="button" onClick={() => setStep("code")} className="mt-4 text-xs text-white/55 underline">
-          Use a different code
-        </button>
-      </div>
-    </div>
   );
 }
 

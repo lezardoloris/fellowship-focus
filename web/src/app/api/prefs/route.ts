@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { getMemberByToken, getMemberPrefs, setMemberPrefs } from "@/lib/db";
+import {
+  getBlockerSettings,
+  getMemberByToken,
+  getMemberPrefs,
+  setBlockerSettings,
+  setMemberPrefs,
+} from "@/lib/db";
+import { mergeBlockerSettings } from "@/lib/blockerSettings";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,7 +27,11 @@ export async function GET(request: Request) {
   if (!member) {
     return NextResponse.json({ error: "Invalid token" }, { status: 401, headers: corsHeaders });
   }
-  return NextResponse.json({ prefs: getMemberPrefs(member.id) }, { headers: corsHeaders });
+  const settings = getBlockerSettings(member.id);
+  return NextResponse.json(
+    { prefs: { ...getMemberPrefs(member.id), ...settings } },
+    { headers: corsHeaders }
+  );
 }
 
 export async function POST(request: Request) {
@@ -34,12 +45,16 @@ export async function POST(request: Request) {
     if (!member) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401, headers: corsHeaders });
     }
-    const prefs = setMemberPrefs(member.id, {
-      focus_min: Number(body.focus_min) || 25,
-      break_min: Number(body.break_min) || 5,
-      cycles: Number(body.cycles) || 4,
+    const current = getBlockerSettings(member.id);
+    const merged = mergeBlockerSettings({ ...current, ...body });
+    setBlockerSettings(member.id, merged);
+    setMemberPrefs(member.id, {
+      focus_min: merged.focus_min,
+      break_min: merged.break_min,
+      cycles: merged.cycles,
+      settings_json: JSON.stringify(merged),
     });
-    return NextResponse.json({ prefs }, { headers: corsHeaders });
+    return NextResponse.json({ prefs: merged }, { headers: corsHeaders });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "Failed to save prefs" }, { status: 500, headers: corsHeaders });

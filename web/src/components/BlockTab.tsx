@@ -4,17 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { desktopBridge, type DesktopState } from "@/lib/desktop";
 import { playAlarm } from "@/lib/alarm";
 import { logSoloSession } from "@/lib/soloStats";
+import {
+  analyzeHistoryViaExtension,
+  pingExtension,
+  type HistorySuggestion,
+} from "@/lib/extensionBridge";
+import { useToast } from "@/components/Toasts";
+import { BlockerControls, requestHardUnlock } from "@/components/BlockerControls";
+import {
+  DEFAULT_BLOCKER_SETTINGS,
+  mergeBlockerSettings,
+  type BlockerSettings,
+} from "@/lib/blockerSettings";
 
 type BlocklistEntry = { id: string; site: string; category: string | null };
-type Prefs = {
-  focus_min: number;
-  focus_sec: number;
-  break_min: number;
-  cycles: number;
-  alarm_secs: number; // -1 = infinite
-  alarm_vol: number;
-  anti_oops: boolean;
-};
+type Prefs = BlockerSettings;
 
 const ALARM_OPTS = [
   { id: 2, label: "2 s" },
@@ -24,15 +28,7 @@ const ALARM_OPTS = [
   { id: -1, label: "infinite" },
 ] as const;
 
-const DEFAULT_PREFS: Prefs = {
-  focus_min: 45,
-  focus_sec: 0,
-  break_min: 5,
-  cycles: 4,
-  alarm_secs: 10,
-  alarm_vol: 0.6,
-  anti_oops: true,
-};
+const DEFAULT_PREFS: Prefs = DEFAULT_BLOCKER_SETTINGS;
 
 const CATEGORIES: Array<{ id: string; label: string; sites: string[] }> = [
   { id: "social", label: "Social", sites: ["x.com", "twitter.com", "facebook.com", "instagram.com", "reddit.com", "tiktok.com", "linkedin.com"] },
@@ -48,6 +44,24 @@ const PRESETS: Array<{ id: string; label: string; desc: string; cats: string[] }
   { id: "detox", label: "Social Detox", desc: "Social media", cats: ["social"] },
   { id: "study", label: "Study", desc: "Social · video · games", cats: ["social", "video", "games"] },
   { id: "calm", label: "No Doomscroll", desc: "Social · news", cats: ["social", "news"] },
+];
+
+/** Focus / break / cycle presets grounded in common productivity research (not medical advice). */
+const TIMER_PRESETS: Array<{
+  id: string;
+  label: string;
+  focus: number;
+  break: number;
+  cycles: number;
+  basis: string;
+}> = [
+  { id: "pomodoro", label: "25 / 5", focus: 25, break: 5, cycles: 4, basis: "Pomodoro (Cirillo)" },
+  { id: "desk52", label: "52 / 17", focus: 52, break: 17, cycles: 3, basis: "DeskTime peak-productivity split" },
+  { id: "ultradian", label: "90 / 20", focus: 90, break: 20, cycles: 2, basis: "Ultradian rhythm (~90 min)" },
+  { id: "deep45", label: "45 / 5", focus: 45, break: 5, cycles: 4, basis: "Deep-work block" },
+  { id: "flow50", label: "50 / 10", focus: 50, break: 10, cycles: 3, basis: "50-minute class / lecture rhythm" },
+  { id: "hour", label: "60 / 10", focus: 60, break: 10, cycles: 3, basis: "Hour block" },
+  { id: "sprint20", label: "20 / 5", focus: 20, break: 5, cycles: 6, basis: "Short focus sprint" },
 ];
 
 function presetSites(cats: string[]): string[] {
@@ -97,6 +111,13 @@ export function BlockTab({
   const [cycle, setCycle] = useState(0);
   const [exceeded, setExceeded] = useState(0);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [extReady, setExtReady] = useState(false);
+  const [suggestions, setSuggestions] = useState<HistorySuggestion[]>([]);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [devices, setDevices] = useState<
+    Array<{ id: string; kind: string; label: string; last_seen: string; shield_on: number }>
+  >([]);
+  const toast = useToast();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopAlarmRef = useRef<(() => void) | null>(null);
 
@@ -111,25 +132,50 @@ export function BlockTab({
         const bl = JSON.parse(localStorage.getItem(LOCAL_BL_KEY) || "[]") as BlocklistEntry[];
         setSites(Array.isArray(bl) ? bl : []);
         const pf = JSON.parse(localStorage.getItem(LOCAL_PREFS_KEY) || "null") as Partial<Prefs> | null;
-        if (pf) setPrefs({ ...DEFAULT_PREFS, ...pf });
+        if (pf) setPrefs(mergeBlockerSettings(pf));
       } catch {
         /* ignore */
       }
       setLoading(false);
       return;
     }
+    try {
+      const res = await fetch(`/api/blocker/config?token=${encodeURIComponent(token)}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.sites) setSites(json.sites);
+        if (json.settings) setPrefs(mergeBlockerSettings(json.settings));
+        if (Array.isArray(json.devices)) setDevices(json.devices);
+        // heartbeat web device
+        fetch("/api/blocker/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token,
+            action: "heartbeat",
+            kind: "web",
+            label: "Web app",
+            shieldOn: false,
+            deviceId: localStorage.getItem("ff-device-id") || undefined,
+          }),
+        })
+          .then((r) => r.json())
+          .then((j) => {
+            if (j.device?.id) localStorage.setItem("ff-device-id", j.device.id);
+          })
+          .catch(() => {});
+        setLoading(false);
+        return;
+      }
+    } catch {
+      /* fall through */
+    }
     const [bl, pf] = await Promise.all([
       fetch(`/api/blocklist?token=${encodeURIComponent(token)}`).then((r) => r.json()),
       fetch(`/api/prefs?token=${encodeURIComponent(token)}`).then((r) => r.json()),
     ]);
     if (bl.sites) setSites(bl.sites);
-    if (pf.prefs)
-      setPrefs({
-        ...DEFAULT_PREFS,
-        focus_min: pf.prefs.focus_min ?? DEFAULT_PREFS.focus_min,
-        break_min: pf.prefs.break_min ?? DEFAULT_PREFS.break_min,
-        cycles: pf.prefs.cycles ?? DEFAULT_PREFS.cycles,
-      });
+    if (pf.prefs) setPrefs(mergeBlockerSettings(pf.prefs));
     setLoading(false);
   }, [token]);
 
@@ -170,6 +216,20 @@ export function BlockTab({
 
   async function toggleShield() {
     if (!isDesktop || !dt || shieldBusy) return;
+    if (dt.shieldOn) {
+      const ok = await requestHardUnlock(prefs, "Turn Shield OFF");
+      if (!ok) {
+        toast.error("Unlock cancelled");
+        return;
+      }
+      if (token) {
+        fetch("/api/blocker/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, action: "bypass", kind: "shield_off" }),
+        }).catch(() => {});
+      }
+    }
     setShieldBusy(true);
     try {
       const st = await desktopBridge.setShield(!dt.shieldOn);
@@ -249,16 +309,38 @@ export function BlockTab({
   }
 
   async function savePrefs(next: Prefs) {
-    setPrefs(next);
+    const merged = mergeBlockerSettings(next);
+    setPrefs(merged);
     if (!token) {
-      localStorage.setItem(LOCAL_PREFS_KEY, JSON.stringify(next));
+      localStorage.setItem(LOCAL_PREFS_KEY, JSON.stringify(merged));
       return;
     }
-    await fetch(`/api/prefs`, {
+    await fetch(`/api/blocker/config`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, ...next }),
-    });
+      body: JSON.stringify({ token, settings: merged }),
+    }).catch(() => {});
+  }
+
+  async function pairExtension() {
+    if (!token) {
+      toast.error("Sign in or join a guild first");
+      return;
+    }
+    try {
+      const res = await fetch("/api/blocker/pair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Pair failed");
+      await navigator.clipboard.writeText(JSON.stringify(json.payload));
+      window.open(json.pairUrl, "_blank", "noopener,noreferrer");
+      toast.ok("Pairing opened", "Extension will connect if installed. Payload also copied.");
+    } catch (e) {
+      toast.error("Pair failed", e instanceof Error ? e.message : "");
+    }
   }
 
   function copyPairing(kind: "desktop" | "extension") {
@@ -273,11 +355,15 @@ export function BlockTab({
       })
     );
     setCopied(kind);
+    toast.ok(
+      kind === "extension" ? "Pairing copied" : "Desktop pairing copied",
+      "Paste it in the extension / desktop Settings."
+    );
     setTimeout(() => setCopied(""), 2000);
   }
 
   // ── Focus timer ────────────────────────────────────────
-  const focusTotalSec = prefs.focus_min * 60 + (prefs.focus_sec || 0);
+  const focusTotalSec = prefs.focus_min * 60;
 
   const stopAlarm = useCallback(() => {
     stopAlarmRef.current?.();
@@ -373,18 +459,30 @@ export function BlockTab({
 
   const start = () => startPhase("focus", 1);
   const stop = useCallback(() => {
-    if (prefs.anti_oops && phase !== "idle") {
-      const ok = window.confirm("Stop the timer? (Anti-Oops is on)");
-      if (!ok) return;
-    }
-    stopTimer();
-    stopAlarm();
-    setPhase("idle");
-    setRemaining(0);
-    setCycle(0);
-    setExceeded(0);
-    desktopBridge.hideFloatTimer();
-  }, [stopTimer, stopAlarm, prefs.anti_oops, phase]);
+    void (async () => {
+      if (phase !== "idle") {
+        const ok = await requestHardUnlock(prefs, "Stop the timer");
+        if (!ok) {
+          toast.error("Unlock cancelled");
+          return;
+        }
+        if (token) {
+          fetch("/api/blocker/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, action: "bypass", kind: "stop_timer" }),
+          }).catch(() => {});
+        }
+      }
+      stopTimer();
+      stopAlarm();
+      setPhase("idle");
+      setRemaining(0);
+      setCycle(0);
+      setExceeded(0);
+      desktopBridge.hideFloatTimer();
+    })();
+  }, [stopTimer, stopAlarm, prefs, phase, token, toast]);
 
   useEffect(() => {
     const onClosed = () => {
@@ -404,6 +502,82 @@ export function BlockTab({
   function testAlarm() {
     stopAlarm();
     stopAlarmRef.current = playAlarm(prefs.alarm_secs < 0 ? 2 : prefs.alarm_secs, prefs.alarm_vol);
+  }
+
+  useEffect(() => {
+    pingExtension().then(setExtReady);
+    const onReady = (e: MessageEvent) => {
+      if (e.data?.source === "fellowship-focus-ext" && e.data.type === "FF_EXT_READY") {
+        setExtReady(true);
+      }
+    };
+    window.addEventListener("message", onReady);
+    return () => window.removeEventListener("message", onReady);
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch("/api/blocker/suggestions", { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (!json?.suggestions?.length) return;
+        setSuggestions(
+          json.suggestions.map((s: { domain: string; visits: number; score: number; last_visit?: number }) => ({
+            domain: s.domain,
+            visits: s.visits,
+            score: s.score,
+            lastVisit: s.last_visit,
+          }))
+        );
+      })
+      .catch(() => {});
+  }, [token]);
+
+  async function scanHistory() {
+    setScanBusy(true);
+    try {
+      const list = await analyzeHistoryViaExtension(30);
+      setSuggestions(list);
+      setExtReady(true);
+      if (token && list.length) {
+        await fetch("/api/blocker/suggestions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            domains: list.map((d) => ({
+              domain: d.domain,
+              visits: d.visits,
+              lastVisit: d.lastVisit,
+            })),
+          }),
+        }).catch(() => {});
+      }
+      toast.ok(
+        list.length ? `${list.length} distractors found` : "No distractors found",
+        "From your Chrome history (local only)."
+      );
+    } catch (e) {
+      setExtReady(false);
+      toast.error(
+        "Couldn’t scan history",
+        e instanceof Error ? e.message : "Install / reload the Fellowship Focus extension."
+      );
+    } finally {
+      setScanBusy(false);
+    }
+  }
+
+  async function addSuggested(domain: string) {
+    await post({ action: "add", sites: [domain], category: "history" });
+  }
+
+  async function addAllSuggested() {
+    const missing = suggestions.map((s) => s.domain).filter((d) => !blockedSet.has(d));
+    if (!missing.length) return;
+    await post({ action: "add", sites: missing, category: "history" });
   }
 
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
@@ -450,13 +624,49 @@ export function BlockTab({
     )}
 
     <div className="space-y-5">
-        <ShieldCard
-          isDesktop={isDesktop}
-          on={on}
-          certReady={Boolean(dt?.certReady)}
-          busy={shieldBusy}
-          count={sites.length}
-          onToggle={toggleShield}
+        {isDesktop && (
+          <ShieldCard
+            on={on}
+            certReady={Boolean(dt?.certReady)}
+            busy={shieldBusy}
+            count={sites.length}
+            onToggle={toggleShield}
+          />
+        )}
+
+        <HistorySuggestPanel
+          extReady={extReady}
+          busy={scanBusy}
+          suggestions={suggestions}
+          blocked={blockedSet}
+          onScan={scanHistory}
+          onAdd={addSuggested}
+          onAddAll={addAllSuggested}
+        />
+
+        <BlockerControls
+          settings={prefs}
+          onChange={(next) => savePrefs(next)}
+          token={token}
+          sites={sites.map((s) => s.site)}
+          devices={devices}
+          onPairExtension={pairExtension}
+          onImportSites={(list) => post({ action: "add", sites: list, category: "import" })}
+          suggestions={suggestions}
+          disabled={inSession}
+          onCoachApply={(blocklist, presetId) => {
+            post({ action: "add", sites: blocklist, category: "ai" });
+            const tp = TIMER_PRESETS.find((t) => t.id === presetId);
+            if (tp) {
+              savePrefs({
+                ...prefs,
+                focus_min: tp.focus,
+                break_min: tp.break,
+                cycles: tp.cycles,
+              });
+            }
+            toast.ok("AI plan applied", `${blocklist.length} sites + timer preset`);
+          }}
         />
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,420px)_1fr]">
@@ -482,7 +692,43 @@ export function BlockTab({
 
             {/* Timerform */}
             <div className="border-b border-white/10 px-6 py-5">
-              <p className="mb-4 text-sm font-semibold text-white/90">Timerform</p>
+              <p className="mb-3 text-sm font-semibold text-white/90">Timerform</p>
+              <div className="mb-4 flex flex-wrap gap-1.5">
+                {TIMER_PRESETS.map((tp) => {
+                  const active =
+                    prefs.focus_min === tp.focus &&
+                    prefs.break_min === tp.break &&
+                    prefs.cycles === tp.cycles;
+                  return (
+                    <button
+                      key={tp.id}
+                      type="button"
+                      title={tp.basis}
+                      disabled={inSession}
+                      onClick={() =>
+                        savePrefs({
+                          ...prefs,
+                          focus_min: tp.focus,
+                          break_min: tp.break,
+                          cycles: tp.cycles,
+                          focus_sec: 0,
+                        })
+                      }
+                      className={`rounded-md border px-2.5 py-1.5 text-xs font-medium transition disabled:opacity-40 ${
+                        active
+                          ? "border-[#b8422e] bg-[#b8422e] text-white"
+                          : "border-white/15 bg-white/5 text-white/75 hover:bg-white/10"
+                      }`}
+                    >
+                      {tp.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mb-3 text-[10px] text-white/40">
+                Presets from common productivity research (Pomodoro, DeskTime, ultradian). Type minutes
+                with your keyboard — click the number.
+              </p>
               <div className="mb-4 grid grid-cols-3 gap-3">
                 <Stepper
                   label="Focus"
@@ -496,7 +742,7 @@ export function BlockTab({
                 <Stepper
                   label="Break"
                   value={prefs.break_min}
-                  min={1}
+                  min={0}
                   max={60}
                   suffix="min"
                   disabled={inSession}
@@ -511,25 +757,13 @@ export function BlockTab({
                   onChange={(v) => savePrefs({ ...prefs, cycles: v })}
                 />
               </div>
-              <div className="flex flex-wrap items-stretch gap-2">
-                <div className="flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-2 py-1">
-                  <span className="pl-1 text-xs text-white/45">+ sec</span>
-                  <Stepper
-                    label=""
-                    value={prefs.focus_sec}
-                    min={0}
-                    max={59}
-                    disabled={inSession}
-                    compact
-                    onChange={(v) => savePrefs({ ...prefs, focus_sec: v })}
-                  />
-                </div>
+              <div className="flex justify-end">
                 {phase === "idle" ? (
-                  <button onClick={start} className="btn-primary ml-auto shrink-0 px-5">
+                  <button onClick={start} className="btn-primary shrink-0 px-5">
                     Start the timer
                   </button>
                 ) : (
-                  <button onClick={stop} className="btn-secondary ml-auto shrink-0 px-5">
+                  <button onClick={stop} className="btn-secondary shrink-0 px-5">
                     Stop
                   </button>
                 )}
@@ -623,7 +857,7 @@ export function BlockTab({
                 <p className="mt-1 max-w-md text-xs text-white/55">
                   {isDesktop
                     ? `${sites.length} site${sites.length === 1 ? "" : "s"} — blocked system-wide when Shield is ON.`
-                    : `${sites.length} site${sites.length === 1 ? "" : "s"} on your list. Shield needs the desktop app to block X / YouTube.`}
+                    : `${sites.length} site${sites.length === 1 ? "" : "s"} on your list.`}
                 </p>
               </div>
               {!isDesktop && (
@@ -743,7 +977,25 @@ function Stepper({
   compact?: boolean;
   onChange: (v: number) => void;
 }) {
+  const [draft, setDraft] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(String(value));
+  }, [value, editing]);
+
   const clamp = (n: number) => Math.max(min, Math.min(max, n));
+  const commit = (raw: string) => {
+    const digits = raw.replace(/[^\d]/g, "");
+    if (digits === "") {
+      onChange(min);
+      setDraft(String(min));
+      return;
+    }
+    const n = clamp(parseInt(digits, 10));
+    onChange(n);
+    setDraft(String(n));
+  };
   const dec = () => !disabled && onChange(clamp(value - step));
   const inc = () => !disabled && onChange(clamp(value + step));
 
@@ -768,8 +1020,44 @@ function Stepper({
         >
           −
         </button>
-        <div className="flex min-w-[3rem] flex-1 flex-col items-center justify-center px-1">
-          <span className="text-lg font-semibold tabular-nums leading-none text-white">{value}</span>
+        <div className="flex min-w-12 flex-1 flex-col items-center justify-center px-1">
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            disabled={disabled}
+            value={editing ? draft : String(value)}
+            aria-label={label ? `${label} value` : "Value"}
+            onFocus={(e) => {
+              setEditing(true);
+              setDraft(String(value));
+              e.target.select();
+            }}
+            onChange={(e) => {
+              const next = e.target.value.replace(/[^\d]/g, "");
+              setDraft(next);
+            }}
+            onBlur={() => {
+              commit(draft);
+              setEditing(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              } else if (e.key === "Escape") {
+                setDraft(String(value));
+                setEditing(false);
+                e.currentTarget.blur();
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                inc();
+              } else if (e.key === "ArrowDown") {
+                e.preventDefault();
+                dec();
+              }
+            }}
+            className="w-full bg-transparent text-center text-lg font-semibold tabular-nums leading-none text-white outline-none disabled:cursor-not-allowed"
+          />
           {suffix ? <span className="mt-0.5 text-[10px] text-white/40">{suffix}</span> : null}
         </div>
         <button
@@ -787,38 +1075,18 @@ function Stepper({
 }
 
 function ShieldCard({
-  isDesktop,
   on,
   certReady,
   busy,
   count,
   onToggle,
 }: {
-  isDesktop: boolean;
   on: boolean;
   certReady: boolean;
   busy: boolean;
   count: number;
   onToggle: () => void;
 }) {
-  if (!isDesktop) {
-    return (
-      <div className="glass-panel flex flex-wrap items-center gap-4 p-5">
-        <div className="mr-auto">
-          <h2 className="text-base font-semibold text-white">Shield offline</h2>
-          <p className="mt-1 max-w-xl text-xs text-white/60">
-            « Not enforcing here » = cette page web ne peut pas bloquer X/YouTube toute seule.
-            Relance l’app <span className="text-white/90">desktop</span> (Fellowship) pour activer
-            le toggle Shield et bloquer réellement les sites.
-          </p>
-        </div>
-        <span className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/50">
-          No desktop bridge
-        </span>
-      </div>
-    );
-  }
-
   return (
     <div className={`glass-panel flex flex-wrap items-center gap-4 p-5 ${on ? "ring-1 ring-[#b8422e]/60" : ""}`}>
       <div className="mr-auto">
@@ -829,8 +1097,8 @@ function ShieldCard({
           {!certReady
             ? "Setup one-time: open Blocker in the desktop sidebar → Activate Shield."
             : on
-            ? `Blocking ${count} site${count === 1 ? "" : "s"} system-wide (including x.com). Tap to disable.`
-            : "Turn ON to block your list across the whole computer — including x.com."}
+            ? `Blocking ${count} site${count === 1 ? "" : "s"} system-wide.`
+            : "Turn ON to block your list across the whole computer."}
         </p>
       </div>
       <button
@@ -850,6 +1118,94 @@ function ShieldCard({
           }`}
         />
       </button>
+    </div>
+  );
+}
+
+function HistorySuggestPanel({
+  extReady,
+  busy,
+  suggestions,
+  blocked,
+  onScan,
+  onAdd,
+  onAddAll,
+}: {
+  extReady: boolean;
+  busy: boolean;
+  suggestions: HistorySuggestion[];
+  blocked: Set<string>;
+  onScan: () => void;
+  onAdd: (domain: string) => void;
+  onAddAll: () => void;
+}) {
+  const pending = suggestions.filter((s) => !blocked.has(s.domain));
+
+  return (
+    <div className="glass-panel p-5">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="mr-auto min-w-0">
+          <h2 className="text-base font-semibold text-white">Suggested from your browsing</h2>
+          <p className="mt-1 max-w-2xl text-xs text-white/55">
+            Scan Chrome history to rank distractors. Raw URLs stay on your machine.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onScan}
+          disabled={busy}
+          className="btn-primary shrink-0 disabled:opacity-50"
+        >
+          {busy ? "Scanning…" : "Scan history"}
+        </button>
+        {pending.length > 0 && (
+          <button type="button" onClick={onAddAll} className="btn-secondary shrink-0 border-white/15 bg-black/20 text-white">
+            Block all ({pending.length})
+          </button>
+        )}
+      </div>
+
+      {!extReady && suggestions.length === 0 && (
+        <p className="mt-3 text-xs text-white/45">
+          Needs the Fellowship Focus extension (
+          <code className="text-white/70">chrome://extensions</code>
+          ).
+        </p>
+      )}
+
+      {suggestions.length > 0 ? (
+        <ul className="mt-4 grid gap-1.5 sm:grid-cols-2">
+          {suggestions.slice(0, 16).map((s) => {
+            const onList = blocked.has(s.domain);
+            return (
+              <li
+                key={s.domain}
+                className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-white/90">{s.domain}</p>
+                  <p className="text-[10px] text-white/40">
+                    {s.visits} visits · score {s.score}
+                  </p>
+                </div>
+                {onList ? (
+                  <span className="text-[10px] uppercase tracking-wider text-emerald-400/80">Blocked</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onAdd(s.domain)}
+                    className="rounded-md border border-white/15 px-2 py-1 text-xs text-white/80 hover:bg-white/10"
+                  >
+                    Block
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="mt-3 text-xs text-white/40">No suggestions yet — run a scan.</p>
+      )}
     </div>
   );
 }

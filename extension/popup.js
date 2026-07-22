@@ -10,6 +10,7 @@ const els = {
   siteCount: document.getElementById("siteCount"),
   dash: document.getElementById("dash"),
   opts: document.getElementById("opts"),
+  scanHistory: document.getElementById("scanHistory"),
 };
 
 let state = null;
@@ -99,5 +100,26 @@ els.focusBtn.addEventListener("click", async () => {
 });
 
 els.opts.addEventListener("click", () => chrome.runtime.openOptionsPage());
+
+els.scanHistory?.addEventListener("click", async () => {
+  els.scanHistory.disabled = true;
+  els.scanHistory.textContent = "Scanning…";
+  const res = await send({ type: "analyzeHistory", days: 30 });
+  const n = res?.suggestions?.length || 0;
+  const added = [];
+  for (const s of res?.suggestions || []) {
+    if (s.score >= 25 && state && !state.sites.includes(s.domain)) {
+      await send({ type: "addSite", site: s.domain });
+      added.push(s.domain);
+    }
+  }
+  await refresh();
+  els.scanHistory.textContent =
+    added.length > 0 ? `+${added.length} sites` : n ? `${n} found` : "No distractors";
+  setTimeout(() => {
+    els.scanHistory.disabled = false;
+    els.scanHistory.textContent = "Scan history";
+  }, 2500);
+});
 
 refresh();

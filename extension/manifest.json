@@ -1,13 +1,24 @@
 {
   "manifest_version": 3,
   "name": "Fellowship Focus — Blocker",
-  "version": "1.0.0",
-  "description": "Block distracting sites, run focus sessions, and stay accountable with your guild.",
-  "permissions": ["declarativeNetRequest", "storage", "alarms"],
+  "version": "1.2.0",
+  "description": "Block distracting sites, schedules, friction mode, history suggestions, sync with Fellowship Focus.",
+  "permissions": ["declarativeNetRequest", "storage", "alarms", "history", "notifications"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://fellowship-focus-production.up.railway.app/*",
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "Fellowship Focus",
@@ -25,7 +36,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["block.html"],
+      "resources": ["block.html", "friction.html"],
       "matches": ["<all_urls>"]
     }
   ]

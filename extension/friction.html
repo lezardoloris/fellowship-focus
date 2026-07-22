@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Breathe — Fellowship Focus</title>
+    <link rel="stylesheet" href="block.css" />
+    <style>
+      .breath {
+        font-size: 3rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        margin: 1rem 0;
+      }
+      .hint { opacity: 0.6; font-size: 0.85rem; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <img src="icons/icon128.png" alt="" class="logo" />
+      <h1>Pause.</h1>
+      <p class="sub">Friction mode — breathe before opening this site.</p>
+      <div class="site" id="site">—</div>
+      <div class="breath" id="count">8</div>
+      <p class="hint" id="hint">Continue unlocks when the timer ends.</p>
+      <div class="actions">
+        <button id="continue" class="btn-primary" disabled>Continue</button>
+        <button id="back" class="btn-secondary">Stay focused</button>
+      </div>
+    </main>
+    <script src="friction.js"></script>
+  </body>
+</html>

@@ -2,6 +2,8 @@
    Blocks distracting sites via declarativeNetRequest, runs focus sessions,
    syncs the block list from the web app, and logs blocks/sessions to the guild. */
 
+importScripts("history.js");
+
 const DEFAULT_SITES = [
   "x.com", "twitter.com", "facebook.com", "instagram.com", "reddit.com",
   "tiktok.com", "youtube.com", "netflix.com", "twitch.tv",
@@ -12,9 +14,22 @@ const DEFAULTS = {
   token: "",
   code: "",
   name: "",
+  deviceId: "",
   manualShield: false,
   sites: DEFAULT_SITES.slice(),
-  prefs: { focus_min: 25, break_min: 5, cycles: 4 },
+  prefs: {
+    focus_min: 45,
+    break_min: 5,
+    cycles: 4,
+    hard_mode: "confirm",
+    hard_delay_secs: 30,
+    hard_phrase: "i will focus",
+    allowlist: ["github.com", "docs.google.com", "stackoverflow.com", "notion.so"],
+    schedules: [],
+    quick_lock_until: null,
+    site_modes: {},
+    friction_secs: 8,
+  },
   focus: null, // { phase, cycle, endsAt }
   stats: { date: today(), blocks: 0, focusMinutes: 0 },
 };
@@ -35,23 +50,51 @@ async function getConfig() {
 async function setConfig(patch) {
   const current = await getConfig();
   const next = { ...current, ...patch };
+  if (patch.prefs) next.prefs = { ...current.prefs, ...patch.prefs };
   await chrome.storage.local.set({ config: next });
   return next;
 }
 
+function scheduleForcesOn(prefs) {
+  const now = new Date();
+  if (prefs.quick_lock_until) {
+    const until = new Date(prefs.quick_lock_until).getTime();
+    if (until > now.getTime()) return { on: true, locked: true };
+  }
+  const day = now.getDay();
+  const hm =
+    String(now.getHours()).padStart(2, "0") +
+    ":" +
+    String(now.getMinutes()).padStart(2, "0");
+  for (const rule of prefs.schedules || []) {
+    if (!(rule.days || []).includes(day)) continue;
+    if (rule.start <= hm && hm < rule.end) return { on: true, locked: !!rule.locked };
+  }
+  return { on: false, locked: false };
+}
+
 function effectiveShield(cfg) {
-  return cfg.manualShield || !!cfg.focus;
+  const sched = scheduleForcesOn(cfg.prefs || {});
+  return cfg.manualShield || !!cfg.focus || sched.on;
+}
+
+function isAllowlisted(domain, allowlist) {
+  const d = String(domain || "").toLowerCase();
+  return (allowlist || []).some((a) => d === a || d.endsWith("." + a));
 }
 
 // ── declarativeNetRequest rules ─────────────────────────
 
-function ruleForDomain(domain, id) {
+function ruleForDomain(domain, id, friction) {
   return {
     id,
     priority: 1,
     action: {
       type: "redirect",
-      redirect: { extensionPath: "/block.html?d=" + encodeURIComponent(domain) },
+      redirect: {
+        extensionPath:
+          (friction ? "/friction.html?d=" : "/block.html?d=") + encodeURIComponent(domain),
+      },
     },
     condition: {
       urlFilter: "||" + domain + "^",
@@ -64,13 +107,16 @@ async function rebuildRules() {
   const cfg = await getConfig();
   const existing = await chrome.declarativeNetRequest.getDynamicRules();
   const removeRuleIds = existing.map((r) => r.id);
+  const allow = cfg.prefs.allowlist || [];
+  const modes = cfg.prefs.site_modes || {};
 
   let addRules = [];
   if (effectiveShield(cfg)) {
     addRules = cfg.sites
       .filter(Boolean)
+      .filter((site) => !isAllowlisted(site, allow))
       .slice(0, 4000)
-      .map((site, i) => ruleForDomain(site, i + 1));
+      .map((site, i) => ruleForDomain(site, i + 1, modes[site] === "friction"));
   }
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
   updateBadge(cfg);
@@ -89,22 +135,57 @@ async function syncRemote() {
   if (!cfg.apiUrl || !cfg.token) return cfg;
   try {
     const base = cfg.apiUrl.replace(/\/$/, "");
-    const [blRes, pfRes] = await Promise.all([
-      fetch(`${base}/api/blocklist?token=${encodeURIComponent(cfg.token)}`),
-      fetch(`${base}/api/prefs?token=${encodeURIComponent(cfg.token)}`),
-    ]);
-    const patch = {};
-    if (blRes.ok) {
-      const { sites } = await blRes.json();
-      if (Array.isArray(sites) && sites.length) {
-        patch.sites = sites.map((s) => s.site).filter(Boolean);
+    const res = await fetch(`${base}/api/blocker/config?token=${encodeURIComponent(cfg.token)}`);
+    if (res.ok) {
+      const json = await res.json();
+      const patch = {};
+      if (Array.isArray(json.sites) && json.sites.length) {
+        patch.sites = json.sites.map((s) => s.site || s).filter(Boolean);
+      }
+      if (json.settings) {
+        patch.prefs = { ...cfg.prefs, ...json.settings };
+      }
+      if (Object.keys(patch).length) await setConfig(patch);
+    } else {
+      // legacy fallback
+      const [blRes, pfRes] = await Promise.all([
+        fetch(`${base}/api/blocklist?token=${encodeURIComponent(cfg.token)}`),
+        fetch(`${base}/api/prefs?token=${encodeURIComponent(cfg.token)}`),
+      ]);
+      const patch = {};
+      if (blRes.ok) {
+        const { sites } = await blRes.json();
+        if (Array.isArray(sites) && sites.length) {
+          patch.sites = sites.map((s) => s.site).filter(Boolean);
+        }
+      }
+      if (pfRes.ok) {
+        const { prefs } = await pfRes.json();
+        if (prefs) patch.prefs = { ...cfg.prefs, focus_min: prefs.focus_min, break_min: prefs.break_min, cycles: prefs.cycles };
+      }
+      if (Object.keys(patch).length) await setConfig(patch);
+    }
+
+    // device heartbeat
+    let deviceId = cfg.deviceId;
+    const hb = await fetch(`${base}/api/blocker/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: cfg.token,
+        action: "heartbeat",
+        kind: "extension",
+        label: "Chrome",
+        shieldOn: effectiveShield(await getConfig()),
+        deviceId: deviceId || undefined,
+      }),
+    });
+    if (hb.ok) {
+      const j = await hb.json();
+      if (j.device?.id && j.device.id !== deviceId) {
+        await setConfig({ deviceId: j.device.id });
       }
     }
-    if (pfRes.ok) {
-      const { prefs } = await pfRes.json();
-      if (prefs) patch.prefs = { focus_min: prefs.focus_min, break_min: prefs.break_min, cycles: prefs.cycles };
-    }
-    if (Object.keys(patch).length) await setConfig(patch);
   } catch (e) {
     /* offline — keep local list */
   }
@@ -291,17 +372,21 @@ chrome.runtime.onInstalled.addListener(async () => {
   await getConfig();
   await rebuildRules();
   chrome.alarms.create("sync", { periodInMinutes: 15 });
+  chrome.alarms.create("scheduleTick", { periodInMinutes: 1 });
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await rebuildRules();
   chrome.alarms.create("sync", { periodInMinutes: 15 });
+  chrome.alarms.create("scheduleTick", { periodInMinutes: 1 });
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === "focus") await onFocusAlarm();
   else if (alarm.name === "sync") {
     await syncRemote();
+    await rebuildRules();
+  } else if (alarm.name === "scheduleTick") {
     await rebuildRules();
   }
 });
@@ -312,11 +397,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "getState":
         sendResponse({ config: await getConfig() });
         break;
-      case "setShield":
+      case "setShield": {
+        const cfg = await getConfig();
+        const sched = scheduleForcesOn(cfg.prefs || {});
+        if (!msg.on && (cfg.focus || sched.locked)) {
+          sendResponse({ config: cfg, error: "locked" });
+          break;
+        }
         await setConfig({ manualShield: !!msg.on });
         await rebuildRules();
         sendResponse({ config: await getConfig() });
         break;
+      }
       case "startFocus":
         await startFocus();
         sendResponse({ config: await getConfig() });
@@ -328,6 +420,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "connect":
         sendResponse({ config: await connect(msg.payload) });
         break;
+      case "pairFromCode": {
+        try {
+          const base = (msg.apiUrl || "").replace(/\/$/, "") || "https://fellowship-focus-production.up.railway.app";
+          const res = await fetch(`${base}/api/blocker/pair?code=${encodeURIComponent(msg.code)}`);
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || "pair_failed");
+          sendResponse({ config: await connect(json) });
+        } catch (e) {
+          sendResponse({ error: String(e) });
+        }
+        break;
+      }
       case "disconnect":
         await setConfig({ apiUrl: "", token: "", code: "", name: "" });
         sendResponse({ config: await getConfig() });
@@ -346,6 +450,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "reportBlock":
         await reportBlock(msg.domain);
         sendResponse({ ok: true });
+        break;
+      case "analyzeHistory": {
+        const suggestions = await analyzeHistory(msg.days || 30);
+        await chrome.storage.local.set({ historySuggestions: suggestions });
+        const push = await pushSuggestions(suggestions);
+        sendResponse({ suggestions, push });
+        break;
+      }
+      case "getHistorySuggestions": {
+        const { historySuggestions } = await chrome.storage.local.get("historySuggestions");
+        sendResponse({ suggestions: historySuggestions || [] });
+        break;
+      }
+      case "getPrefs":
+        sendResponse({ prefs: (await getConfig()).prefs });
         break;
       default:
         sendResponse({ error: "unknown" });

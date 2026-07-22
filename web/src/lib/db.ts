@@ -12,6 +12,11 @@ import {
   purgeOldProofs,
   saveProofThumb,
 } from "./proofs";
+import {
+  mergeBlockerSettings,
+  type BlockerSettings,
+  DEFAULT_BLOCKER_SETTINGS,
+} from "./blockerSettings";
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "fellowship.db");
@@ -20,9 +25,32 @@ export type Fellowship = {
   id: string;
   code: string;
   name: string;
+  niche: string;
+  objective: string;
+  visibility: "public" | "private";
   blocker_bypass_penalty: number;
   created_at: string;
 };
+
+export type PublicGuildCard = {
+  code: string;
+  name: string;
+  niche: string;
+  objective: string;
+  member_count: number;
+  total_xp: number;
+  blocker_bypass_penalty: number;
+  created_at: string;
+};
+
+export const GUILD_NICHES = [
+  { id: "builders", label: "Builders", blurb: "Ship products, code, startups" },
+  { id: "students", label: "Students", blurb: "Exams, deep study, no doomscroll" },
+  { id: "creators", label: "Creators", blurb: "Content, design, writing streaks" },
+  { id: "fitness", label: "Fitness", blurb: "Training + focus habits" },
+  { id: "deep-work", label: "Deep Work", blurb: "Long blocks, zero distractions" },
+  { id: "accountability", label: "Accountability", blurb: "Check-ins, stakes, peer pressure" },
+] as const;
 
 export type Member = {
   id: string;
@@ -33,6 +61,26 @@ export type Member = {
   streak: number;
   last_quest_date: string | null;
   created_at: string;
+};
+
+export type GoogleUser = {
+  id: string;
+  google_id: string;
+  email: string;
+  name: string;
+  avatar_url: string | null;
+  token: string;
+  member_id: string | null;
+  created_at: string;
+};
+
+export type HistorySuggestion = {
+  owner_id: string;
+  domain: string;
+  visits: number;
+  score: number;
+  last_visit: number | null;
+  updated_at: string;
 };
 
 export type FocusSession = {
@@ -311,6 +359,28 @@ function initSchema(database: Database.Database) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (member_id) REFERENCES members(id)
     );
+
+    CREATE TABLE IF NOT EXISTS google_users (
+      id TEXT PRIMARY KEY,
+      google_id TEXT UNIQUE NOT NULL,
+      email TEXT NOT NULL,
+      name TEXT NOT NULL,
+      avatar_url TEXT,
+      token TEXT UNIQUE NOT NULL,
+      member_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS history_suggestions (
+      owner_id TEXT NOT NULL,
+      domain TEXT NOT NULL,
+      visits INTEGER NOT NULL DEFAULT 0,
+      score INTEGER NOT NULL DEFAULT 0,
+      last_visit INTEGER,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (owner_id, domain)
+    );
   `);
   try {
     database.exec(`ALTER TABLE block_events ADD COLUMN fellowship_tax INTEGER NOT NULL DEFAULT 3`);
@@ -336,7 +406,56 @@ function initSchema(database: Database.Database) {
   } catch {
     /* column exists */
   }
+  try {
+    database.exec(`ALTER TABLE fellowships ADD COLUMN niche TEXT NOT NULL DEFAULT 'deep-work'`);
+  } catch {
+    /* column exists */
+  }
+  try {
+    database.exec(`ALTER TABLE fellowships ADD COLUMN objective TEXT NOT NULL DEFAULT ''`);
+  } catch {
+    /* column exists */
+  }
+  try {
+    database.exec(`ALTER TABLE fellowships ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private'`);
+  } catch {
+    /* column exists */
+  }
+  try {
+    database.exec(`ALTER TABLE member_prefs ADD COLUMN settings_json TEXT NOT NULL DEFAULT '{}'`);
+  } catch {
+    /* column exists */
+  }
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS blocker_devices (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      label TEXT NOT NULL,
+      last_seen TEXT NOT NULL DEFAULT (datetime('now')),
+      shield_on INTEGER NOT NULL DEFAULT 0,
+      meta TEXT,
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+    CREATE TABLE IF NOT EXISTS pair_codes (
+      code TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      token TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+    CREATE TABLE IF NOT EXISTS bypass_events (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      detail TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+  `);
   purgeOldProofs(database);
+  seedPublicGuilds(database);
 }
 
 function slugify(name: string): string {
@@ -349,17 +468,26 @@ function slugify(name: string): string {
 
 export function createFellowship(
   name: string,
-  blockerBypassPenalty = 0
+  blockerBypassPenalty = 0,
+  opts?: {
+    niche?: string;
+    objective?: string;
+    visibility?: "public" | "private";
+  }
 ): Fellowship {
   const database = getDb();
   const id = nanoid();
   const code = `${slugify(name) || "fellowship"}-${nanoid(8)}`;
   const penalty = Math.max(0, Math.min(100, blockerBypassPenalty));
+  const niche = (opts?.niche || "deep-work").toLowerCase().slice(0, 40);
+  const objective = (opts?.objective || "").trim().slice(0, 280);
+  const visibility = opts?.visibility === "public" ? "public" : "private";
   database
     .prepare(
-      "INSERT INTO fellowships (id, code, name, blocker_bypass_penalty) VALUES (?, ?, ?, ?)"
+      `INSERT INTO fellowships (id, code, name, blocker_bypass_penalty, niche, objective, visibility)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, code, name, penalty);
+    .run(id, code, name, penalty, niche, objective, visibility);
   return database.prepare("SELECT * FROM fellowships WHERE id = ?").get(id) as Fellowship;
 }
 
@@ -369,6 +497,88 @@ export function getFellowshipById(id: string): Fellowship | undefined {
 
 export function getFellowshipByCode(code: string): Fellowship | undefined {
   return getDb().prepare("SELECT * FROM fellowships WHERE code = ?").get(code) as Fellowship | undefined;
+}
+
+export function listPublicGuilds(niche?: string | null): PublicGuildCard[] {
+  ensurePublicGuilds();
+  const database = getDb();
+  const sql = niche
+    ? `SELECT f.code, f.name, f.niche, f.objective, f.blocker_bypass_penalty, f.created_at,
+              COUNT(m.id) as member_count,
+              COALESCE(SUM(m.total_xp), 0) as total_xp
+       FROM fellowships f
+       LEFT JOIN members m ON m.fellowship_id = f.id
+       WHERE f.visibility = 'public' AND f.niche = ?
+       GROUP BY f.id
+       ORDER BY total_xp DESC, member_count DESC, f.created_at DESC`
+    : `SELECT f.code, f.name, f.niche, f.objective, f.blocker_bypass_penalty, f.created_at,
+              COUNT(m.id) as member_count,
+              COALESCE(SUM(m.total_xp), 0) as total_xp
+       FROM fellowships f
+       LEFT JOIN members m ON m.fellowship_id = f.id
+       WHERE f.visibility = 'public'
+       GROUP BY f.id
+       ORDER BY total_xp DESC, member_count DESC, f.created_at DESC`;
+  const rows = niche
+    ? (database.prepare(sql).all(niche) as PublicGuildCard[])
+    : (database.prepare(sql).all() as PublicGuildCard[]);
+  return rows;
+}
+
+function seedPublicGuilds(database: Database.Database) {
+  const count = (
+    database.prepare(`SELECT COUNT(*) as c FROM fellowships WHERE visibility = 'public'`).get() as {
+      c: number;
+    }
+  ).c;
+  if (count > 0) return;
+
+  const starters: Array<{ name: string; niche: string; objective: string }> = [
+    {
+      name: "The Shire Builders",
+      niche: "builders",
+      objective: "Ship one meaningful thing this week. No doomscroll while building.",
+    },
+    {
+      name: "Rohan Study Hall",
+      niche: "students",
+      objective: "Protect deep study blocks. Block social until the session ends.",
+    },
+    {
+      name: "Gondor Creators",
+      niche: "creators",
+      objective: "Daily creation streak — publish or practice before entertainment.",
+    },
+    {
+      name: "Mordor Deep Work",
+      niche: "deep-work",
+      objective: "Long focus quests. Distractions are the enemy.",
+    },
+    {
+      name: "Fellowship of Sweat",
+      niche: "fitness",
+      objective: "Train + focus. Log sessions, keep the streak alive.",
+    },
+    {
+      name: "Council of Accountability",
+      niche: "accountability",
+      objective: "Public check-ins. Bypass the blocker and the guild feels it.",
+    },
+  ];
+
+  const insert = database.prepare(
+    `INSERT INTO fellowships (id, code, name, blocker_bypass_penalty, niche, objective, visibility)
+     VALUES (?, ?, ?, ?, ?, ?, 'public')`
+  );
+  for (const s of starters) {
+    const id = nanoid();
+    const code = `${slugify(s.name) || "guild"}-${nanoid(8)}`;
+    insert.run(id, code, s.name, s.niche === "accountability" ? 15 : 5, s.niche, s.objective);
+  }
+}
+
+function ensurePublicGuilds() {
+  seedPublicGuilds(getDb());
 }
 
 export function joinFellowship(fellowshipId: string, name: string): Member {
@@ -1217,6 +1427,7 @@ export type MemberPrefs = {
   focus_min: number;
   break_min: number;
   cycles: number;
+  settings_json: string;
   updated_at: string;
 };
 
@@ -1262,6 +1473,12 @@ export function removeBlocklistSite(memberId: string, site: string): BlocklistEn
   return getBlocklist(memberId);
 }
 
+export function replaceBlocklist(memberId: string, sites: string[]): BlocklistEntry[] {
+  const database = getDb();
+  database.prepare("DELETE FROM member_blocklist WHERE member_id = ?").run(memberId);
+  return addBlocklistSites(memberId, sites, "import");
+}
+
 export function getMemberPrefs(memberId: string): MemberPrefs {
   const database = getDb();
   let row = database
@@ -1278,22 +1495,157 @@ export function getMemberPrefs(memberId: string): MemberPrefs {
 
 export function setMemberPrefs(
   memberId: string,
-  prefs: { focus_min: number; break_min: number; cycles: number }
+  prefs: { focus_min: number; break_min: number; cycles: number; settings_json?: string }
 ): MemberPrefs {
   const database = getDb();
-  getMemberPrefs(memberId); // ensure row exists
-  database
-    .prepare(
-      `UPDATE member_prefs SET focus_min = ?, break_min = ?, cycles = ?, updated_at = datetime('now')
-       WHERE member_id = ?`
-    )
-    .run(
-      Math.max(1, Math.min(180, prefs.focus_min)),
-      Math.max(1, Math.min(60, prefs.break_min)),
-      Math.max(1, Math.min(12, prefs.cycles)),
-      memberId
-    );
+  getMemberPrefs(memberId);
+  if (prefs.settings_json !== undefined) {
+    database
+      .prepare(
+        `UPDATE member_prefs SET focus_min = ?, break_min = ?, cycles = ?, settings_json = ?,
+         updated_at = datetime('now') WHERE member_id = ?`
+      )
+      .run(
+        Math.max(1, Math.min(180, prefs.focus_min)),
+        Math.max(0, Math.min(60, prefs.break_min)),
+        Math.max(1, Math.min(12, prefs.cycles)),
+        prefs.settings_json,
+        memberId
+      );
+  } else {
+    database
+      .prepare(
+        `UPDATE member_prefs SET focus_min = ?, break_min = ?, cycles = ?, updated_at = datetime('now')
+         WHERE member_id = ?`
+      )
+      .run(
+        Math.max(1, Math.min(180, prefs.focus_min)),
+        Math.max(0, Math.min(60, prefs.break_min)),
+        Math.max(1, Math.min(12, prefs.cycles)),
+        memberId
+      );
+  }
   return getMemberPrefs(memberId);
+}
+
+// Re-export helpers used by API — blocker settings live in settings_json
+
+export function getBlockerSettings(memberId: string): BlockerSettings {
+  const row = getMemberPrefs(memberId);
+  let parsed: Partial<BlockerSettings> = {};
+  try {
+    parsed = JSON.parse(row.settings_json || "{}") as Partial<BlockerSettings>;
+  } catch {
+    parsed = {};
+  }
+  return mergeBlockerSettings({
+    ...parsed,
+    focus_min: row.focus_min || parsed.focus_min || DEFAULT_BLOCKER_SETTINGS.focus_min,
+    break_min: row.break_min ?? parsed.break_min ?? DEFAULT_BLOCKER_SETTINGS.break_min,
+    cycles: row.cycles || parsed.cycles || DEFAULT_BLOCKER_SETTINGS.cycles,
+  });
+}
+
+export function setBlockerSettings(
+  memberId: string,
+  settings: BlockerSettings
+): BlockerSettings {
+  const merged = mergeBlockerSettings(settings);
+  setMemberPrefs(memberId, {
+    focus_min: merged.focus_min,
+    break_min: merged.break_min,
+    cycles: merged.cycles,
+    settings_json: JSON.stringify(merged),
+  });
+  return getBlockerSettings(memberId);
+}
+
+export function upsertBlockerDevice(input: {
+  memberId: string;
+  kind: string;
+  label: string;
+  shieldOn?: boolean;
+  meta?: string;
+  deviceId?: string;
+}): { id: string; kind: string; label: string; last_seen: string; shield_on: number } {
+  const database = getDb();
+  const id = input.deviceId || `${input.kind}-${nanoid(8)}`;
+  const existing = database
+    .prepare("SELECT id FROM blocker_devices WHERE id = ? AND member_id = ?")
+    .get(id, input.memberId) as { id: string } | undefined;
+  if (existing) {
+    database
+      .prepare(
+        `UPDATE blocker_devices SET label = ?, last_seen = datetime('now'),
+         shield_on = ?, meta = COALESCE(?, meta) WHERE id = ?`
+      )
+      .run(input.label, input.shieldOn ? 1 : 0, input.meta ?? null, id);
+  } else {
+    database
+      .prepare(
+        `INSERT INTO blocker_devices (id, member_id, kind, label, shield_on, meta)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, input.memberId, input.kind, input.label, input.shieldOn ? 1 : 0, input.meta ?? null);
+  }
+  return database.prepare("SELECT * FROM blocker_devices WHERE id = ?").get(id) as {
+    id: string;
+    kind: string;
+    label: string;
+    last_seen: string;
+    shield_on: number;
+  };
+}
+
+export function listBlockerDevices(memberId: string) {
+  return getDb()
+    .prepare(
+      `SELECT id, kind, label, last_seen, shield_on FROM blocker_devices
+       WHERE member_id = ? ORDER BY last_seen DESC LIMIT 20`
+    )
+    .all(memberId) as Array<{
+    id: string;
+    kind: string;
+    label: string;
+    last_seen: string;
+    shield_on: number;
+  }>;
+}
+
+export function revokeBlockerDevice(memberId: string, deviceId: string) {
+  getDb()
+    .prepare("DELETE FROM blocker_devices WHERE member_id = ? AND id = ?")
+    .run(memberId, deviceId);
+  return listBlockerDevices(memberId);
+}
+
+export function createPairCode(memberId: string, token: string): { code: string; expires_at: string } {
+  const database = getDb();
+  const code = nanoid(10);
+  const expires = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  database
+    .prepare(`INSERT INTO pair_codes (code, member_id, token, expires_at) VALUES (?, ?, ?, ?)`)
+    .run(code, memberId, token, expires);
+  return { code, expires_at: expires };
+}
+
+export function consumePairCode(code: string): { token: string; member_id: string } | null {
+  const database = getDb();
+  const row = database
+    .prepare(`SELECT * FROM pair_codes WHERE code = ?`)
+    .get(code) as
+    | { code: string; member_id: string; token: string; expires_at: string }
+    | undefined;
+  if (!row) return null;
+  database.prepare(`DELETE FROM pair_codes WHERE code = ?`).run(code);
+  if (new Date(row.expires_at).getTime() < Date.now()) return null;
+  return { token: row.token, member_id: row.member_id };
+}
+
+export function logBypassEvent(memberId: string, kind: string, detail?: string) {
+  getDb()
+    .prepare(`INSERT INTO bypass_events (id, member_id, kind, detail) VALUES (?, ?, ?, ?)`)
+    .run(nanoid(), memberId, kind, detail ?? null);
 }
 
 // ── Weekly agenda, OKR & productivity ──────────────────
@@ -1503,4 +1855,164 @@ export function getWeeklyProductivity(memberId: string): WeeklyProductivity {
       },
     },
   };
+}
+
+// ── Google identity + history suggestions ─────────────────
+
+const DISTRACTOR_WEIGHT: Record<string, number> = {
+  "youtube.com": 40,
+  "x.com": 40,
+  "twitter.com": 40,
+  "reddit.com": 38,
+  "instagram.com": 38,
+  "tiktok.com": 42,
+  "facebook.com": 35,
+  "netflix.com": 40,
+  "twitch.tv": 38,
+  "linkedin.com": 20,
+  "news.google.com": 25,
+  "cnn.com": 22,
+  "bbc.com": 22,
+  "amazon.com": 18,
+};
+
+const WORK_DOMAINS = new Set([
+  "github.com",
+  "gitlab.com",
+  "stackoverflow.com",
+  "docs.google.com",
+  "drive.google.com",
+  "mail.google.com",
+  "calendar.google.com",
+  "notion.so",
+  "linear.app",
+  "vercel.com",
+  "railway.app",
+  "figma.com",
+  "slack.com",
+  "zoom.us",
+  "meet.google.com",
+]);
+
+function suggestionScore(domain: string, visits: number): number {
+  if (WORK_DOMAINS.has(domain)) return 0;
+  const base = DISTRACTOR_WEIGHT[domain] ?? (visits >= 20 ? 15 : visits >= 8 ? 8 : 0);
+  if (base === 0) return 0;
+  return base + Math.min(30, Math.floor(Math.log2(Math.max(1, visits)) * 4));
+}
+
+export function ensureGoogleUser(input: {
+  googleId: string;
+  email: string;
+  name: string;
+  avatarUrl: string | null;
+  linkMemberId?: string;
+}): GoogleUser {
+  const database = getDb();
+  const existing = database
+    .prepare("SELECT * FROM google_users WHERE google_id = ?")
+    .get(input.googleId) as GoogleUser | undefined;
+
+  if (existing) {
+    if (input.linkMemberId && input.linkMemberId !== existing.member_id) {
+      const linked = database
+        .prepare("SELECT token FROM members WHERE id = ?")
+        .get(input.linkMemberId) as { token: string } | undefined;
+      database
+        .prepare(
+          `UPDATE google_users SET email = ?, name = ?, avatar_url = ?,
+           member_id = ?, token = COALESCE(?, token) WHERE id = ?`
+        )
+        .run(
+          input.email,
+          input.name,
+          input.avatarUrl,
+          input.linkMemberId,
+          linked?.token ?? null,
+          existing.id
+        );
+    } else {
+      database
+        .prepare(`UPDATE google_users SET email = ?, name = ?, avatar_url = ? WHERE id = ?`)
+        .run(input.email, input.name, input.avatarUrl, existing.id);
+    }
+    return database.prepare("SELECT * FROM google_users WHERE id = ?").get(existing.id) as GoogleUser;
+  }
+
+  let memberId = input.linkMemberId ?? null;
+  let token = nanoid(32);
+
+  if (memberId) {
+    const member = database
+      .prepare("SELECT token FROM members WHERE id = ?")
+      .get(memberId) as { token: string } | undefined;
+    if (member) token = member.token;
+  } else {
+    // Personal solo fellowship so blocklist/prefs APIs accept this token
+    const fellowship = createFellowship(`Solo · ${input.name.slice(0, 24)}`);
+    const member = joinFellowship(fellowship.id, input.name);
+    memberId = member.id;
+    token = member.token;
+  }
+
+  const id = nanoid();
+  database
+    .prepare(
+      `INSERT INTO google_users (id, google_id, email, name, avatar_url, token, member_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(id, input.googleId, input.email, input.name, input.avatarUrl, token, memberId);
+  return database.prepare("SELECT * FROM google_users WHERE id = ?").get(id) as GoogleUser;
+}
+
+export function getGoogleUserByToken(token: string): GoogleUser | undefined {
+  return getDb().prepare("SELECT * FROM google_users WHERE token = ?").get(token) as
+    | GoogleUser
+    | undefined;
+}
+
+export function getGoogleUserByGoogleId(googleId: string): GoogleUser | undefined {
+  return getDb().prepare("SELECT * FROM google_users WHERE google_id = ?").get(googleId) as
+    | GoogleUser
+    | undefined;
+}
+
+export function saveHistorySuggestions(
+  ownerId: string,
+  domains: Array<{ domain: string; visits: number; lastVisit?: number }>
+): HistorySuggestion[] {
+  const database = getDb();
+  const upsert = database.prepare(
+    `INSERT INTO history_suggestions (owner_id, domain, visits, score, last_visit, updated_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(owner_id, domain) DO UPDATE SET
+       visits = excluded.visits,
+       score = excluded.score,
+       last_visit = excluded.last_visit,
+       updated_at = datetime('now')`
+  );
+
+  const tx = database.transaction(() => {
+    for (const d of domains.slice(0, 80)) {
+      const domain = d.domain
+        .trim()
+        .toLowerCase()
+        .replace(/^www\./, "");
+      if (!domain || domain.includes(" ")) continue;
+      const score = suggestionScore(domain, d.visits || 0);
+      if (score <= 0) continue;
+      upsert.run(ownerId, domain, d.visits || 0, score, d.lastVisit ?? null);
+    }
+  });
+  tx();
+  return getHistorySuggestions(ownerId);
+}
+
+export function getHistorySuggestions(ownerId: string): HistorySuggestion[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM history_suggestions WHERE owner_id = ?
+       ORDER BY score DESC, visits DESC LIMIT 40`
+    )
+    .all(ownerId) as HistorySuggestion[];
 }
