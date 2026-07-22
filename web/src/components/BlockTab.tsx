@@ -465,42 +465,54 @@ export function BlockTab({
 
             {/* Timerform */}
             <div className="border-b border-white/10 px-6 py-5">
-              <p className="mb-3 text-sm font-semibold text-white/90">Timerform</p>
+              <p className="mb-4 text-sm font-semibold text-white/90">Timerform</p>
+              <div className="mb-4 grid grid-cols-3 gap-3">
+                <Stepper
+                  label="Focus"
+                  value={prefs.focus_min}
+                  min={1}
+                  max={180}
+                  suffix="min"
+                  disabled={inSession}
+                  onChange={(v) => savePrefs({ ...prefs, focus_min: v })}
+                />
+                <Stepper
+                  label="Break"
+                  value={prefs.break_min}
+                  min={1}
+                  max={60}
+                  suffix="min"
+                  disabled={inSession}
+                  onChange={(v) => savePrefs({ ...prefs, break_min: v })}
+                />
+                <Stepper
+                  label="Cycles"
+                  value={prefs.cycles}
+                  min={1}
+                  max={12}
+                  disabled={inSession}
+                  onChange={(v) => savePrefs({ ...prefs, cycles: v })}
+                />
+              </div>
               <div className="flex flex-wrap items-stretch gap-2">
-                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2">
-                  <input
-                    type="number"
-                    min={0}
-                    max={180}
-                    disabled={inSession}
-                    value={prefs.focus_min}
-                    onChange={(e) =>
-                      savePrefs({ ...prefs, focus_min: Math.max(0, Math.min(180, Number(e.target.value) || 0)) })
-                    }
-                    className="w-16 bg-transparent text-center text-lg font-semibold tabular-nums text-white outline-none"
-                    aria-label="Minutes"
-                  />
-                  <span className="text-sm text-white/45">min</span>
-                  <input
-                    type="number"
+                <div className="flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-2 py-1">
+                  <span className="pl-1 text-xs text-white/45">+ sec</span>
+                  <Stepper
+                    label=""
+                    value={prefs.focus_sec}
                     min={0}
                     max={59}
                     disabled={inSession}
-                    value={prefs.focus_sec}
-                    onChange={(e) =>
-                      savePrefs({ ...prefs, focus_sec: Math.max(0, Math.min(59, Number(e.target.value) || 0)) })
-                    }
-                    className="w-14 bg-transparent text-center text-lg font-semibold tabular-nums text-white outline-none"
-                    aria-label="Seconds"
+                    compact
+                    onChange={(v) => savePrefs({ ...prefs, focus_sec: v })}
                   />
-                  <span className="text-sm text-white/45">sec</span>
                 </div>
                 {phase === "idle" ? (
-                  <button onClick={start} className="btn-primary shrink-0 px-5">
+                  <button onClick={start} className="btn-primary ml-auto shrink-0 px-5">
                     Start the timer
                   </button>
                 ) : (
-                  <button onClick={stop} className="btn-secondary shrink-0 px-5">
+                  <button onClick={stop} className="btn-secondary ml-auto shrink-0 px-5">
                     Stop
                   </button>
                 )}
@@ -576,43 +588,13 @@ export function BlockTab({
 
               {helpOpen && (
                 <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs leading-relaxed text-white/65">
-                  Set minutes + seconds, then <span className="text-white/90">Start the timer</span>.
+                  Use the ▲ ▼ arrows on Focus / Break / Cycles to adjust quickly, then{" "}
+                  <span className="text-white/90">Start the timer</span>.
                   When time is up, the alarm plays for the duration you picked (or forever if infinite).
                   <span className="text-white/90"> Anti-Oops!</span> asks for confirmation before Stop.
                   A compact timer stays bottom-right while you work — × closes it.
                 </div>
               )}
-
-              <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-4 text-center text-xs">
-                <label className="flex flex-col gap-1">
-                  <span className="text-white/45">Break (min)</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={60}
-                    disabled={inSession}
-                    value={prefs.break_min}
-                    onChange={(e) =>
-                      savePrefs({ ...prefs, break_min: Math.max(1, Math.min(60, Number(e.target.value) || 1)) })
-                    }
-                    className="input-premium w-full bg-white/5 text-center"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-white/45">Cycles</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={12}
-                    disabled={inSession}
-                    value={prefs.cycles}
-                    onChange={(e) =>
-                      savePrefs({ ...prefs, cycles: Math.max(1, Math.min(12, Number(e.target.value) || 1)) })
-                    }
-                    className="input-premium w-full bg-white/5 text-center"
-                  />
-                </label>
-              </div>
             </div>
           </div>
 
@@ -720,6 +702,70 @@ export function BlockTab({
         </div>
     </div>
     </>
+  );
+}
+
+function Stepper({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  suffix,
+  disabled,
+  compact,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  suffix?: string;
+  disabled?: boolean;
+  compact?: boolean;
+  onChange: (v: number) => void;
+}) {
+  const clamp = (n: number) => Math.max(min, Math.min(max, n));
+  const dec = () => !disabled && onChange(clamp(value - step));
+  const inc = () => !disabled && onChange(clamp(value + step));
+
+  return (
+    <div className={compact ? "flex items-center gap-1" : "flex flex-col gap-1.5"}>
+      {label ? (
+        <span className="text-center text-[11px] font-medium uppercase tracking-wider text-white/45">
+          {label}
+        </span>
+      ) : null}
+      <div
+        className={`flex items-center overflow-hidden rounded-lg border border-white/15 bg-white/5 ${
+          disabled ? "opacity-45" : ""
+        }`}
+      >
+        <button
+          type="button"
+          disabled={disabled || value <= min}
+          onClick={dec}
+          className="flex h-10 w-9 items-center justify-center text-lg font-medium text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          aria-label={`Decrease ${label || "value"}`}
+        >
+          −
+        </button>
+        <div className="flex min-w-[3rem] flex-1 flex-col items-center justify-center px-1">
+          <span className="text-lg font-semibold tabular-nums leading-none text-white">{value}</span>
+          {suffix ? <span className="mt-0.5 text-[10px] text-white/40">{suffix}</span> : null}
+        </div>
+        <button
+          type="button"
+          disabled={disabled || value >= max}
+          onClick={inc}
+          className="flex h-10 w-9 items-center justify-center text-lg font-medium text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          aria-label={`Increase ${label || "value"}`}
+        >
+          +
+        </button>
+      </div>
+    </div>
   );
 }
 
