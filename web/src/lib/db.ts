@@ -21,6 +21,18 @@ import {
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "fellowship.db");
 
+// On Railway the container filesystem is ephemeral. Without DATA_DIR pointing at
+// a mounted volume, every redeploy silently wipes fellowships, XP and stakes —
+// the symptom is fellowship codes suddenly 404ing. Make that loud. See
+// web/railway.toml for the one-time volume setup.
+if (process.env.NODE_ENV === "production" && !process.env.DATA_DIR) {
+  console.warn(
+    `[fellowship] DATA_DIR is not set — the database at ${DB_PATH} lives on ` +
+      `ephemeral storage and WILL be lost on the next deploy. ` +
+      `Set DATA_DIR=/data and mount a volume there.`
+  );
+}
+
 export type Fellowship = {
   id: string;
   code: string;

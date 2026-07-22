@@ -1,4 +1,15 @@
 # Railway — root directory must be set to "web" in service settings
+#
+# IMPORTANT — persistent storage:
+# The SQLite database lives at $DATA_DIR/fellowship.db (see src/lib/db.ts).
+# Railway containers have an EPHEMERAL filesystem: without a mounted volume the
+# database is wiped on every redeploy, taking fellowships, XP, ladder, habits
+# and stakes with it. Symptom: /api/fellowship/<code> starts returning 404.
+#
+# One-time setup in the Railway dashboard:
+#   1. Service → Variables → add  DATA_DIR = /data
+#   2. Service → Settings → Volumes → New Volume, mount path  /data
+# Volumes cannot be declared from this file; they must be created once in the UI.
 
 [build]
 builder = "RAILPACK"

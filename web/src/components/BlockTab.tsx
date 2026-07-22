@@ -825,12 +825,28 @@ export function BlockTab({
                 </p>
                 <p className="text-[11px] text-white/45">
                   {extArmed
-                    ? `Blocking ${extState?.ruleCount ?? 0} domains in Chrome`
+                    ? `${extState?.ruleCount ?? 0} rules active${
+                        extState?.blocksToday
+                          ? ` · ${extState.blocksToday} distraction${
+                              extState.blocksToday > 1 ? "s" : ""
+                            } deflected today`
+                          : ""
+                      }`
                     : extReady
                       ? "Extension installed — press Connect Chrome to arm"
                       : "The list alone blocks nothing. Chrome extension required."}
                 </p>
               </div>
+              {extArmed && (
+                <button
+                  type="button"
+                  onClick={() => window.open("https://www.youtube.com", "_blank", "noopener")}
+                  className="btn-secondary shrink-0"
+                  title="Opens a blocked site — you should land on the block page"
+                >
+                  Test
+                </button>
+              )}
               <button type="button" onClick={connectChrome} className="btn-primary shrink-0">
                 {extArmed ? "Re-sync" : "Connect Chrome"}
               </button>
@@ -928,7 +944,35 @@ export function BlockTab({
           </div>
 
           <div className="glass-panel p-5">
-            <p className="mb-3 text-sm font-semibold text-white">Block list · {sites.length}</p>
+            <p className="mb-2 text-sm font-semibold text-white">Block list · {sites.length}</p>
+            <div className="mb-3 flex items-center gap-1.5">
+              {(["hard", "soft"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={async () => {
+                    await savePrefs({ ...prefs, blocker_mode: m });
+                    prefsRef.current = { ...prefs, blocker_mode: m };
+                    if (extReady) {
+                      await armExtension();
+                      setExtState(await getExtensionState());
+                    }
+                  }}
+                  className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${
+                    prefs.blocker_mode === m
+                      ? "border-[#b8422e] bg-[#b8422e] text-white"
+                      : "border-white/15 bg-white/5 text-white/70 hover:bg-white/10"
+                  }`}
+                >
+                  {m === "hard" ? "Lockdown" : "Deep Work"}
+                </button>
+              ))}
+              <span className="ml-1 text-[10px] leading-tight text-white/40">
+                {prefs.blocker_mode === "soft"
+                  ? "Shorts, Reels and feeds blocked — tutorials and DMs still work"
+                  : "Whole domains blocked"}
+              </span>
+            </div>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               {PRESETS.map((p) => {
                 const active = presetSites(p.cats).every((s) => blockedSet.has(s));

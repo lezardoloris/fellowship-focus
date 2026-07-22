@@ -31,7 +31,29 @@ export type BlockerSettings = {
   /** per-domain mode override */
   site_modes: Record<string, SiteMode>;
   friction_secs: number;
+  /**
+   * "soft" = block only the doomscroll paths of feed sites (Shorts, Reels…)
+   * so tutorials and DMs still work. "hard" = block those domains outright.
+   */
+  blocker_mode: BlockerMode;
+  /** Block-page voice; "random" rotates. */
+  persona: string;
 };
+
+export type BlockerMode = "soft" | "hard";
+
+/** Feed sites worth blocking by path instead of wholesale, mirroring desktop. */
+export const SOFT_PATH_RULES: Array<{ host: string; paths: string[] }> = [
+  { host: "youtube.com", paths: ["/shorts", "/feed/trending"] },
+  { host: "instagram.com", paths: ["/reels", "/explore", "/stories"] },
+  { host: "facebook.com", paths: ["/reel", "/watch", "/marketplace"] },
+  { host: "tiktok.com", paths: ["/foryou"] },
+  { host: "linkedin.com", paths: ["/feed"] },
+  { host: "reddit.com", paths: ["/r/popular", "/r/all"] },
+];
+
+/** Hosts that soft mode spares at the domain level. */
+export const SOFT_PATH_HOSTS = SOFT_PATH_RULES.map((r) => r.host);
 
 export const DEFAULT_BLOCKER_SETTINGS: BlockerSettings = {
   focus_min: 45,
@@ -49,6 +71,8 @@ export const DEFAULT_BLOCKER_SETTINGS: BlockerSettings = {
   quick_lock_until: null,
   site_modes: {},
   friction_secs: 8,
+  blocker_mode: "hard",
+  persona: "random",
 };
 
 export function mergeBlockerSettings(
@@ -66,6 +90,8 @@ export function mergeBlockerSettings(
   )
     ? base.hard_mode
     : "confirm";
+  base.blocker_mode = base.blocker_mode === "soft" ? "soft" : "hard";
+  base.persona = typeof base.persona === "string" && base.persona ? base.persona : "random";
   return base;
 }
 

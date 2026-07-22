@@ -124,6 +124,37 @@ function ruleForDomain(domain, id, friction) {
   };
 }
 
+// Soft mode: block the doomscroll surfaces of feed sites without killing the
+// whole domain, so tutorials and DMs still work. Mirrors the desktop path rules.
+const SOFT_PATH_RULES = {
+  "youtube.com": ["/shorts", "/feed/trending"],
+  "instagram.com": ["/reels", "/explore", "/stories"],
+  "facebook.com": ["/reel", "/watch", "/marketplace"],
+  "tiktok.com": ["/foryou"],
+  "linkedin.com": ["/feed"],
+  "reddit.com": ["/r/popular", "/r/all"],
+};
+
+function ruleForPath(domain, path, id, friction) {
+  return {
+    id,
+    priority: 2,
+    action: {
+      type: "redirect",
+      redirect: {
+        extensionPath:
+          (friction ? "/friction.html?d=" : "/block.html?d=") +
+          encodeURIComponent(domain + path),
+      },
+    },
+    condition: {
+      requestDomains: [domain],
+      urlFilter: path,
+      resourceTypes: ["main_frame"],
+    },
+  };
+}
+
 /** Higher-priority allow rule so a friction "Continue" isn't re-blocked instantly. */
 function tempAllowRule(domain, id) {
   return {
@@ -155,12 +186,22 @@ async function rebuildRules() {
   const modes = cfg.prefs.site_modes || {};
   const temp = liveTempAllows(cfg);
 
+  const soft = (cfg.prefs || {}).blocker_mode === "soft";
+
   let addRules = [];
   if (effectiveShield(cfg)) {
     const seen = new Set();
     let id = 1;
     for (const site of cfg.sites.filter(Boolean)) {
-      const friction = modes[normalizeSite(site)] === "friction";
+      const base = normalizeSite(site);
+      const friction = modes[base] === "friction";
+      // In soft mode a feed site is blocked only on its doomscroll paths.
+      if (soft && SOFT_PATH_RULES[base]) {
+        for (const path of SOFT_PATH_RULES[base]) {
+          addRules.push(ruleForPath(base, path, id++, friction));
+        }
+        continue;
+      }
       for (const domain of expandDomains(site)) {
         if (seen.has(domain)) continue;
         if (isAllowlisted(domain, allow)) continue;
@@ -192,6 +233,10 @@ async function getStatus() {
     focusOn: !!cfg.focus,
     siteCount: (cfg.sites || []).filter(Boolean).length,
     ruleCount: rules.filter((r) => r.id < TEMP_ALLOW_ID_BASE).length,
+    mode: (cfg.prefs || {}).blocker_mode === "soft" ? "soft" : "hard",
+    // Already collected every day and never shown — surface it.
+    blocksToday: cfg.stats?.blocks || 0,
+    focusMinutesToday: cfg.stats?.focusMinutes || 0,
     version: chrome.runtime.getManifest().version,
   };
 }

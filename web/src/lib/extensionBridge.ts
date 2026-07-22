@@ -69,6 +69,9 @@ export type ExtensionState = {
   focusOn: boolean;
   siteCount: number;
   ruleCount: number;
+  mode: "soft" | "hard";
+  blocksToday: number;
+  focusMinutesToday: number;
   version: string;
 };
 
