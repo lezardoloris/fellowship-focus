@@ -54,6 +54,7 @@ function league(hours: number): WeeklyStats["league"] {
 }
 
 export function loadSoloOkr(): SoloOkr {
+  if (typeof window === "undefined") return { ...DEFAULT_OKR };
   try {
     const raw = localStorage.getItem(OKR_KEY);
     if (!raw) return { ...DEFAULT_OKR };
@@ -65,11 +66,14 @@ export function loadSoloOkr(): SoloOkr {
 
 export function saveSoloOkr(patch: Partial<SoloOkr>): SoloOkr {
   const next = { ...loadSoloOkr(), ...patch };
-  localStorage.setItem(OKR_KEY, JSON.stringify(next));
+  if (typeof window !== "undefined") {
+    localStorage.setItem(OKR_KEY, JSON.stringify(next));
+  }
   return next;
 }
 
 export function logSoloSession(minutes: number, date = new Date()): void {
+  if (typeof window === "undefined") return;
   try {
     const list = JSON.parse(localStorage.getItem(SESSIONS_KEY) || "[]") as Array<{
       date: string;
@@ -87,6 +91,7 @@ export function logSoloSession(minutes: number, date = new Date()): void {
 }
 
 function sessionsByDay(): Record<string, number> {
+  if (typeof window === "undefined") return {};
   try {
     const list = JSON.parse(localStorage.getItem(SESSIONS_KEY) || "[]") as Array<{
       date: string;

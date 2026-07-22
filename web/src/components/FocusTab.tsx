@@ -40,16 +40,18 @@ type GitHubStats = {
 };
 
 export function FocusTab() {
-  const [stats, setStats] = useState<WeeklyStats | null>(null);
+  const [stats, setStats] = useState<WeeklyStats>(() => buildSoloWeeklyStats());
   const [source, setSource] = useState<"desktop" | "solo">("solo");
 
   const load = useCallback(async () => {
-    await desktopBridge.ready();
-    const desktop = await desktopBridge.getWeeklyStats();
-    if (desktop) {
-      setStats(desktop);
-      setSource("desktop");
-      return;
+    // Never block the UI on the desktop bridge — solo dashboard is always ready.
+    if (desktopBridge.present()) {
+      const desktop = await desktopBridge.getWeeklyStats();
+      if (desktop) {
+        setStats(desktop);
+        setSource("desktop");
+        return;
+      }
     }
     setStats(buildSoloWeeklyStats());
     setSource("solo");
@@ -57,51 +59,69 @@ export function FocusTab() {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 20000);
-    return () => clearInterval(id);
+    // If bridge appears a moment later, upgrade to desktop stats once.
+    let cancelled = false;
+    desktopBridge.ready().then(async () => {
+      if (cancelled || !desktopBridge.present()) return;
+      const desktop = await desktopBridge.getWeeklyStats();
+      if (!cancelled && desktop) {
+        setStats(desktop);
+        setSource("desktop");
+      }
+    });
+    const id = setInterval(load, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [load]);
 
   const saveOkr = useCallback(
     async (patch: Record<string, number>) => {
       if (source === "desktop") {
         const s = await desktopBridge.setOkr(patch);
-        if (s) setStats(s);
-        return;
+        if (s) {
+          setStats(s);
+          return;
+        }
       }
-      const map: Record<string, string> = {
-        focus_hours_target: "focus_hours_target",
-        focus_score_target: "focus_score_target",
-        revenue_target_eur: "revenue_target_eur",
-        revenue_current_eur: "revenue_current_eur",
-      };
       const soloPatch: Record<string, number> = {};
-      for (const [k, v] of Object.entries(patch)) {
-        const key = map[k];
-        if (key) soloPatch[key] = v;
-      }
+      if (patch.focus_hours_target != null) soloPatch.focus_hours_target = patch.focus_hours_target;
+      if (patch.focus_score_target != null) soloPatch.focus_score_target = patch.focus_score_target;
+      if (patch.revenue_target_eur != null) soloPatch.revenue_target_eur = patch.revenue_target_eur;
+      if (patch.revenue_current_eur != null) soloPatch.revenue_current_eur = patch.revenue_current_eur;
       saveSoloOkr(soloPatch);
       setStats(buildSoloWeeklyStats());
+      setSource("solo");
     },
     [source]
   );
 
   const today = new Date().toISOString().slice(0, 10);
-
-  if (!stats) {
-    return <p className="animate-pulse text-sm text-white/50">Loading your week…</p>;
-  }
+  const empty = stats.kpis.focus_hours === 0 && stats.kpis.streak === 0;
 
   return (
     <div className="space-y-5">
-      <p className="text-xs text-white/45">
-        {source === "desktop"
-          ? "Live from your desktop screen-time · no guild required"
-          : "Solo tracking from your focus sessions · no guild required · desktop adds distraction scores"}
-      </p>
-      <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
-        <div className="space-y-5">
-          <WeekPanel stats={stats} today={today} onSaveOkr={saveOkr} />
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="font-display text-2xl font-bold text-white">Your week</h1>
+          <p className="mt-1 text-xs text-white/50">
+            Ladder · calendar · OKRs — no guild.{" "}
+            {source === "desktop" ? "Desktop screen-time live." : "Filled by timers you finish on Block."}
+          </p>
         </div>
+      </div>
+
+      {empty && (
+        <div className="glass-panel border border-[#b8422e]/40 px-5 py-4 text-sm text-white/80">
+          Calendar is empty until you complete a focus session. Go to{" "}
+          <span className="font-semibold text-white">Block → Start the timer</span>, finish a cycle —
+          it lands here automatically (streak + ladder XP).
+        </div>
+      )}
+
+      <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
+        <WeekPanel stats={stats} today={today} onSaveOkr={saveOkr} />
         <div className="space-y-5">
           <LadderCard stats={stats} />
           <GitHubCard />
