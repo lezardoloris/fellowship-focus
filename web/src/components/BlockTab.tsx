@@ -685,37 +685,33 @@ export function BlockTab({
         startPhase("focus", 1);
         return;
       }
-      // Second press after a failed arm: the user has been told it won't block.
-      // Never hold the timer hostage to the extension.
-      if (armFailed) {
-        setArmFailed(false);
-        toast.info("Timer running unprotected", "Sites are NOT blocked.");
-        startPhase("focus", 1);
-        return;
-      }
       if (!sitesRef.current.length) {
-        toast.error("Nothing to block", "Add a site or pick a preset first.");
+        // Nothing to block is not a reason to refuse a focus session.
+        toast.info("Timer started", "No sites in your list, so nothing is blocked.");
+        startPhase("focus", 1);
         return;
       }
       // Arm BEFORE the timer. Starting a "focus" session that isn't blocking
       // anything is worse than not starting at all.
+      // Try to arm, but the session starts either way. The timer is the product;
+      // blocking is a bonus layer, and holding one hostage to the other just
+      // left people with an app that appears to do nothing.
       const state = await armExtension();
-      if (!state || !isArmed(state)) {
-        setExtState(state);
-        setArmFailed(true);
-        toast.error(
-          "Blocking not armed",
-          state
-            ? "The extension could not install rules — press Start again to run unprotected."
-            : "Extension unreachable. Press Start again to run the timer without blocking.",
-        );
-        return;
-      }
-      setArmFailed(false);
-      setExtReady(true);
       setExtState(state);
-      await extensionCommand("startFocus");
-      setExtState(await getExtensionState());
+      if (state && isArmed(state)) {
+        setArmFailed(false);
+        setExtReady(true);
+        await extensionCommand("startFocus");
+        setExtState(await getExtensionState());
+      } else {
+        setArmFailed(true);
+        toast.info(
+          "Timer started — not blocking",
+          state
+            ? "The extension could not install rules."
+            : "No blocker connected. Install the app or the Chrome extension to block sites.",
+        );
+      }
       startPhase("focus", 1);
     })();
   };
@@ -902,6 +898,27 @@ export function BlockTab({
     )}
 
     <div className="space-y-4">
+        {/* Nothing can block: say exactly how to fix it, and keep saying it.
+            A toast vanishes and leaves the app looking simply broken. */}
+        {!useDesktopUi && !extReady && (
+          <div className="glass-panel flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-xs">
+            <span className="font-semibold text-white">No blocker connected</span>
+            <span className="text-white/70">
+              A web page cannot block other tabs on its own.
+            </span>
+            <a href="/download" className="font-semibold text-[#e07a63] hover:underline">
+              Install the app (blocks everything)
+            </a>
+            <span className="text-white/40">or</span>
+            <span className="text-white/70">
+              Chrome →{" "}
+              <code className="rounded bg-white/10 px-1 py-0.5">chrome://extensions</code> →
+              Developer mode → Load unpacked →{" "}
+              <code className="rounded bg-white/10 px-1 py-0.5">fellowship-focus/extension</code>
+            </span>
+          </div>
+        )}
+
         {/* One control, one line, right-aligned. The shield state is the only
             thing that matters here; everything else is a quiet fallback. */}
         <div className="flex justify-end">
@@ -996,10 +1013,10 @@ export function BlockTab({
                 {phase === "idle" ? (
                   <button
                     onClick={start}
-                    className={armFailed ? "btn-secondary px-5" : "btn-primary px-5"}
-                    title={armFailed ? "Runs the timer without blocking any site" : undefined}
+                    className="btn-primary px-5"
+                    title={armFailed ? "Blocking is not armed — the timer still runs" : undefined}
                   >
-                    {armFailed ? "Start without blocking" : "Start"}
+                    Start
                   </button>
                 ) : (
                   <button onClick={stop} className="btn-secondary px-5">Stop</button>
