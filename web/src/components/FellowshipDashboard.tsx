@@ -54,7 +54,13 @@ type FellowshipData = {
   };
 };
 
-export function FellowshipDashboard({ code }: { code: string }) {
+export function FellowshipDashboard({
+  code,
+  onCodeResolved,
+}: {
+  code: string;
+  onCodeResolved?: (canonicalCode: string) => void;
+}) {
   const [data, setData] = useState<FellowshipData | null>(null);
   const [loading, setLoading] = useState(true);
   const [joinName, setJoinName] = useState("");
@@ -68,15 +74,26 @@ export function FellowshipDashboard({ code }: { code: string }) {
   const storageKey = `ff-member-${code}`;
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/fellowship/${code}`);
+    setError("");
+    const res = await fetch(`/api/fellowship/${encodeURIComponent(code)}`);
     if (!res.ok) {
-      setError("Fellowship not found");
+      const json = await res.json().catch(() => ({}));
+      setError(json.error || "Fellowship not found");
+      setData(null);
       setLoading(false);
       return;
     }
-    setData(await res.json());
+    const json = (await res.json()) as FellowshipData;
+    setData(json);
+    const canonical = json.fellowship.code?.toLowerCase?.() || code;
+    if (canonical !== code.toLowerCase()) {
+      const prev = localStorage.getItem(storageKey);
+      if (prev) localStorage.setItem(`ff-member-${canonical}`, prev);
+      localStorage.setItem("ff-app-code", canonical);
+      onCodeResolved?.(canonical);
+    }
     setLoading(false);
-  }, [code]);
+  }, [code, storageKey, onCodeResolved]);
 
   useEffect(() => {
     load();
@@ -134,16 +151,36 @@ export function FellowshipDashboard({ code }: { code: string }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#1a1c1e]">
-        <p className="animate-pulse text-sm text-[#9ca3af]">Loading dashboard…</p>
+      <div className="flex items-center justify-center py-24">
+        <p className="animate-pulse text-sm text-white/60">Loading guild…</p>
       </div>
     );
   }
 
   if (error || !data) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#1a1c1e]">
-        <p className="text-red-400">{error || "Not found"}</p>
+      <div className="glass-panel mx-auto max-w-md p-8 text-center">
+        <p className="text-lg font-semibold text-white">Guild unavailable</p>
+        <p className="mt-2 text-sm text-[#fca5a5]">{error || "Not found"}</p>
+        <p className="mt-3 text-xs text-white/50">
+          Code: <code className="text-white/70">{code}</code>
+        </p>
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <button type="button" onClick={() => { setLoading(true); load(); }} className="btn-primary">
+            Retry
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              localStorage.removeItem(storageKey);
+              localStorage.removeItem("ff-app-code");
+              window.location.href = "/app";
+            }}
+            className="btn-secondary"
+          >
+            Back to ladder
+          </button>
+        </div>
       </div>
     );
   }
@@ -156,24 +193,23 @@ export function FellowshipDashboard({ code }: { code: string }) {
     WAYPOINT_IMAGES[journey.currentWaypoint.id] ?? "/assets/journey-map.jpg";
 
   return (
-    <main className="min-h-screen bg-[#1a1c1e]">
-      <header className="border-b border-[#3a3d40] px-4 py-6 md:px-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#9ca3af]">Fellowship</p>
-        <h1 className="font-display mt-1 text-2xl font-bold text-[#f4f4f5] md:text-3xl">{fellowship.name}</h1>
+    <div className="space-y-6">
+      <header className="glass-panel px-5 py-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/50">Guild</p>
+        <h1 className="font-display mt-1 text-2xl font-bold text-white md:text-3xl">{fellowship.name}</h1>
         {myName && (
-          <p className="mt-1 text-sm text-[#9ca3af]">
-            Signed in as <span className="font-medium text-[#f4f4f5]">{myName}</span>
+          <p className="mt-1 text-sm text-white/60">
+            Signed in as <span className="font-medium text-white">{myName}</span>
           </p>
         )}
         {(fellowship.blocker_bypass_penalty ?? 0) > 0 && (
-          <p className="mt-2 max-w-xl text-sm text-[#9ca3af]">
-            Guild rule: −{fellowship.blocker_bypass_penalty} XP if the blocker is turned off during a focus session.
+          <p className="mt-2 max-w-xl text-sm text-white/55">
+            Rule: −{fellowship.blocker_bypass_penalty} XP if blocker is off during focus.
           </p>
         )}
       </header>
 
-      <div className="mx-auto max-w-6xl px-4 py-8 md:px-8">
-        <div className="mb-8 flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3">
           <Link href="/download" className="btn-primary">
             Download Windows app
           </Link>
@@ -185,7 +221,7 @@ export function FellowshipDashboard({ code }: { code: string }) {
               {desktopCopied ? "✓ Copied for desktop" : "Copy for desktop app"}
             </button>
           )}
-        </div>
+      </div>
 
         {!myToken && (
           <form onSubmit={joinFellowship} className="glass-card mb-8 p-6">
@@ -390,7 +426,6 @@ export function FellowshipDashboard({ code }: { code: string }) {
         <footer className="mt-12 text-center text-xs text-[#9ca3af]">
           Share · <code className="text-[#9ca3af]">{shareUrl}</code>
         </footer>
-      </div>
-    </main>
+    </div>
   );
 }

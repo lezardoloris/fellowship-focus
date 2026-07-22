@@ -109,12 +109,13 @@ html {
 /* Frosted translucent panel — foreground controls sit here so the
    fellowship image reads through them (premium glassmorphism). */
 .glass-panel {
-  background: rgba(12, 14, 16, 0.42);
+  /* Solid translucent — blur over looping HD video kills FPS */
+  background: rgba(12, 14, 16, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 16px;
-  backdrop-filter: blur(12px) saturate(1.25);
-  -webkit-backdrop-filter: blur(12px) saturate(1.25);
-  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.18);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.22);
   position: relative;
   z-index: 1;
 }
@@ -134,6 +135,12 @@ html {
     linear-gradient(180deg, rgba(8, 10, 12, 0.1) 0%, transparent 28%, transparent 62%, rgba(8, 10, 12, 0.32) 100%);
 }
 
+/* Full-bleed HD loop — GPU-composited, no kenburns (video already moves). */
+.immersive-video {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
 .immersive-kenburns {
   animation: immersive-kenburns 48s ease-in-out infinite alternate;
   will-change: transform;
@@ -145,6 +152,12 @@ html {
   }
   to {
     transform: scale(1.14) translate3d(-1.5%, -1%, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .immersive-kenburns {
+    animation: none;
   }
 }
 
@@ -160,10 +173,10 @@ html {
 }
 
 .pill-glass {
-  background: rgba(20, 22, 24, 0.55);
+  background: rgba(20, 22, 24, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* Cinematic "video" feel without fighting the website blocker */

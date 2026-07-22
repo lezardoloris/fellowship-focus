@@ -1,4 +1,4 @@
-/** HD immersive scenes from Documents/BLOCKER — full-bleed app backgrounds. */
+/** HD immersive scenes — looping video backgrounds from Documents/BLOCKER. */
 
 export type SceneId =
   | "fellowship"
@@ -16,69 +16,85 @@ export type SceneId =
 
 export type Scene = {
   id: SceneId;
-  src: string;
+  /** Optimized 1080p H.264 loop (muted). */
+  video: string | null;
+  /** Sharp still shown instantly / for reduced-motion. */
+  poster: string;
   label: string;
 };
 
 export const SCENES: Record<SceneId, Scene> = {
   fellowship: {
     id: "fellowship",
-    src: "/scenes/fellowship-ridge.jpg",
+    video: "/scenes/loop-ridge.mp4",
+    poster: "/scenes/loop-ridge-poster.jpg",
     label: "The Fellowship",
   },
   haven: {
     id: "haven",
-    src: "/scenes/cliff-haven.jpg",
+    video: "/scenes/loop-path.mp4",
+    poster: "/scenes/loop-path-poster.jpg",
     label: "Cliff Haven",
   },
   mordor: {
     id: "mordor",
-    src: "/scenes/mordor-watch.jpg",
+    video: "/scenes/loop-ember.mp4",
+    poster: "/scenes/loop-ember-poster.jpg",
     label: "Mordor Watch",
   },
   fire: {
     id: "fire",
-    src: "/scenes/bridge-fire.jpg",
+    video: "/scenes/loop-fire.mp4",
+    poster: "/scenes/loop-fire-poster.jpg",
     label: "Bridge of Fire",
   },
   map: {
     id: "map",
-    src: "/scenes/middle-earth-map.jpeg",
+    // Static map reads clearer for Guild; no matching loop in BLOCKER.
+    video: null,
+    poster: "/scenes/middle-earth-map.jpeg",
     label: "Middle-earth",
   },
   guardians: {
     id: "guardians",
-    src: "/scenes/argons-guardians.jpg",
+    video: "/scenes/loop-dawn.mp4",
+    poster: "/scenes/loop-dawn-poster.jpg",
     label: "The Guardians",
   },
   sentinel: {
     id: "sentinel",
-    src: "/scenes/forest-sentinel.jpeg",
+    video: "/scenes/loop-mist.mp4",
+    poster: "/scenes/loop-mist-poster.jpg",
     label: "Forest Sentinel",
   },
   mist: {
     id: "mist",
-    src: "/scenes/scene-mist.jpeg",
+    video: "/scenes/loop-mist.mp4",
+    poster: "/scenes/loop-mist-poster.jpg",
     label: "Mist",
   },
   gold: {
     id: "gold",
-    src: "/scenes/scene-gold.jpeg",
+    video: "/scenes/loop-ridge.mp4",
+    poster: "/scenes/loop-ridge-poster.jpg",
     label: "Gold Hour",
   },
   dusk: {
     id: "dusk",
-    src: "/scenes/scene-dusk.jpeg",
+    video: "/scenes/loop-dawn.mp4",
+    poster: "/scenes/loop-dawn-poster.jpg",
     label: "Dusk",
   },
   ember: {
     id: "ember",
-    src: "/scenes/scene-ember.jpeg",
+    video: "/scenes/loop-ember.mp4",
+    poster: "/scenes/loop-ember-poster.jpg",
     label: "Ember",
   },
   path: {
     id: "path",
-    src: "/scenes/scene-path.jpeg",
+    video: "/scenes/loop-path.mp4",
+    poster: "/scenes/loop-path-poster.jpg",
     label: "The Path",
   },
 };
@@ -87,7 +103,7 @@ export const SCENES: Record<SceneId, Scene> = {
 export const TAB_SCENE: Record<"block" | "focus" | "guild", SceneId> = {
   block: "mordor",
   focus: "fellowship",
-  guild: "map",
+  guild: "guardians",
 };
 
 export const LANDING_SCENE: SceneId = "fellowship";
@@ -96,6 +112,15 @@ export const BLOCKED_SCENE: SceneId = "fire";
 
 export const ALL_SCENE_IDS = Object.keys(SCENES) as SceneId[];
 
+export function scenePoster(id: SceneId): string {
+  return SCENES[id]?.poster || SCENES.fellowship.poster;
+}
+
+export function sceneVideo(id: SceneId): string | null {
+  return SCENES[id]?.video ?? null;
+}
+
+/** @deprecated use scenePoster — kept for any leftover imports */
 export function sceneSrc(id: SceneId): string {
-  return SCENES[id]?.src || SCENES.fellowship.src;
+  return scenePoster(id);
 }

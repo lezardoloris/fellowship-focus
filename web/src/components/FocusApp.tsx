@@ -81,6 +81,11 @@ export function FocusApp() {
     setToken(resolvedToken);
     setName(resolvedName);
 
+    const tabParam = (params.get("tab") || "").trim().toLowerCase();
+    if (tabParam === "block" || tabParam === "focus" || tabParam === "guild") {
+      setTab(tabParam);
+    }
+
     (async () => {
       try {
         const res = await fetch("/api/auth/session-user");
@@ -193,7 +198,7 @@ export function FocusApp() {
     <Shell scene={TAB_SCENE[tab]}>
       <header className="sticky top-0 z-20">
         <div className="mx-auto flex max-w-6xl items-center justify-center gap-3 px-4 py-4 md:px-8">
-          <nav className="flex items-center gap-1 rounded-full border border-white/20 bg-black/25 p-1 backdrop-blur-md">
+          <nav className="flex items-center gap-1 rounded-full border border-white/20 bg-black/55 p-1">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -214,7 +219,7 @@ export function FocusApp() {
               type="button"
               onClick={disconnectGoogle}
               disabled={authBusy}
-              className="flex items-center gap-2 rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-xs text-white/85 backdrop-blur-md hover:text-white"
+              className="flex items-center gap-2 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85 hover:text-white"
               title={googleUser.email}
             >
               {googleUser.avatarUrl ? (
@@ -228,7 +233,7 @@ export function FocusApp() {
               type="button"
               onClick={connectGoogle}
               disabled={authBusy}
-              className="rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-xs text-white/85 backdrop-blur-md disabled:opacity-50"
+              className="rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85 disabled:opacity-50"
             >
               {authBusy ? "…" : "Google"}
             </button>
@@ -236,7 +241,7 @@ export function FocusApp() {
           {joined && (
             <button
               onClick={share}
-              className="rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-xs text-white/85 backdrop-blur-md"
+              className="rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85"
               title={code || undefined}
             >
               {shared ? "✓" : "Share"}
@@ -259,7 +264,12 @@ export function FocusApp() {
         {tab === "focus" && <FocusTab />}
         {tab === "guild" &&
           (joined ? (
-            <FellowshipDashboard code={code!} />
+            <FellowshipDashboard
+              code={code!}
+              onCodeResolved={(canonical) => {
+                setCode(canonical);
+              }}
+            />
           ) : (
             <GuildDirectory
               onJoined={onJoined}

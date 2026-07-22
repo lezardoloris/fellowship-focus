@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { signIn } from "next-auth/react";
 import { desktopBridge, type WeeklyStats } from "@/lib/desktop";
+import { parseGithubUsername } from "@/lib/githubActivity";
 import { buildSoloWeeklyStats, saveSoloOkr } from "@/lib/soloStats";
 
 const GITHUB_KEY = "ff-github-user";
@@ -33,9 +35,16 @@ function rangeLabel(weekStart: string): string {
 
 type GitHubStats = {
   user: string;
+  avatarUrl: string | null;
   commits: number;
+  prs: number;
+  reviews: number;
+  issues: number;
+  repos: number;
   activeDays: number;
   perDay: Record<string, number>;
+  topRepos: string[];
+  privateIncluded: boolean;
   error?: string;
 };
 
@@ -303,11 +312,34 @@ function GitHubCard() {
   const [draft, setDraft] = useState("");
   const [data, setData] = useState<GitHubStats | null>(null);
   const [loading, setLoading] = useState(false);
+  const [oauthLogin, setOauthLogin] = useState<string | null>(null);
+  const [oauthAvailable, setOauthAvailable] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
 
   useEffect(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem(GITHUB_KEY) || "" : "";
+    const savedRaw = typeof window !== "undefined" ? localStorage.getItem(GITHUB_KEY) || "" : "";
+    const saved = parseGithubUsername(savedRaw) || "";
+    if (saved && saved !== savedRaw) localStorage.setItem(GITHUB_KEY, saved);
     setUser(saved);
     setDraft(saved);
+    fetch("/api/auth/providers-status")
+      .then((r) => r.json())
+      .then((j) => setOauthAvailable(Boolean(j.github)))
+      .catch(() => setOauthAvailable(false));
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((s) => {
+        const login = s?.user?.githubLogin as string | undefined;
+        if (login) {
+          setOauthLogin(login);
+          if (!saved) {
+            setUser(login);
+            setDraft(login);
+            localStorage.setItem(GITHUB_KEY, login);
+          }
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const fetchStats = useCallback(async (u: string) => {
@@ -317,27 +349,46 @@ function GitHubCard() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`https://api.github.com/users/${encodeURIComponent(u)}/events/public?per_page=100`);
+      const res = await fetch(`/api/github/activity?user=${encodeURIComponent(u)}`);
+      const json = await res.json();
       if (!res.ok) {
-        setData({ user: u, commits: 0, activeDays: 0, perDay: {}, error: res.status === 404 ? "User not found" : "GitHub error" });
+        setData({
+          user: u,
+          avatarUrl: null,
+          commits: 0,
+          prs: 0,
+          reviews: 0,
+          issues: 0,
+          repos: 0,
+          activeDays: 0,
+          perDay: {},
+          topRepos: [],
+          privateIncluded: false,
+          error: json.error || "GitHub error",
+        });
         return;
       }
-      const events = (await res.json()) as Array<{ type: string; created_at: string; payload?: { size?: number; commits?: unknown[] } }>;
-      const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
-      const perDay: Record<string, number> = {};
-      let commits = 0;
-      for (const ev of events) {
-        if (ev.type !== "PushEvent") continue;
-        const t = new Date(ev.created_at).getTime();
-        if (t < cutoff) continue;
-        const n = ev.payload?.size ?? ev.payload?.commits?.length ?? 0;
-        commits += n;
-        const day = ev.created_at.slice(0, 10);
-        perDay[day] = (perDay[day] || 0) + n;
+      setData(json as GitHubStats);
+      if (json.user && json.user !== u) {
+        localStorage.setItem(GITHUB_KEY, json.user);
+        setUser(json.user);
+        setDraft(json.user);
       }
-      setData({ user: u, commits, activeDays: Object.keys(perDay).length, perDay });
     } catch {
-      setData({ user: u, commits: 0, activeDays: 0, perDay: {}, error: "Network error" });
+      setData({
+        user: u,
+        avatarUrl: null,
+        commits: 0,
+        prs: 0,
+        reviews: 0,
+        issues: 0,
+        repos: 0,
+        activeDays: 0,
+        perDay: {},
+        topRepos: [],
+        privateIncluded: false,
+        error: "Network error",
+      });
     } finally {
       setLoading(false);
     }
@@ -348,50 +399,123 @@ function GitHubCard() {
   }, [user, fetchStats]);
 
   const connect = () => {
-    const u = draft.trim().replace(/^@/, "");
+    const u = parseGithubUsername(draft);
+    if (!u) {
+      setData({
+        user: draft,
+        avatarUrl: null,
+        commits: 0,
+        prs: 0,
+        reviews: 0,
+        issues: 0,
+        repos: 0,
+        activeDays: 0,
+        perDay: {},
+        topRepos: [],
+        privateIncluded: false,
+        error: "Enter a username or github.com URL",
+      });
+      return;
+    }
     localStorage.setItem(GITHUB_KEY, u);
     setUser(u);
+    setDraft(u);
   };
+
+  async function connectOauth() {
+    setAuthBusy(true);
+    try {
+      await signIn("github", { callbackUrl: "/app?tab=focus" });
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  function clearTracking() {
+    localStorage.removeItem(GITHUB_KEY);
+    setUser("");
+    setDraft("");
+    setData(null);
+  }
 
   return (
     <div className="glass-panel p-6">
-      <p className="text-xs font-medium uppercase tracking-wider text-white/50">GitHub activity</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wider text-white/50">GitHub coding</p>
+        {data?.avatarUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={data.avatarUrl} alt="" className="h-6 w-6 rounded-full" />
+        )}
+      </div>
+
+      {oauthAvailable && !oauthLogin && (
+        <button
+          type="button"
+          onClick={connectOauth}
+          disabled={authBusy}
+          className="btn-primary mt-3 w-full py-2 text-sm"
+        >
+          {authBusy ? "…" : "Connect GitHub"}
+        </button>
+      )}
+      {oauthLogin && (
+        <p className="mt-3 text-[11px] text-white/50">
+          Connected as <span className="text-white/80">@{oauthLogin}</span>
+          {data?.privateIncluded ? " · private + public" : ""}
+        </p>
+      )}
 
       <div className="mt-3 flex gap-2">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && connect()}
-          placeholder="github username"
+          placeholder="username or github.com/…"
           className="input-premium flex-1 py-2 text-sm"
         />
-        <button onClick={connect} className="btn-primary px-4 py-2 text-sm" disabled={loading}>
-          {loading ? "…" : user ? "Refresh" : "Connect"}
+        <button type="button" onClick={connect} className="btn-primary px-4 py-2 text-sm" disabled={loading}>
+          {loading ? "…" : user ? "Refresh" : "Track"}
         </button>
       </div>
+      {user && (
+        <button type="button" onClick={clearTracking} className="mt-2 text-[11px] text-white/40 underline">
+          Clear
+        </button>
+      )}
 
       {data && !data.error && (
         <>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-3">
-              <p className="text-[10px] uppercase tracking-wider text-[#9ca3af]">Commits · 7d</p>
-              <p className="mt-0.5 text-xl font-semibold">{data.commits}</p>
-            </div>
-            <div className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-3">
-              <p className="text-[10px] uppercase tracking-wider text-[#9ca3af]">Active days</p>
-              <p className="mt-0.5 text-xl font-semibold">{data.activeDays}</p>
-            </div>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {[
+              ["Commits", data.commits],
+              ["PRs", data.prs],
+              ["Reviews", data.reviews],
+              ["Repos", data.repos],
+            ].map(([label, val]) => (
+              <div key={label as string} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                <p className="text-[10px] uppercase tracking-wider text-white/45">{label} · 7d</p>
+                <p className="mt-0.5 text-xl font-semibold text-white">{val}</p>
+              </div>
+            ))}
           </div>
-          <p className="mt-3 text-[11px] text-[#6b7075]">
-            Public push events for <span className="text-[#9ca3af]">@{data.user}</span> — a shipping signal alongside focus.
+          {data.topRepos.length > 0 && (
+            <p className="mt-3 truncate text-[11px] text-white/45">
+              {data.topRepos.join(" · ")}
+            </p>
+          )}
+          <p className="mt-2 text-[11px] text-white/40">
+            @{data.user}
+            {!oauthLogin && (data.privateIncluded ? " · private + public" : " · public events")}
+            {" · "}
+            {data.activeDays} active day{data.activeDays === 1 ? "" : "s"}
           </p>
         </>
       )}
 
       {data?.error && <p className="mt-3 text-[11px] text-[#f87171]">{data.error}</p>}
       {!data && !user && (
-        <p className="mt-3 text-[11px] text-[#6b7075]">
-          Add your GitHub username to track commits shipped this week. Public activity only, no login.
+        <p className="mt-3 text-[11px] text-white/40">
+          Track commits, PRs, and reviews from the last 7 days.
         </p>
       )}
     </div>

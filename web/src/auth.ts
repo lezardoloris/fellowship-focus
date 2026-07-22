@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
+import GitHub from "next-auth/providers/github";
 
 /**
  * Google OAuth scopes for Fellowship Focus.
@@ -11,10 +12,14 @@ import Google from "next-auth/providers/google";
  */
 const GOOGLE_SCOPES = "openid email profile";
 
-const googleConfigured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+/** read:user — identity + events for the authenticated user (public + private pushes). */
+const GITHUB_SCOPES = "read:user";
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-  providers: googleConfigured
+const googleConfigured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+const githubConfigured = Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
+
+const providers = [
+  ...(googleConfigured
     ? [
         Google({
           clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -28,7 +33,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           },
         }),
       ]
-    : [],
+    : []),
+  ...(githubConfigured
+    ? [
+        GitHub({
+          clientId: process.env.GITHUB_CLIENT_ID!,
+          clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+          authorization: { params: { scope: GITHUB_SCOPES } },
+        }),
+      ]
+    : []),
+];
+
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  providers,
   session: { strategy: "jwt" },
   pages: {
     signIn: "/app",
@@ -41,11 +59,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.name = profile.name;
         token.picture = (profile as { picture?: string }).picture;
       }
+      if (account?.provider === "github") {
+        const gh = profile as { login?: string; avatar_url?: string; name?: string; email?: string };
+        token.githubLogin = gh.login || (profile as { login?: string })?.login;
+        token.githubAccessToken = account.access_token;
+        token.picture = gh.avatar_url || token.picture;
+        token.name = gh.name || gh.login || token.name;
+        if (gh.email) token.email = gh.email;
+      }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         (session.user as { googleId?: string }).googleId = token.googleId as string | undefined;
+        (session.user as { githubLogin?: string }).githubLogin = token.githubLogin as
+          | string
+          | undefined;
+        // Never expose githubAccessToken to the browser — API routes read it via getToken().
         session.user.email = (token.email as string) ?? session.user.email;
         session.user.name = (token.name as string) ?? session.user.name;
         session.user.image = (token.picture as string) ?? session.user.image;
@@ -56,3 +86,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "dev-only-change-me",
 });
+
+export const authProviders = {
+  google: googleConfigured,
+  github: githubConfigured,
+};

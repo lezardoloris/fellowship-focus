@@ -83,15 +83,16 @@ export function GuildDirectory({
     }
     setJoining(true);
     try {
-      const res = await fetch(`/api/fellowship/${code}/join`, {
+      const res = await fetch(`/api/fellowship/${encodeURIComponent(code)}/join`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to join");
+      const joinedCode = (json.fellowship?.code || code).toLowerCase();
       toast.ok(`Joined ${json.fellowship?.name || code}`);
-      onJoined(code, json.member.token, json.member.name);
+      onJoined(joinedCode, json.member.token, json.member.name);
     } catch (err) {
       toast.error("Join failed", err instanceof Error ? err.message : "Try again");
     } finally {
@@ -131,7 +132,7 @@ export function GuildDirectory({
       const joinJson = await joinRes.json();
       if (!joinRes.ok) throw new Error(joinJson.error || "Created but join failed");
       toast.ok("Guild created", createPublic ? "Listed on the public ladder." : "Private — share the code.");
-      onJoined(code, joinJson.member.token, joinJson.member.name);
+      onJoined(code.toLowerCase(), joinJson.member.token, joinJson.member.name);
     } catch (err) {
       toast.error("Create failed", err instanceof Error ? err.message : "Try again");
     } finally {

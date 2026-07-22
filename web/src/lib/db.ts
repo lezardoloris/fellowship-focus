@@ -473,11 +473,14 @@ export function createFellowship(
     niche?: string;
     objective?: string;
     visibility?: "public" | "private";
+    code?: string;
   }
 ): Fellowship {
   const database = getDb();
   const id = nanoid();
-  const code = `${slugify(name) || "fellowship"}-${nanoid(8)}`;
+  const code = (
+    opts?.code || `${slugify(name) || "fellowship"}-${nanoid(8)}`
+  ).toLowerCase();
   const penalty = Math.max(0, Math.min(100, blockerBypassPenalty));
   const niche = (opts?.niche || "deep-work").toLowerCase().slice(0, 40);
   const objective = (opts?.objective || "").trim().slice(0, 280);
@@ -496,7 +499,32 @@ export function getFellowshipById(id: string): Fellowship | undefined {
 }
 
 export function getFellowshipByCode(code: string): Fellowship | undefined {
-  return getDb().prepare("SELECT * FROM fellowships WHERE code = ?").get(code) as Fellowship | undefined;
+  ensurePublicGuilds();
+  const clean = code.trim().toLowerCase();
+  const database = getDb();
+  const exact = database
+    .prepare("SELECT * FROM fellowships WHERE lower(code) = ?")
+    .get(clean) as Fellowship | undefined;
+  if (exact) return exact;
+
+  // Old random seeds used `${slug}-${nanoid}` — map those back to stable starter codes.
+  const starterCodes = [
+    "the-shire-builders",
+    "rohan-study-hall",
+    "gondor-creators",
+    "mordor-deep-work",
+    "fellowship-of-sweat",
+    "council-of-accountability",
+  ];
+  for (const starter of starterCodes) {
+    if (clean === starter || clean.startsWith(`${starter}-`)) {
+      const row = database
+        .prepare("SELECT * FROM fellowships WHERE lower(code) = ?")
+        .get(starter) as Fellowship | undefined;
+      if (row) return row;
+    }
+  }
+  return undefined;
 }
 
 export function listPublicGuilds(niche?: string | null): PublicGuildCard[] {
@@ -526,54 +554,67 @@ export function listPublicGuilds(niche?: string | null): PublicGuildCard[] {
 }
 
 function seedPublicGuilds(database: Database.Database) {
-  const count = (
-    database.prepare(`SELECT COUNT(*) as c FROM fellowships WHERE visibility = 'public'`).get() as {
-      c: number;
-    }
-  ).c;
-  if (count > 0) return;
-
-  const starters: Array<{ name: string; niche: string; objective: string }> = [
+  const starters: Array<{
+    code: string;
+    name: string;
+    niche: string;
+    objective: string;
+    penalty: number;
+  }> = [
     {
+      code: "the-shire-builders",
       name: "The Shire Builders",
       niche: "builders",
       objective: "Ship one meaningful thing this week. No doomscroll while building.",
+      penalty: 5,
     },
     {
+      code: "rohan-study-hall",
       name: "Rohan Study Hall",
       niche: "students",
       objective: "Protect deep study blocks. Block social until the session ends.",
+      penalty: 5,
     },
     {
+      code: "gondor-creators",
       name: "Gondor Creators",
       niche: "creators",
       objective: "Daily creation streak — publish or practice before entertainment.",
+      penalty: 5,
     },
     {
+      code: "mordor-deep-work",
       name: "Mordor Deep Work",
       niche: "deep-work",
       objective: "Long focus quests. Distractions are the enemy.",
+      penalty: 5,
     },
     {
+      code: "fellowship-of-sweat",
       name: "Fellowship of Sweat",
       niche: "fitness",
       objective: "Train + focus. Log sessions, keep the streak alive.",
+      penalty: 5,
     },
     {
+      code: "council-of-accountability",
       name: "Council of Accountability",
       niche: "accountability",
       objective: "Public check-ins. Bypass the blocker and the guild feels it.",
+      penalty: 15,
     },
   ];
 
   const insert = database.prepare(
-    `INSERT INTO fellowships (id, code, name, blocker_bypass_penalty, niche, objective, visibility)
+    `INSERT OR IGNORE INTO fellowships (id, code, name, blocker_bypass_penalty, niche, objective, visibility)
      VALUES (?, ?, ?, ?, ?, ?, 'public')`
   );
   for (const s of starters) {
-    const id = nanoid();
-    const code = `${slugify(s.name) || "guild"}-${nanoid(8)}`;
-    insert.run(id, code, s.name, s.niche === "accountability" ? 15 : 5, s.niche, s.objective);
+    const exists = database
+      .prepare(`SELECT id FROM fellowships WHERE lower(code) = ?`)
+      .get(s.code) as { id: string } | undefined;
+    if (exists) continue;
+    insert.run(nanoid(), s.code, s.name, s.penalty, s.niche, s.objective);
   }
 }
 
