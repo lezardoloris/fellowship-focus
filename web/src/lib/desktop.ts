@@ -87,6 +87,20 @@ function parse(r: string): DesktopState {
   }
 }
 
+/**
+ * True when the page is running inside the desktop app's webview.
+ *
+ * Independent of the WebChannel handshake: the desktop appends a marker to its
+ * user agent (see web_dashboard.py). The handshake can be late or fail, and when
+ * it did the app fell back to browser mode and offered "Get the app" to someone
+ * already inside the app. The UA can't be late.
+ */
+export function isDesktopShell(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return ua.includes("FellowshipFocusDesktop") || ua.includes("QtWebEngine");
+}
+
 export const desktopBridge = {
   present(): boolean {
     return raw() !== null;

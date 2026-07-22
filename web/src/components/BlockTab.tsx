@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { desktopBridge, type DesktopState } from "@/lib/desktop";
+import { desktopBridge, isDesktopShell, type DesktopState } from "@/lib/desktop";
 import { playAlarm } from "@/lib/alarm";
 import { logSoloSession } from "@/lib/soloStats";
 import {
@@ -645,7 +645,9 @@ export function BlockTab({
   const start = () => {
     void (async () => {
       // Desktop drives its own system-wide blocker — start immediately.
-      if (isDesktop) {
+      // isDesktopShell() covers the case where the Qt bridge hasn't landed yet:
+      // demanding a Chrome extension inside the desktop app is never right.
+      if (isDesktop || isDesktopShell()) {
         startPhase("focus", 1);
         return;
       }
@@ -733,7 +735,8 @@ export function BlockTab({
   }
 
   useEffect(() => {
-    if (isDesktop) return;
+    // No extension can exist in the desktop webview — don't poll for one.
+    if (isDesktop || isDesktopShell()) return;
     let alive = true;
     const refresh = async () => {
       const st = await getExtensionState();
@@ -822,8 +825,12 @@ export function BlockTab({
   const on = Boolean(dt?.shieldOn && dt?.active);
   const inSession = phase !== "idle";
   const extArmed = isArmed(extState);
+  // Inside the desktop webview a Chrome extension can never exist, so never
+  // fall back to the browser UI there — even if the Qt bridge is slow or broken.
+  const inShell = isDesktopShell();
+  const useDesktopUi = isDesktop || inShell;
   // Whichever engine is in play, this is "are sites actually blocked right now".
-  const shieldLive = isDesktop ? on : extArmed;
+  const shieldLive = useDesktopUi ? on : extArmed;
 
   return (
     <>
@@ -874,7 +881,7 @@ export function BlockTab({
               Shield {shieldLive ? "ON" : "OFF"}
             </span>
 
-            {!isDesktop && !extReady ? (
+            {!useDesktopUi && !extReady ? (
               <>
                 <a
                   href="/download"
@@ -896,9 +903,15 @@ export function BlockTab({
                 role="switch"
                 aria-checked={shieldLive}
                 aria-label={shieldLive ? "Turn shield off" : "Turn shield on"}
-                disabled={shieldBusy || (isDesktop && !dt?.certReady)}
-                onClick={isDesktop ? toggleShield : toggleExtensionShield}
-                title={shieldLive ? "Turn the shield off" : "Turn the shield on"}
+                disabled={shieldBusy || (useDesktopUi && (!isDesktop || !dt?.certReady))}
+                onClick={useDesktopUi ? toggleShield : toggleExtensionShield}
+                title={
+                  useDesktopUi && !isDesktop
+                    ? "Connecting to the blocker…"
+                    : shieldLive
+                      ? "Turn the shield off"
+                      : "Turn the shield on"
+                }
                 className={`relative h-7 w-12 shrink-0 rounded-full transition disabled:opacity-40 ${
                   shieldLive ? "bg-[#b8422e]" : "bg-white/20"
                 }`}
