@@ -76,6 +76,7 @@ from fellowship_focus.ui.float_timer import FloatTimerWindow
 from fellowship_focus.ui.theme import ASSETS_DIR, app_stylesheet, font_sans, load_fonts, resolve_app_icon_path
 from fellowship_focus.ui.toast import ToastManager
 from fellowship_focus.ui.usage_page import UsagePage
+from fellowship_focus.ui.session_nudge import SessionNudge
 from fellowship_focus.ui.web_dashboard import WebDashboardPage
 from fellowship_focus.usage_tracker import UsageTracker, focus_score
 from fellowship_focus.updater import apply_git_update, check_for_updates
@@ -245,6 +246,19 @@ class MainWindow(QMainWindow):
         self._sync_timer = QTimer(self)
         self._sync_timer.timeout.connect(self._refresh_journey)
         self._sync_timer.start(30000)
+
+        # Proactive nudge: if you're clearly working (active input, no session,
+        # window hidden), offer to start a session so the deep-work time gets
+        # tracked. Discreet, self-dismissing, never nags twice in a row.
+        self._nudge = SessionNudge()
+        self._nudge.accepted.connect(self._on_nudge_accept)
+        self._nudge.dismissed.connect(self._on_nudge_dismiss)
+        self._nudge_snooze_until = 0.0
+        self._nudge_active_streak = 0
+        self._nudge_timer = QTimer(self)
+        self._nudge_timer.timeout.connect(self._maybe_nudge_session)
+        if bool(self.config.get("session_nudge_enabled", True)):
+            self._nudge_timer.start(30000)
 
         self._usage_sync_timer = QTimer(self)
         self._usage_sync_timer.timeout.connect(self._sync_usage)
@@ -1766,6 +1780,47 @@ class MainWindow(QMainWindow):
         ):
             self._toggle_from_tray()
 
+    def _maybe_nudge_session(self) -> None:
+        """Offer to start a session when the user is working untracked."""
+        import time
+
+        from fellowship_focus.usage_tracker import idle_seconds
+
+        # Never over an already-running session, a visible main window, or a
+        # still-showing nudge; respect a snooze after a dismissal.
+        if self.pomodoro.is_running or self._float_timer.isVisible():
+            self._nudge_active_streak = 0
+            return
+        if self.isVisible() and not self.isMinimized():
+            return
+        if self._nudge.isVisible():
+            return
+        if time.monotonic() < self._nudge_snooze_until:
+            return
+
+        # Require a genuine stretch of activity (idle < 60s) sustained across a
+        # few ticks, so it fires on real work, not a passing mouse wiggle.
+        if idle_seconds() < 60:
+            self._nudge_active_streak += 1
+        else:
+            self._nudge_active_streak = 0
+        if self._nudge_active_streak < 4:  # ~2 min of continuous activity
+            return
+
+        self._nudge_active_streak = 0
+        self._nudge.show_nudge()
+
+    def _on_nudge_accept(self) -> None:
+        self._show_from_tray()
+        if not self.pomodoro.is_running:
+            self._start_pomodoro()
+
+    def _on_nudge_dismiss(self) -> None:
+        import time
+
+        # Snooze 30 min so a "not now" is respected.
+        self._nudge_snooze_until = time.monotonic() + 1800
+
     def _show_from_tray(self) -> None:
         self.showNormal()
         self.raise_()
@@ -1891,6 +1946,8 @@ class MainWindow(QMainWindow):
             self._stop_pomodoro()
         if hasattr(self, "_float_timer"):
             self._float_timer.hide_timer()
+        if hasattr(self, "_nudge"):
+            self._nudge.hide()
         self._release_blocker_infra()
         self.tray.hide()
         QApplication.quit()
