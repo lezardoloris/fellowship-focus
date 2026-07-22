@@ -250,16 +250,16 @@ function GuildGate({
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="relative min-h-screen overflow-hidden text-white">
-      {/* Full-bleed cinematic scene — the product, not a black box */}
-      <div className="pointer-events-none fixed inset-0 -z-10" aria-hidden>
+    <main className="relative isolate min-h-screen overflow-x-hidden text-white">
+      {/* Decorative only — never captures clicks (Qt WebEngine can mishandle -z-index) */}
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden>
         <div
           className="focus-kenburns absolute inset-[-6%] bg-cover bg-center"
           style={{ backgroundImage: "url('/fellowship-hero.png')" }}
         />
         <div className="app-scrim absolute inset-0" />
       </div>
-      {children}
+      <div className="relative z-10">{children}</div>
     </main>
   );
 }

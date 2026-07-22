@@ -223,7 +223,22 @@ export function BlockTab({
   }
 
   const addCategory = (c: (typeof CATEGORIES)[number]) => post({ action: "add", sites: c.sites, category: c.id });
-  const applyPreset = (p: (typeof PRESETS)[number]) => post({ action: "add", sites: presetSites(p.cats), category: "preset" });
+  const removeCategorySites = async (sitesToRemove: string[]) => {
+    for (const site of sitesToRemove) {
+      await post({ action: "remove", site });
+    }
+  };
+  const toggleCategory = async (c: (typeof CATEGORIES)[number]) => {
+    const active = c.sites.every((s) => blockedSet.has(s));
+    if (active) await removeCategorySites(c.sites);
+    else await addCategory(c);
+  };
+  const togglePreset = async (p: (typeof PRESETS)[number]) => {
+    const list = presetSites(p.cats);
+    const active = list.every((s) => blockedSet.has(s));
+    if (active) await removeCategorySites(list);
+    else await post({ action: "add", sites: list, category: "preset" });
+  };
   const removeSite = (site: string) => post({ action: "remove", site });
   function addCustom(e: React.FormEvent) {
     e.preventDefault();
@@ -618,44 +633,44 @@ export function BlockTab({
               )}
             </div>
 
-            {/* Preconfigured lists */}
+            {/* Preconfigured lists — click to toggle on/off */}
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               {PRESETS.map((p) => {
                 const active = presetSites(p.cats).every((s) => blockedSet.has(s));
                 return (
                   <button
                     key={p.id}
-                    onClick={() => applyPreset(p)}
-                    disabled={active}
-                    className={`rounded-lg border px-3 py-2 text-left transition ${
+                    type="button"
+                    onClick={() => togglePreset(p)}
+                    className={`rounded-lg border px-3 py-2.5 text-left transition ${
                       active
-                        ? "border-white/10 bg-white/5 text-white/40"
-                        : "border-[#b8422e]/50 bg-[#b8422e]/10 text-white hover:bg-[#b8422e]/20"
+                        ? "border-[#b8422e] bg-[#b8422e]/25 text-white"
+                        : "border-white/20 bg-black/35 text-white hover:border-white/40 hover:bg-black/45"
                     }`}
-                    title={presetSites(p.cats).join(", ")}
+                    title={active ? `Click to remove: ${presetSites(p.cats).join(", ")}` : presetSites(p.cats).join(", ")}
                   >
                     <span className="block text-xs font-semibold">{active ? `✓ ${p.label}` : p.label}</span>
-                    <span className="block text-[10px] text-white/45">{p.desc}</span>
+                    <span className="block text-[10px] text-white/60">{p.desc}</span>
                   </button>
                 );
               })}
             </div>
 
-            {/* Granular categories */}
+            {/* Granular categories — click to toggle */}
             <div className="mt-3 flex flex-wrap gap-1.5">
               {CATEGORIES.map((c) => {
                 const active = c.sites.every((s) => blockedSet.has(s));
                 return (
                   <button
                     key={c.id}
-                    onClick={() => addCategory(c)}
-                    disabled={active}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                    type="button"
+                    onClick={() => toggleCategory(c)}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition ${
                       active
-                        ? "border-white/10 text-white/40"
-                        : "border-white/15 text-white/80 hover:bg-white/10"
+                        ? "border-[#b8422e] bg-[#b8422e] text-white"
+                        : "border-white/25 bg-black/35 text-white hover:bg-black/50"
                     }`}
-                    title={c.sites.join(", ")}
+                    title={active ? `Click to unblock ${c.label}` : `Block ${c.label}`}
                   >
                     {active ? `✓ ${c.label}` : `+ ${c.label}`}
                   </button>
