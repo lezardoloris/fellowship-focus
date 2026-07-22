@@ -9,6 +9,7 @@ import { HabitTracker } from "@/components/HabitTracker";
 import { StakesPanel } from "@/components/StakesPanel";
 import { TrustPanel } from "@/components/TrustPanel";
 import { AgendaPanel } from "@/components/AgendaPanel";
+import { PremiumLoader } from "@/components/PremiumLoader";
 
 type FellowshipData = {
   fellowship: { id: string; code: string; name: string; blocker_bypass_penalty?: number };
@@ -150,11 +151,7 @@ export function FellowshipDashboard({
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-24">
-        <p className="animate-pulse text-sm text-white/60">Loading guild…</p>
-      </div>
-    );
+    return <PremiumLoader full />;
   }
 
   if (error || !data) {

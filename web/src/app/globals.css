@@ -155,8 +155,37 @@ html {
   }
 }
 
+.premium-loader-ring {
+  transform-origin: 32px 32px;
+  animation: premium-loader-spin 0.85s linear infinite;
+}
+
+.premium-loader-mark {
+  transform-origin: 32px 32px;
+  animation: premium-loader-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes premium-loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes premium-loader-pulse {
+  0%,
+  100% {
+    opacity: 0.85;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .immersive-kenburns {
+  .premium-loader-ring,
+  .premium-loader-mark {
     animation: none;
   }
 }

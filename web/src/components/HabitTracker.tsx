@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { HABIT_PRESETS, getMonthDays, verificationBadge } from "@/lib/habits";
+import { PremiumLoader } from "@/components/PremiumLoader";
 
 type HabitRow = {
   id: string;
@@ -60,7 +61,7 @@ export function HabitTracker({ token, fellowshipCode }: { token: string; fellows
     await load();
   }
 
-  if (loading) return <p className="text-stone-500">Loading habits…</p>;
+  if (loading) return <PremiumLoader full className="min-h-[12vh]" size="sm" />;
   if (!data) return <p className="text-red-400">Could not load habits</p>;
 
   const daysInMonth = getMonthDays(year, month);

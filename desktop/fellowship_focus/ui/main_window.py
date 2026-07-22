@@ -186,6 +186,8 @@ class MainWindow(QMainWindow):
 
         self._float_timer = FloatTimerWindow()
         self._float_timer.closed_by_user.connect(self._on_float_timer_closed)
+        self._float_timer.open_app_requested.connect(self._show_from_tray)
+        self._float_timer.remaining_changed.connect(self._on_float_remaining)
 
         self.usage_tracker = UsageTracker(lambda: self.config)
         self.usage_page = UsagePage(self.usage_tracker, self.config, save_config)
@@ -1191,14 +1193,17 @@ class MainWindow(QMainWindow):
             remaining = 0
         label = str(payload.get("label") or payload.get("phase") or "FOCUS")
         self._float_timer.update_timer(remaining, label)
+        self._refresh_tray_menu()
         return {"ok": True, "remaining": remaining}
 
     def _web_hide_float_timer(self) -> dict:
         self._float_timer.hide_timer()
+        self._refresh_tray_menu()
         return {"ok": True}
 
     def _on_float_timer_closed(self) -> None:
         """User hit × on the OS float timer — ask the web app to end the session."""
+        self._refresh_tray_menu()
         try:
             view = getattr(self.web_dashboard, "_view", None)
             if view is not None:
@@ -1208,6 +1213,8 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def _on_float_remaining(self, remaining: int, label: str) -> None:
+        self._update_tray_tooltip(remaining, label)
     def _sync_settings_from_config(self) -> None:
         """Reflect OKR edits made from the web app back into the settings spinboxes."""
         c = self.config
@@ -1670,32 +1677,111 @@ class MainWindow(QMainWindow):
         from PySide6.QtWidgets import QMenu
 
         self.tray = QSystemTrayIcon(self)
-        self.tray.setToolTip("Fellowship Focus")
-        menu = QMenu()
-        show_a = QAction("Show", self)
-        show_a.triggered.connect(self.show)
-        update_a = QAction("Check for updates", self)
-        update_a.triggered.connect(self._check_updates_manual)
-        quit_a = QAction("Quit", self)
-        quit_a.triggered.connect(self._quit_app)
-        menu.addAction(show_a)
-        menu.addAction(update_a)
-        menu.addSeparator()
-        menu.addAction(quit_a)
-        self.tray.setContextMenu(menu)
-        self.tray.activated.connect(lambda r: self.show() if r == QSystemTrayIcon.ActivationReason.Trigger else None)
+        self._tray_menu = QMenu()
+        self.tray.setContextMenu(self._tray_menu)
+        self.tray.activated.connect(self._on_tray_activated)
         icon_path = resolve_app_icon_path()
         if icon_path:
             self.tray.setIcon(QIcon(str(icon_path)))
         else:
             self.tray.setIcon(self.windowIcon())
+        self._refresh_tray_menu()
+        self._update_tray_tooltip(0, "")
         self.tray.show()
+
+    def _on_tray_activated(self, reason) -> None:
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            self._toggle_from_tray()
+
+    def _show_from_tray(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _toggle_from_tray(self) -> None:
+        if self.isVisible() and not self.isMinimized():
+            self.hide()
+        else:
+            self._show_from_tray()
+
+    def _update_tray_tooltip(self, remaining: int, label: str) -> None:
+        if remaining > 0 and label:
+            m, s = divmod(remaining, 60)
+            tip = f"Fellowship Focus · {label} {m:02d}:{s:02d}"
+        elif self._float_timer.isVisible():
+            tip = f"Fellowship Focus · {self._float_timer.phase_label() or 'Focus'}"
+        else:
+            tip = "Fellowship Focus — click to open"
+        self.tray.setToolTip(tip)
+
+    def _refresh_tray_menu(self) -> None:
+        menu = self._tray_menu
+        menu.clear()
+
+        active = self._float_timer.isVisible()
+        if active:
+            rem = self._float_timer.remaining()
+            m, s = divmod(max(0, rem), 60)
+            status = menu.addAction(
+                f"{self._float_timer.phase_label()}  {m:02d}:{s:02d}"
+            )
+            status.setEnabled(False)
+            menu.addSeparator()
+
+        show_a = QAction("Open Fellowship Focus", self)
+        show_a.triggered.connect(self._show_from_tray)
+        menu.addAction(show_a)
+
+        hide_a = QAction("Hide window", self)
+        hide_a.triggered.connect(self.hide)
+        menu.addAction(hide_a)
+
+        if active:
+            menu.addSeparator()
+            end_a = QAction("End focus session", self)
+            end_a.triggered.connect(self._tray_end_session)
+            menu.addAction(end_a)
+
+            show_float = QAction("Show floating timer", self)
+            show_float.triggered.connect(
+                lambda: self._float_timer.update_timer(
+                    self._float_timer.remaining(), self._float_timer.phase_label()
+                )
+            )
+            menu.addAction(show_float)
+
+        menu.addSeparator()
+        update_a = QAction("Check for updates", self)
+        update_a.triggered.connect(self._check_updates_manual)
+        menu.addAction(update_a)
+        quit_a = QAction("Quit", self)
+        quit_a.triggered.connect(self._quit_app)
+        menu.addAction(quit_a)
+
+    def _tray_end_session(self) -> None:
+        self._float_timer.hide_timer()
+        self._on_float_timer_closed()
+        self._refresh_tray_menu()
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.config.get("minimize_to_tray", True):
-            self._release_blocker_on_hide()
+            session_on = self._float_timer.isVisible() or self.pomodoro.is_running
+            # Keep focus session + floating timer alive when the window hides.
+            if not session_on:
+                self._release_blocker_on_hide()
             event.ignore()
             self.hide()
+            if session_on:
+                self._float_timer.raise_()
+                self.tray.showMessage(
+                    "Focus continues",
+                    "Timer stays on screen. Right-click the tray icon for controls.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    3500,
+                )
             return
         self._quit_app()
 
@@ -1721,6 +1807,8 @@ class MainWindow(QMainWindow):
             self._sync_usage()
         if self.pomodoro.is_running:
             self._stop_pomodoro()
+        if hasattr(self, "_float_timer"):
+            self._float_timer.hide_timer()
         self._release_blocker_infra()
         self.tray.hide()
         QApplication.quit()

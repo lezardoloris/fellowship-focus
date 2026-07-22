@@ -33,7 +33,14 @@ Your Koncentro certificate (`~/.mitmproxy/`) works here too — no need to reins
 
 ## System tray
 
-Closing the window minimizes to tray (like Koncentro). Blocking continues during active quests.
+Closing the window minimizes to the **system tray** (bottom-right, near the clock).
+
+- **Floating timer** stays always-on-top over other windows while a session runs
+- **Left-click** tray icon → open / hide the app
+- **Right-click** tray → Open, Hide, End focus session, Show floating timer, Quit
+- **Right-click / double-click** the floating timer → open app or end session
+- During an active focus session, closing the window keeps the shield + timer alive
+
 
 ## Sync
 

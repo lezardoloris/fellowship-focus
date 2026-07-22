@@ -12,7 +12,8 @@ import {
   type HistorySuggestion,
 } from "@/lib/extensionBridge";
 import { useToast } from "@/components/Toasts";
-import { BlockerControls, requestHardUnlock } from "@/components/BlockerControls";
+import { PremiumLoader } from "@/components/PremiumLoader";
+import { requestHardUnlock } from "@/components/BlockerControls";
 import {
   DEFAULT_BLOCKER_SETTINGS,
   mergeBlockerSettings,
@@ -177,7 +178,18 @@ export function BlockTab({
   }, [token]);
 
   // Detect the desktop bridge; if present, load state from it.
+  // Meanwhile hydrate local prefs immediately so the tab isn't blocked on the bridge.
   useEffect(() => {
+    try {
+      const bl = JSON.parse(localStorage.getItem(LOCAL_BL_KEY) || "[]") as BlocklistEntry[];
+      if (Array.isArray(bl) && bl.length) setSites(bl);
+      const pf = JSON.parse(localStorage.getItem(LOCAL_PREFS_KEY) || "null") as Partial<Prefs> | null;
+      if (pf) setPrefs(mergeBlockerSettings(pf));
+    } catch {
+      /* ignore */
+    }
+    setLoading(false);
+
     let alive = true;
     desktopBridge.ready().then(async () => {
       if (!alive) return;
@@ -185,7 +197,6 @@ export function BlockTab({
         const st = await desktopBridge.getState();
         if (!alive) return;
         applyDesktopState(st);
-        setLoading(false);
       }
       setDtReady(true);
     });
@@ -199,6 +210,15 @@ export function BlockTab({
     if (!dtReady || desktopBridge.present()) return;
     load();
   }, [dtReady, load]);
+
+  // Settings panel may update prefs/sites — stay in sync.
+  useEffect(() => {
+    const onReload = () => {
+      if (!desktopBridge.present()) load();
+    };
+    window.addEventListener("ff-blocker-reload", onReload);
+    return () => window.removeEventListener("ff-blocker-reload", onReload);
+  }, [load]);
 
   // Keep the shield/state fresh while inside the desktop app.
   useEffect(() => {
@@ -585,16 +605,16 @@ export function BlockTab({
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
   const ss = String(remaining % 60).padStart(2, "0");
 
-  if (loading) return <p className="animate-pulse text-sm text-white/50">Loading…</p>;
+  if (loading) return <PremiumLoader full />;
 
   const on = Boolean(dt?.shieldOn && dt?.active);
   const inSession = phase !== "idle";
 
   return (
     <>
-    {inSession && (
+    {inSession && !isDesktop && (
       <div className="fixed bottom-5 right-5 z-[9999]">
-        <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-[#141618]/95 px-1.5 py-1.5 shadow-2xl backdrop-blur-md">
+        <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-[#141618]/95 px-1.5 py-1.5 shadow-2xl">
           <div className="flex items-center gap-3 rounded-lg px-3.5 py-2">
             <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#b8422e]" />
             <span className="font-display text-base font-semibold tabular-nums text-white">
@@ -809,35 +829,6 @@ export function BlockTab({
           </div>
         </div>
 
-        <details className="glass-panel overflow-hidden">
-          <summary className="cursor-pointer list-none px-4 py-3 text-sm text-white/70 hover:text-white [&::-webkit-details-marker]:hidden">
-            More · lock, schedule, allowlist, history
-          </summary>
-          <BlockerControls
-            settings={prefs}
-            onChange={(next) => savePrefs(next)}
-            sites={sites.map((s) => s.site)}
-            devices={devices}
-            onImportSites={(list) => post({ action: "add", sites: list, category: "import" })}
-            suggestions={suggestions}
-            onScanHistory={scanHistory}
-            scanBusy={scanBusy}
-            disabled={inSession}
-            onCoachApply={(blocklist, presetId) => {
-              post({ action: "add", sites: blocklist, category: "ai" });
-              const tp = TIMER_PRESETS.find((t) => t.id === presetId);
-              if (tp) {
-                savePrefs({
-                  ...prefs,
-                  focus_min: tp.focus,
-                  break_min: tp.break,
-                  cycles: tp.cycles,
-                });
-              }
-              toast.ok("Applied");
-            }}
-          />
-        </details>
     </div>
     </>
   );

@@ -250,9 +250,9 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
         </div>
       )}
 
-      {!immersive && (
+      {!immersive && !desktopBridge.present() && (
         <div className="fixed bottom-5 right-5 z-[9999]">
-          <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-[#141618]/95 px-1.5 py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur-md">
+          <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-[#141618]/95 px-1.5 py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.55)]">
             <button
               type="button"
               onClick={() => setImmersive(true)}

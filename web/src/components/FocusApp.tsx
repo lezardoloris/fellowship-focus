@@ -8,7 +8,9 @@ import { FocusTab } from "@/components/FocusTab";
 import { FellowshipDashboard } from "@/components/FellowshipDashboard";
 import { GuildDirectory } from "@/components/GuildDirectory";
 import { ImmersiveScene } from "@/components/ImmersiveScene";
-import { TAB_SCENE, type SceneId } from "@/lib/scenes";
+import { SettingsPanel, useBackgroundPrefs } from "@/components/SettingsPanel";
+import { PremiumLoader } from "@/components/PremiumLoader";
+import { type SceneId } from "@/lib/scenes";
 
 type Tab = "block" | "focus" | "guild";
 
@@ -31,7 +33,7 @@ type GoogleUserInfo = {
 
 export function FocusApp() {
   const params = useSearchParams();
-  const [tab, setTab] = useState<Tab>("focus");
+  const [tab, setTab] = useState<Tab>("block");
   const [code, setCode] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
@@ -39,6 +41,8 @@ export function FocusApp() {
   const [shared, setShared] = useState(false);
   const [googleUser, setGoogleUser] = useState<GoogleUserInfo | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [bgPrefs, setBgPrefs] = useBackgroundPrefs();
 
   // Resolve guild membership, then optional Google solo identity.
   useEffect(() => {
@@ -86,6 +90,9 @@ export function FocusApp() {
       setTab(tabParam);
     }
 
+    // Paint immediately from localStorage — auth hydrates in the background.
+    setReady(true);
+
     (async () => {
       try {
         const res = await fetch("/api/auth/session-user");
@@ -95,7 +102,7 @@ export function FocusApp() {
           setGoogleUser(gu);
           localStorage.setItem(GOOGLE_USER_KEY, JSON.stringify(gu));
           if (resolvedToken && resolvedToken !== gu.token) {
-            await fetch("/api/auth/session-user", {
+            fetch("/api/auth/session-user", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ token: resolvedToken }),
@@ -121,8 +128,6 @@ export function FocusApp() {
         }
       } catch {
         /* auth optional until env configured */
-      } finally {
-        setReady(true);
       }
     })();
   }, [params]);
@@ -190,12 +195,18 @@ export function FocusApp() {
     setTimeout(() => setShared(false), 2000);
   }
 
-  if (!ready) return null;
+  if (!ready) {
+    return (
+      <Shell scene={bgPrefs.scene}>
+        <PremiumLoader full className="min-h-screen" size="lg" />
+      </Shell>
+    );
+  }
 
   const joined = Boolean(code && token);
 
   return (
-    <Shell scene={TAB_SCENE[tab]}>
+    <Shell scene={bgPrefs.scene}>
       <header className="sticky top-0 z-20">
         <div className="mx-auto flex max-w-6xl items-center justify-center gap-3 px-4 py-4 md:px-8">
           <nav className="flex items-center gap-1 rounded-full border border-white/20 bg-black/55 p-1">
@@ -256,6 +267,15 @@ export function FocusApp() {
               {code}
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/55 text-white/85 hover:text-white"
+            aria-label="Settings"
+            title="Settings"
+          >
+            <SettingsIcon />
+          </button>
         </div>
       </header>
 
@@ -278,7 +298,35 @@ export function FocusApp() {
             />
           ))}
       </div>
+
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        bgPrefs={bgPrefs}
+        onBgPrefsChange={setBgPrefs}
+        token={token}
+        code={code}
+        name={name}
+      />
     </Shell>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      <path
+        d="M19.4 13a7.8 7.8 0 0 0 .1-2l2-1.2-2-3.4-2.3.6a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.5 2.9a7.4 7.4 0 0 0-1.7 1L6.5 6.4l-2 3.4 2 1.2a7.8 7.8 0 0 0 0 2l-2 1.2 2 3.4 2.3-.6a7.4 7.4 0 0 0 1.7 1L11 21h4l.5-2.9a7.4 7.4 0 0 0 1.7-1l2.3.6 2-3.4-2-1.2Z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

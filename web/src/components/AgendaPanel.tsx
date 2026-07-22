@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { PremiumLoader } from "@/components/PremiumLoader";
 
 type Day = {
   date: string;
@@ -96,7 +97,7 @@ export function AgendaPanel({ token }: { token: string }) {
   const today = new Date().toISOString().slice(0, 10);
 
   if (loading) {
-    return <p className="animate-pulse text-sm text-[#9ca3af]">Loading your week…</p>;
+    return <PremiumLoader full className="min-h-[12vh]" size="sm" />;
   }
   if (!data) return null;
 

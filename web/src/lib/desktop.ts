@@ -118,7 +118,7 @@ export const desktopBridge = {
       poll = setInterval(() => {
         if (raw()) finish();
       }, 150);
-      timeout = setTimeout(finish, 6000);
+      timeout = setTimeout(finish, 500);
     });
   },
 

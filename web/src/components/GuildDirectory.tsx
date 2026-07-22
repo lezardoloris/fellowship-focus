@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/Toasts";
+import { PremiumLoader } from "@/components/PremiumLoader";
 
 type Niche = { id: string; label: string; blurb: string };
 type GuildCard = {
@@ -340,7 +341,7 @@ export function GuildDirectory({
       </div>
 
       {loading ? (
-        <p className="animate-pulse text-sm text-white/45">Loading guilds…</p>
+        <PremiumLoader full className="min-h-[20vh]" />
       ) : guilds.length === 0 ? (
         <div className="glass-panel p-6 text-sm text-white/55">
           No public guilds in this niche yet.{" "}
