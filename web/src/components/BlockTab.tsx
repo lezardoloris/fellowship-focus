@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { desktopBridge, type DesktopState } from "@/lib/desktop";
 import { playAlarm } from "@/lib/alarm";
+import { logSoloSession } from "@/lib/soloStats";
 
 type BlocklistEntry = { id: string; site: string; category: string | null };
 type Prefs = {
@@ -294,8 +295,9 @@ export function BlockTab({
   }, []);
 
   const logSession = useCallback(() => {
-    if (!token) return;
     const mins = Math.max(1, Math.round(focusTotalSec / 60));
+    logSoloSession(mins);
+    if (!token) return;
     fetch(`/api/sessions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

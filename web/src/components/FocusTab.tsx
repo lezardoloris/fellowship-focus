@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { desktopBridge, type WeeklyStats } from "@/lib/desktop";
+import { buildSoloWeeklyStats, saveSoloOkr } from "@/lib/soloStats";
 
 const GITHUB_KEY = "ff-github-user";
 
@@ -40,72 +41,72 @@ type GitHubStats = {
 
 export function FocusTab() {
   const [stats, setStats] = useState<WeeklyStats | null>(null);
-  const [checked, setChecked] = useState(false);
+  const [source, setSource] = useState<"desktop" | "solo">("solo");
 
   const load = useCallback(async () => {
-    const s = await desktopBridge.getWeeklyStats();
-    setStats(s);
-    setChecked(true);
+    await desktopBridge.ready();
+    const desktop = await desktopBridge.getWeeklyStats();
+    if (desktop) {
+      setStats(desktop);
+      setSource("desktop");
+      return;
+    }
+    setStats(buildSoloWeeklyStats());
+    setSource("solo");
   }, []);
 
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      await desktopBridge.ready();
-      if (!alive) return;
-      await load();
-    })();
+    load();
     const id = setInterval(load, 20000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
+    return () => clearInterval(id);
   }, [load]);
 
-  const saveOkr = useCallback(async (patch: Record<string, number>) => {
-    const s = await desktopBridge.setOkr(patch);
-    if (s) setStats(s);
-  }, []);
+  const saveOkr = useCallback(
+    async (patch: Record<string, number>) => {
+      if (source === "desktop") {
+        const s = await desktopBridge.setOkr(patch);
+        if (s) setStats(s);
+        return;
+      }
+      const map: Record<string, string> = {
+        focus_hours_target: "focus_hours_target",
+        focus_score_target: "focus_score_target",
+        revenue_target_eur: "revenue_target_eur",
+        revenue_current_eur: "revenue_current_eur",
+      };
+      const soloPatch: Record<string, number> = {};
+      for (const [k, v] of Object.entries(patch)) {
+        const key = map[k];
+        if (key) soloPatch[key] = v;
+      }
+      saveSoloOkr(soloPatch);
+      setStats(buildSoloWeeklyStats());
+    },
+    [source]
+  );
 
   const today = new Date().toISOString().slice(0, 10);
 
+  if (!stats) {
+    return <p className="animate-pulse text-sm text-white/50">Loading your week…</p>;
+  }
+
   return (
     <div className="space-y-5">
+      <p className="text-xs text-white/45">
+        {source === "desktop"
+          ? "Live from your desktop screen-time · no guild required"
+          : "Solo tracking from your focus sessions · no guild required · desktop adds distraction scores"}
+      </p>
       <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
         <div className="space-y-5">
-          {stats ? (
-            <WeekPanel stats={stats} today={today} onSaveOkr={saveOkr} />
-          ) : (
-            <DesktopHint checked={checked} />
-          )}
+          <WeekPanel stats={stats} today={today} onSaveOkr={saveOkr} />
         </div>
         <div className="space-y-5">
-          {stats && <LadderCard stats={stats} />}
+          <LadderCard stats={stats} />
           <GitHubCard />
         </div>
       </div>
-    </div>
-  );
-}
-
-function DesktopHint({ checked }: { checked: boolean }) {
-  return (
-    <div className="glass-card p-6">
-      <h2 className="text-lg font-semibold">Your focus, tracked automatically</h2>
-      <p className="mt-2 text-sm text-[#9ca3af]">
-        {checked
-          ? "Screen-time tracking runs inside the Fellowship Focus desktop app. Open it (Fellowship tab) to see your weekly focus hours, calendar, streak and personal ladder here — no guild needed."
-          : "Connecting to the desktop app…"}
-      </p>
-      <ul className="mt-4 space-y-2 text-sm text-[#cbd0d4]">
-        <li>· Per-day focus hours &amp; focus score</li>
-        <li>· Personal ladder (Shire → Rohan → Gondor → Mordor)</li>
-        <li>· Streak &amp; 8-week history</li>
-        <li>· OKR targets you set once, tracked every week</li>
-      </ul>
-      <p className="mt-4 text-[11px] text-[#6b7075]">
-        GitHub activity on the right works everywhere.
-      </p>
     </div>
   );
 }
@@ -130,9 +131,9 @@ function WeekPanel({
   ];
 
   return (
-    <div className="glass-card p-6">
+    <div className="glass-panel p-6">
       <div className="mb-5">
-        <h2 className="text-lg font-semibold">This week</h2>
+        <h2 className="text-lg font-semibold text-white">This week</h2>
         <p className="mt-0.5 text-xs text-[#9ca3af]">
           Week of {rangeLabel(stats.weekStart)} · from your local screen-time data
         </p>
@@ -212,8 +213,8 @@ function LadderCard({ stats }: { stats: WeeklyStats }) {
   const nextPct = league.next ? pct(league.hours, league.next.at) : 100;
 
   return (
-    <div className="glass-card p-6">
-      <p className="text-xs font-medium uppercase tracking-wider text-[#9ca3af]">Your ladder</p>
+    <div className="glass-panel p-6">
+      <p className="text-xs font-medium uppercase tracking-wider text-white/50">Your ladder</p>
       <div className="mt-3 flex items-center gap-3">
         <span
           className="flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold"
@@ -333,8 +334,8 @@ function GitHubCard() {
   };
 
   return (
-    <div className="glass-card p-6">
-      <p className="text-xs font-medium uppercase tracking-wider text-[#9ca3af]">GitHub activity</p>
+    <div className="glass-panel p-6">
+      <p className="text-xs font-medium uppercase tracking-wider text-white/50">GitHub activity</p>
 
       <div className="mt-3 flex gap-2">
         <input

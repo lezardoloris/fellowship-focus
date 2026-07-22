@@ -10,62 +10,64 @@ type Tab = "block" | "focus" | "guild";
 
 const TABS: Array<{ id: Tab; label: string; hint: string }> = [
   { id: "block", label: "Block", hint: "Your shield" },
-  { id: "focus", label: "Focus", hint: "Calendar, OKR & your ladder" },
-  { id: "guild", label: "Guild", hint: "Goals & accountability" },
+  { id: "focus", label: "Focus", hint: "Ladder, calendar & tracking — no guild needed" },
+  { id: "guild", label: "Guild", hint: "Optional social layer" },
 ];
 
 const LAST_CODE_KEY = "ff-app-code";
 
 export function FocusApp() {
   const params = useSearchParams();
-  const [tab, setTab] = useState<Tab>("block");
+  const [tab, setTab] = useState<Tab>("focus");
   const [code, setCode] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [shared, setShared] = useState(false);
 
-  // Resolve identity: desktop passes ?code=&token=&name=; otherwise last used.
+  // Resolve identity only when we have a real member (token). A leftover code
+  // without a token must NOT force the Guild join screen.
   useEffect(() => {
     const urlCode = (params.get("code") || "").trim().toLowerCase();
     const urlToken = (params.get("token") || "").trim();
     const urlName = (params.get("name") || "").trim();
     const stored = (localStorage.getItem(LAST_CODE_KEY) || "").trim().toLowerCase();
-    const resolved = urlCode || stored || null;
-    if (resolved) {
-      setCode(resolved);
-      localStorage.setItem(LAST_CODE_KEY, resolved);
-      if (urlToken) {
-        localStorage.setItem(
-          `ff-member-${resolved}`,
-          JSON.stringify({ token: urlToken, name: urlName })
-        );
-      }
-    }
-    setReady(true);
-  }, [params]);
 
-  // Load member identity for the active code (solo mode if none).
-  useEffect(() => {
-    if (!code) {
-      setToken(null);
-      setName(null);
+    if (urlCode && urlToken) {
+      localStorage.setItem(LAST_CODE_KEY, urlCode);
+      localStorage.setItem(`ff-member-${urlCode}`, JSON.stringify({ token: urlToken, name: urlName }));
+      setCode(urlCode);
+      setToken(urlToken);
+      setName(urlName || null);
+      setReady(true);
       return;
     }
-    const raw = localStorage.getItem(`ff-member-${code}`);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as { token: string; name: string };
-        setToken(parsed.token);
-        setName(parsed.name);
-        return;
-      } catch {
-        /* ignore */
+
+    const candidate = urlCode || stored;
+    if (candidate) {
+      const raw = localStorage.getItem(`ff-member-${candidate}`);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as { token: string; name: string };
+          if (parsed.token) {
+            setCode(candidate);
+            setToken(parsed.token);
+            setName(parsed.name || null);
+            setReady(true);
+            return;
+          }
+        } catch {
+          /* ignore */
+        }
       }
+      // Stale invite code without membership — clear so Guild stays optional
+      if (!urlToken) localStorage.removeItem(LAST_CODE_KEY);
     }
+    setCode(null);
     setToken(null);
     setName(null);
-  }, [code]);
+    setReady(true);
+  }, [params]);
 
   const onJoined = useCallback((c: string, t: string, n: string) => {
     const clean = c.trim().toLowerCase();
@@ -77,11 +79,12 @@ export function FocusApp() {
   }, []);
 
   const leaveGuild = useCallback(() => {
+    if (code) localStorage.removeItem(`ff-member-${code}`);
     localStorage.removeItem(LAST_CODE_KEY);
     setCode(null);
     setToken(null);
     setName(null);
-  }, []);
+  }, [code]);
 
   function share() {
     if (!code) return;
@@ -111,7 +114,7 @@ export function FocusApp() {
                   </button>
                 </>
               ) : (
-                "Solo mode · no guild"
+                "Solo · ladder & tracking need no guild"
               )}
             </p>
           </div>
@@ -146,23 +149,23 @@ export function FocusApp() {
           (joined ? (
             <FellowshipDashboard code={code!} />
           ) : (
-            <GuildGate initialCode={code} onJoined={onJoined} />
+            <GuildGate onJoined={onJoined} onGoFocus={() => setTab("focus")} />
           ))}
       </div>
     </Shell>
   );
 }
 
-// ── Guild tab, when no guild is active ──────────────────────
+// ── Guild is optional social — never a gate to productivity ─
 function GuildGate({
-  initialCode,
   onJoined,
+  onGoFocus,
 }: {
-  initialCode: string | null;
   onJoined: (code: string, token: string, name: string) => void;
+  onGoFocus: () => void;
 }) {
-  const [code, setCode] = useState<string | null>(initialCode);
-  const [codeInput, setCodeInput] = useState("");
+  const [step, setStep] = useState<"home" | "code" | "name">("home");
+  const [code, setCode] = useState("");
   const [joinName, setJoinName] = useState("");
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState("");
@@ -188,36 +191,61 @@ function GuildGate({
     }
   }
 
-  if (!code) {
+  if (step === "home") {
+    return (
+      <div className="mx-auto max-w-lg space-y-4">
+        <div className="glass-panel p-6">
+          <h2 className="font-display text-xl font-semibold text-white">Guild is optional</h2>
+          <p className="mt-2 text-sm text-white/65">
+            Your ladder, focus calendar, OKRs and tracking live in the{" "}
+            <button type="button" onClick={onGoFocus} className="text-white underline">
+              Focus
+            </button>{" "}
+            tab — no invite code required. A guild is only if you want friends on the same quest.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button type="button" onClick={onGoFocus} className="btn-primary">
+              Open Focus (ladder & calendar)
+            </button>
+            <button type="button" onClick={() => setStep("code")} className="btn-secondary">
+              Join a guild anyway
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "code") {
     return (
       <div className="mx-auto max-w-md">
-        <div className="glass-card p-6">
-          <h2 className="text-lg font-semibold">Join a guild</h2>
-          <p className="mt-1 mb-4 text-sm text-[#9ca3af]">
-            Guilds add shared goals and accountability. Everything else works without one —
-            you&apos;re already free to block sites and focus.
-          </p>
+        <div className="glass-panel p-6">
+          <h2 className="text-lg font-semibold text-white">Join a guild</h2>
+          <p className="mt-1 mb-4 text-sm text-white/55">Paste a fellowship code — optional.</p>
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              const clean = codeInput.trim().toLowerCase();
-              if (clean) setCode(clean);
+              const clean = code.trim().toLowerCase();
+              if (clean) {
+                setCode(clean);
+                setStep("name");
+              }
             }}
             className="flex gap-2"
           >
             <input
-              value={codeInput}
-              onChange={(e) => setCodeInput(e.target.value)}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
               placeholder="fellowship-abc12345"
-              className="input-premium flex-1"
+              className="input-premium flex-1 bg-white/5"
             />
             <button type="submit" className="btn-primary whitespace-nowrap">
               Continue
             </button>
           </form>
-          <p className="mt-4 text-xs text-[#9ca3af]">
-            No guild yet? Create one in the desktop app, then paste its code here.
-          </p>
+          <button type="button" onClick={() => setStep("home")} className="mt-4 text-xs text-white/55 underline">
+            Back
+          </button>
         </div>
       </div>
     );
@@ -225,22 +253,22 @@ function GuildGate({
 
   return (
     <div className="mx-auto max-w-md">
-      <div className="glass-card p-6">
-        <h2 className="text-lg font-semibold">Join {code}</h2>
-        <p className="mt-1 mb-4 text-sm text-[#9ca3af]">Pick your name to enter this fellowship.</p>
+      <div className="glass-panel p-6">
+        <h2 className="text-lg font-semibold text-white">Join {code}</h2>
+        <p className="mt-1 mb-4 text-sm text-white/55">Pick your name to enter this fellowship.</p>
         <form onSubmit={join} className="flex gap-2">
           <input
             value={joinName}
             onChange={(e) => setJoinName(e.target.value)}
             placeholder="Your name"
-            className="input-premium flex-1"
+            className="input-premium flex-1 bg-white/5"
           />
           <button type="submit" disabled={joining} className="btn-primary">
             {joining ? "…" : "Join"}
           </button>
         </form>
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-        <button onClick={() => setCode(null)} className="mt-4 text-xs text-[#9ca3af] underline">
+        <button type="button" onClick={() => setStep("code")} className="mt-4 text-xs text-white/55 underline">
           Use a different code
         </button>
       </div>
