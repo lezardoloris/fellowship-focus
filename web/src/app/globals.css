@@ -109,24 +109,27 @@ html {
 /* Frosted translucent panel — foreground controls sit here so the
    fellowship image reads through them (premium glassmorphism). */
 .glass-panel {
-  background: rgba(12, 14, 16, 0.38);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(18, 20, 22, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 16px;
-  backdrop-filter: blur(18px) saturate(1.2);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+  position: relative;
+  z-index: 1;
 }
 
 /* Soft scene scrim — keeps type readable without painting the world black */
 .app-scrim {
+  pointer-events: none;
   background:
-    radial-gradient(120% 90% at 70% 85%, rgba(12, 14, 16, 0.35), transparent 55%),
-    linear-gradient(180deg, rgba(12, 14, 16, 0.28) 0%, rgba(12, 14, 16, 0.18) 40%, rgba(12, 14, 16, 0.45) 100%);
+    radial-gradient(120% 90% at 70% 85%, rgba(12, 14, 16, 0.25), transparent 55%),
+    linear-gradient(180deg, rgba(12, 14, 16, 0.35) 0%, rgba(12, 14, 16, 0.22) 45%, rgba(12, 14, 16, 0.55) 100%);
 }
 
 .header-glass {
-  background: rgba(12, 14, 16, 0.28);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(12, 14, 16, 0.55);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(14px) saturate(1.2);
   -webkit-backdrop-filter: blur(14px) saturate(1.2);
 }
