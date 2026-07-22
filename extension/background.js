@@ -292,12 +292,19 @@ async function connect(payload) {
   if (typeof payload === "string") {
     data = JSON.parse(payload);
   }
-  await setConfig({
+  const patch = {
     apiUrl: (data.apiUrl || "").replace(/\/$/, ""),
     token: data.token || "",
     code: data.code || "",
     name: data.name || "",
-  });
+  };
+  if (Array.isArray(data.sites) && data.sites.length) {
+    patch.sites = data.sites.map(normalizeSite).filter(Boolean);
+  }
+  if (data.prefs && typeof data.prefs === "object") {
+    patch.prefs = data.prefs;
+  }
+  await setConfig(patch);
   await syncRemote();
   await rebuildRules();
   return getConfig();

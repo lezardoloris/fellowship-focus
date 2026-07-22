@@ -6,6 +6,8 @@ import { playAlarm } from "@/lib/alarm";
 import { logSoloSession } from "@/lib/soloStats";
 import {
   analyzeHistoryViaExtension,
+  connectExtension,
+  extensionCommand,
   pingExtension,
   type HistorySuggestion,
 } from "@/lib/extensionBridge";
@@ -97,10 +99,6 @@ export function BlockTab({
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [custom, setCustom] = useState("");
   const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState<"" | "desktop" | "extension">("");
-
-  // Desktop bridge — when running inside the desktop app, the Block tab
-  // controls the real system-wide blocker instead of a server/local list.
   const [dtReady, setDtReady] = useState(false);
   const [dt, setDt] = useState<DesktopState | null>(null);
   const [shieldBusy, setShieldBusy] = useState(false);
@@ -110,7 +108,6 @@ export function BlockTab({
   const [remaining, setRemaining] = useState(0);
   const [cycle, setCycle] = useState(0);
   const [exceeded, setExceeded] = useState(0);
-  const [helpOpen, setHelpOpen] = useState(false);
   const [extReady, setExtReady] = useState(false);
   const [suggestions, setSuggestions] = useState<HistorySuggestion[]>([]);
   const [scanBusy, setScanBusy] = useState(false);
@@ -322,44 +319,43 @@ export function BlockTab({
     }).catch(() => {});
   }
 
-  async function pairExtension() {
-    if (!token) {
-      toast.error("Sign in or join a guild first");
-      return;
-    }
-    try {
-      const res = await fetch("/api/blocker/pair", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Pair failed");
-      await navigator.clipboard.writeText(JSON.stringify(json.payload));
-      window.open(json.pairUrl, "_blank", "noopener,noreferrer");
-      toast.ok("Pairing opened", "Extension will connect if installed. Payload also copied.");
-    } catch (e) {
-      toast.error("Pair failed", e instanceof Error ? e.message : "");
-    }
+  async function pushListToExtension(): Promise<boolean> {
+    return connectExtension({
+      apiUrl: window.location.origin,
+      token: token || "",
+      code: code || "",
+      name: name || "",
+      sites: sites.map((s) => s.site),
+      prefs,
+    });
   }
 
-  function copyPairing(kind: "desktop" | "extension") {
-    navigator.clipboard.writeText(
-      JSON.stringify({
-        apiUrl: window.location.origin,
-        code,
-        token,
-        name,
-        sites: sites.map((s) => s.site),
-        prefs,
-      })
-    );
-    setCopied(kind);
-    toast.ok(
-      kind === "extension" ? "Pairing copied" : "Desktop pairing copied",
-      "Paste it in the extension / desktop Settings."
-    );
-    setTimeout(() => setCopied(""), 2000);
+  async function connectChrome() {
+    const ok = await pushListToExtension();
+    if (ok) {
+      setExtReady(true);
+      await extensionCommand("setShield", { on: true });
+      toast.ok("Blocking in Chrome");
+      return;
+    }
+    if (token) {
+      try {
+        const res = await fetch("/api/blocker/pair", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        const json = await res.json();
+        if (res.ok && json.pairUrl) {
+          window.open(json.pairUrl, "_blank", "noopener,noreferrer");
+          toast.info("Finish pairing in the new tab");
+          return;
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+    toast.error("Install extension", "chrome://extensions → Load unpacked → extension folder");
   }
 
   // ── Focus timer ────────────────────────────────────────
@@ -457,7 +453,22 @@ export function BlockTab({
     return () => clearInterval(id);
   }, [phase, remaining]);
 
-  const start = () => startPhase("focus", 1);
+  const start = () => {
+    void (async () => {
+      startPhase("focus", 1);
+      if (!isDesktop) {
+        const ready = extReady || (await pingExtension(600));
+        if (ready) {
+          setExtReady(true);
+          await pushListToExtension();
+          await extensionCommand("setShield", { on: true });
+          await extensionCommand("startFocus");
+        } else {
+          toast.error("Not blocking", "Tap Connect Chrome first.");
+        }
+      }
+    })();
+  };
   const stop = useCallback(() => {
     void (async () => {
       if (phase !== "idle") {
@@ -473,6 +484,7 @@ export function BlockTab({
             body: JSON.stringify({ token, action: "bypass", kind: "stop_timer" }),
           }).catch(() => {});
         }
+        extensionCommand("stopFocus").catch(() => {});
       }
       stopTimer();
       stopAlarm();
@@ -570,20 +582,10 @@ export function BlockTab({
     }
   }
 
-  async function addSuggested(domain: string) {
-    await post({ action: "add", sites: [domain], category: "history" });
-  }
-
-  async function addAllSuggested() {
-    const missing = suggestions.map((s) => s.domain).filter((d) => !blockedSet.has(d));
-    if (!missing.length) return;
-    await post({ action: "add", sites: missing, category: "history" });
-  }
-
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
   const ss = String(remaining % 60).padStart(2, "0");
 
-  if (loading) return <p className="animate-pulse text-sm text-white/50">Loading your shield…</p>;
+  if (loading) return <p className="animate-pulse text-sm text-white/50">Loading…</p>;
 
   const on = Boolean(dt?.shieldOn && dt?.active);
   const inSession = phase !== "idle";
@@ -623,77 +625,56 @@ export function BlockTab({
       </div>
     )}
 
-    <div className="space-y-5">
-        {isDesktop && (
-          <ShieldCard
-            on={on}
-            certReady={Boolean(dt?.certReady)}
-            busy={shieldBusy}
-            count={sites.length}
-            onToggle={toggleShield}
-          />
-        )}
+    <div className="space-y-4">
+        <div className="glass-panel flex flex-wrap items-center gap-3 px-4 py-3">
+          {isDesktop ? (
+            <>
+              <div className="mr-auto">
+                <p className="text-sm font-semibold text-white">Shield {on ? "ON" : "OFF"}</p>
+                <p className="text-[11px] text-white/45">{sites.length} sites</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                disabled={shieldBusy || !dt?.certReady}
+                onClick={toggleShield}
+                className={`relative h-9 w-16 shrink-0 rounded-full transition disabled:opacity-40 ${
+                  on ? "bg-[#b8422e]" : "bg-white/20"
+                }`}
+              >
+                <span className={`absolute top-1 h-7 w-7 rounded-full bg-white transition-all ${on ? "left-8" : "left-1"}`} />
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="mr-auto">
+                <p className="text-sm font-semibold text-white">
+                  {extReady ? "Chrome ready" : "Not blocking yet"}
+                </p>
+                <p className="text-[11px] text-white/45">
+                  {extReady ? `${sites.length} sites · Start or Connect` : "Connect Chrome to block"}
+                </p>
+              </div>
+              <button type="button" onClick={connectChrome} className="btn-primary shrink-0">
+                Connect Chrome
+              </button>
+            </>
+          )}
+        </div>
 
-        <HistorySuggestPanel
-          extReady={extReady}
-          busy={scanBusy}
-          suggestions={suggestions}
-          blocked={blockedSet}
-          onScan={scanHistory}
-          onAdd={addSuggested}
-          onAddAll={addAllSuggested}
-        />
-
-        <BlockerControls
-          settings={prefs}
-          onChange={(next) => savePrefs(next)}
-          token={token}
-          sites={sites.map((s) => s.site)}
-          devices={devices}
-          onPairExtension={pairExtension}
-          onImportSites={(list) => post({ action: "add", sites: list, category: "import" })}
-          suggestions={suggestions}
-          disabled={inSession}
-          onCoachApply={(blocklist, presetId) => {
-            post({ action: "add", sites: blocklist, category: "ai" });
-            const tp = TIMER_PRESETS.find((t) => t.id === presetId);
-            if (tp) {
-              savePrefs({
-                ...prefs,
-                focus_min: tp.focus,
-                break_min: tp.break,
-                cycles: tp.cycles,
-              });
-            }
-            toast.ok("AI plan applied", `${blocklist.length} sites + timer preset`);
-          }}
-        />
-
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,420px)_1fr]">
-          {/* Timerform-style panel */}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,400px)_1fr]">
           <div className="glass-panel overflow-hidden">
-            {/* Live display when running */}
             {inSession && (
-              <div className={`px-6 pt-6 text-center ${remaining === 0 ? "text-[#f87171]" : "text-white"}`}>
-                <div className="font-display text-6xl font-bold tabular-nums">
-                  {mm}:{ss}
-                </div>
-                {remaining === 0 && exceeded > 0 && (
-                  <p className="mt-1 text-sm text-[#f87171]">
-                    exceeded {String(Math.floor(exceeded / 60)).padStart(2, "0")}:
-                    {String(exceeded % 60).padStart(2, "0")}
-                  </p>
-                )}
-                <p className="mt-1 text-[11px] uppercase tracking-[0.35em] text-white/45">
-                  {phase} · cycle {cycle}/{prefs.cycles}
+              <div className={`px-5 pt-5 text-center ${remaining === 0 ? "text-[#f87171]" : "text-white"}`}>
+                <div className="font-display text-5xl font-bold tabular-nums">{mm}:{ss}</div>
+                <p className="mt-1 text-[10px] uppercase tracking-[0.3em] text-white/45">
+                  {phase} · {cycle}/{prefs.cycles}
                 </p>
               </div>
             )}
-
-            {/* Timerform */}
-            <div className="border-b border-white/10 px-6 py-5">
-              <p className="mb-3 text-sm font-semibold text-white/90">Timerform</p>
-              <div className="mb-4 flex flex-wrap gap-1.5">
+            <div className="border-b border-white/10 px-5 py-4">
+              <div className="mb-3 flex flex-wrap gap-1">
                 {TIMER_PRESETS.map((tp) => {
                   const active =
                     prefs.focus_min === tp.focus &&
@@ -714,7 +695,7 @@ export function BlockTab({
                           focus_sec: 0,
                         })
                       }
-                      className={`rounded-md border px-2.5 py-1.5 text-xs font-medium transition disabled:opacity-40 ${
+                      className={`rounded-md border px-2 py-1 text-xs font-medium transition disabled:opacity-40 ${
                         active
                           ? "border-[#b8422e] bg-[#b8422e] text-white"
                           : "border-white/15 bg-white/5 text-white/75 hover:bg-white/10"
@@ -725,152 +706,55 @@ export function BlockTab({
                   );
                 })}
               </div>
-              <p className="mb-3 text-[10px] text-white/40">
-                Presets from common productivity research (Pomodoro, DeskTime, ultradian). Type minutes
-                with your keyboard — click the number.
-              </p>
-              <div className="mb-4 grid grid-cols-3 gap-3">
-                <Stepper
-                  label="Focus"
-                  value={prefs.focus_min}
-                  min={1}
-                  max={180}
-                  suffix="min"
-                  disabled={inSession}
-                  onChange={(v) => savePrefs({ ...prefs, focus_min: v })}
-                />
-                <Stepper
-                  label="Break"
-                  value={prefs.break_min}
-                  min={0}
-                  max={60}
-                  suffix="min"
-                  disabled={inSession}
-                  onChange={(v) => savePrefs({ ...prefs, break_min: v })}
-                />
-                <Stepper
-                  label="Cycles"
-                  value={prefs.cycles}
-                  min={1}
-                  max={12}
-                  disabled={inSession}
-                  onChange={(v) => savePrefs({ ...prefs, cycles: v })}
-                />
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                <Stepper label="Focus" value={prefs.focus_min} min={1} max={180} suffix="min" disabled={inSession} onChange={(v) => savePrefs({ ...prefs, focus_min: v })} />
+                <Stepper label="Break" value={prefs.break_min} min={0} max={60} suffix="min" disabled={inSession} onChange={(v) => savePrefs({ ...prefs, break_min: v })} />
+                <Stepper label="Cycles" value={prefs.cycles} min={1} max={12} disabled={inSession} onChange={(v) => savePrefs({ ...prefs, cycles: v })} />
               </div>
               <div className="flex justify-end">
                 {phase === "idle" ? (
-                  <button onClick={start} className="btn-primary shrink-0 px-5">
-                    Start the timer
-                  </button>
+                  <button onClick={start} className="btn-primary px-5">Start</button>
                 ) : (
-                  <button onClick={stop} className="btn-secondary shrink-0 px-5">
-                    Stop
-                  </button>
+                  <button onClick={stop} className="btn-secondary px-5">Stop</button>
                 )}
               </div>
             </div>
-
-            {/* Options */}
-            <div className="space-y-5 px-6 py-5">
-              <p className="text-sm font-semibold text-white/90">Options</p>
-
-              <div>
-                <p className="mb-2 text-sm text-white/70">Duration alarm</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {ALARM_OPTS.map((o) => (
-                    <button
-                      key={o.id}
-                      type="button"
-                      onClick={() => savePrefs({ ...prefs, alarm_secs: o.id })}
-                      className={`rounded-md border px-3 py-1.5 text-sm font-medium transition ${
-                        prefs.alarm_secs === o.id
-                          ? "border-[#b8422e] bg-[#b8422e] text-white"
-                          : "border-white/15 bg-white/5 text-white/75 hover:bg-white/10"
-                      }`}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-2 text-sm text-white/70">Alarm volume</p>
-                <div className="flex items-center gap-3">
-                  <span className="text-white/40" aria-hidden>
-                    ♪
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={prefs.alarm_vol}
-                    onChange={(e) => savePrefs({ ...prefs, alarm_vol: Number(e.target.value) })}
-                    className="h-2 flex-1 accent-[#b8422e]"
-                  />
-                  <button type="button" onClick={testAlarm} className="btn-secondary py-1.5! text-xs!">
-                    Test
+            <div className="space-y-3 px-5 py-4">
+              <div className="flex flex-wrap gap-1">
+                {ALARM_OPTS.map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => savePrefs({ ...prefs, alarm_secs: o.id })}
+                    className={`rounded-md border px-2 py-1 text-xs ${
+                      prefs.alarm_secs === o.id
+                        ? "border-[#b8422e] bg-[#b8422e] text-white"
+                        : "border-white/15 text-white/70"
+                    }`}
+                  >
+                    {o.label}
                   </button>
-                </div>
+                ))}
+                <button type="button" onClick={testAlarm} className="btn-secondary py-1! text-xs!">Test</button>
               </div>
-
-              <div className="flex flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <input type="range" min={0} max={1} step={0.01} value={prefs.alarm_vol} onChange={(e) => savePrefs({ ...prefs, alarm_vol: Number(e.target.value) })} className="h-1.5 flex-1 accent-[#b8422e]" />
                 <button
                   type="button"
                   onClick={() => savePrefs({ ...prefs, anti_oops: !prefs.anti_oops })}
-                  className={`rounded-md border px-3 py-1.5 text-sm font-medium transition ${
-                    prefs.anti_oops
-                      ? "border-[#b8422e]/70 bg-[#b8422e]/20 text-white"
-                      : "border-white/15 bg-white/5 text-white/75 hover:bg-white/10"
+                  className={`rounded-md border px-2 py-1 text-xs ${
+                    prefs.anti_oops ? "border-[#b8422e] text-white" : "border-white/15 text-white/50"
                   }`}
-                  title="Ask before stopping a running timer"
                 >
-                  Anti-Oops!{prefs.anti_oops ? " ✓" : ""}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setHelpOpen((v) => !v)}
-                  className="rounded-md border border-[#b8422e]/50 bg-[#b8422e]/15 px-3 py-1.5 text-sm font-medium text-white hover:bg-[#b8422e]/25"
-                >
-                  Display help
+                  Anti-Oops
                 </button>
               </div>
-
-              {helpOpen && (
-                <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs leading-relaxed text-white/65">
-                  Use the ▲ ▼ arrows on Focus / Break / Cycles to adjust quickly, then{" "}
-                  <span className="text-white/90">Start the timer</span>.
-                  When time is up, the alarm plays for the duration you picked (or forever if infinite).
-                  <span className="text-white/90"> Anti-Oops!</span> asks for confirmation before Stop.
-                  A compact timer stays bottom-right while you work — × closes it.
-                </div>
-              )}
             </div>
           </div>
 
-          {/* Block list — frosted, secondary */}
-          <div className="glass-panel p-6">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-white/50">Block list</p>
-                <p className="mt-1 max-w-md text-xs text-white/55">
-                  {isDesktop
-                    ? `${sites.length} site${sites.length === 1 ? "" : "s"} — blocked system-wide when Shield is ON.`
-                    : `${sites.length} site${sites.length === 1 ? "" : "s"} on your list.`}
-                </p>
-              </div>
-              {!isDesktop && (
-                <div className="flex gap-2">
-                  <button onClick={() => copyPairing("extension")} className="btn-secondary whitespace-nowrap py-1.5! text-xs!">
-                    {copied === "extension" ? "✓ Copied" : "Connect extension"}
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Preconfigured lists — click to toggle on/off */}
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="glass-panel p-5">
+            <p className="mb-3 text-sm font-semibold text-white">Block list · {sites.length}</p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               {PRESETS.map((p) => {
                 const active = presetSites(p.cats).every((s) => blockedSet.has(s));
                 return (
@@ -878,22 +762,18 @@ export function BlockTab({
                     key={p.id}
                     type="button"
                     onClick={() => togglePreset(p)}
-                    className={`rounded-lg border px-3 py-2.5 text-left transition ${
+                    className={`rounded-lg border px-2.5 py-2 text-left text-xs transition ${
                       active
                         ? "border-[#b8422e] bg-[#b8422e]/25 text-white"
-                        : "border-white/20 bg-black/35 text-white hover:border-white/40 hover:bg-black/45"
+                        : "border-white/15 bg-black/30 text-white/80 hover:bg-black/40"
                     }`}
-                    title={active ? `Click to remove: ${presetSites(p.cats).join(", ")}` : presetSites(p.cats).join(", ")}
                   >
-                    <span className="block text-xs font-semibold">{active ? `✓ ${p.label}` : p.label}</span>
-                    <span className="block text-[10px] text-white/60">{p.desc}</span>
+                    {active ? "✓ " : ""}{p.label}
                   </button>
                 );
               })}
             </div>
-
-            {/* Granular categories — click to toggle */}
-            <div className="mt-3 flex flex-wrap gap-1.5">
+            <div className="mt-2 flex flex-wrap gap-1">
               {CATEGORIES.map((c) => {
                 const active = c.sites.every((s) => blockedSet.has(s));
                 return (
@@ -901,56 +781,63 @@ export function BlockTab({
                     key={c.id}
                     type="button"
                     onClick={() => toggleCategory(c)}
-                    className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition ${
-                      active
-                        ? "border-[#b8422e] bg-[#b8422e] text-white"
-                        : "border-white/25 bg-black/35 text-white hover:bg-black/50"
+                    className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                      active ? "border-[#b8422e] bg-[#b8422e]/20 text-white" : "border-white/15 text-white/60"
                     }`}
-                    title={active ? `Click to unblock ${c.label}` : `Block ${c.label}`}
                   >
-                    {active ? `✓ ${c.label}` : `+ ${c.label}`}
+                    {active ? "✓ " : ""}{c.label}
                   </button>
                 );
               })}
             </div>
-
-            <form onSubmit={addCustom} className="mt-4 flex gap-2">
-              <input
-                value={custom}
-                onChange={(e) => setCustom(e.target.value)}
-                placeholder="add a site, e.g. news.ycombinator.com"
-                className="input-premium flex-1 bg-white/5"
-              />
+            <form onSubmit={addCustom} className="mt-3 flex gap-2">
+              <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Add site…" className="input-premium flex-1 bg-white/5 py-1.5 text-sm" />
               <button type="submit" className="btn-primary">Add</button>
             </form>
-
-            <ul className="mt-4 max-h-64 space-y-1.5 overflow-y-auto pr-1">
+            <ul className="mt-3 max-h-56 space-y-1 overflow-y-auto pr-1">
               {sites.length === 0 ? (
-                <li className="rounded-lg bg-white/5 p-4 text-sm text-white/50">
-                  No sites yet. Pick a preconfigured list above — this is your shield.
-                </li>
+                <li className="text-xs text-white/40">Pick a preset above.</li>
               ) : (
                 sites.map((s) => (
-                  <li key={s.id} className="flex items-center gap-3 rounded-lg bg-white/5 px-3 py-2">
-                    <span className="flex-1 text-sm text-white/90">{s.site}</span>
-                    {s.category && (
-                      <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/45">
-                        {s.category}
-                      </span>
-                    )}
-                    <button
-                      onClick={() => removeSite(s.site)}
-                      className="text-white/45 transition hover:text-red-400"
-                      aria-label={`Remove ${s.site}`}
-                    >
-                      ✕
-                    </button>
+                  <li key={s.id} className="flex items-center gap-2 rounded-md bg-white/5 px-2.5 py-1.5">
+                    <span className="flex-1 truncate text-sm text-white/85">{s.site}</span>
+                    <button onClick={() => removeSite(s.site)} className="text-white/40 hover:text-red-400" aria-label={`Remove ${s.site}`}>✕</button>
                   </li>
                 ))
               )}
             </ul>
           </div>
         </div>
+
+        <details className="glass-panel overflow-hidden">
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm text-white/70 hover:text-white [&::-webkit-details-marker]:hidden">
+            More · lock, schedule, allowlist, history
+          </summary>
+          <BlockerControls
+            settings={prefs}
+            onChange={(next) => savePrefs(next)}
+            sites={sites.map((s) => s.site)}
+            devices={devices}
+            onImportSites={(list) => post({ action: "add", sites: list, category: "import" })}
+            suggestions={suggestions}
+            onScanHistory={scanHistory}
+            scanBusy={scanBusy}
+            disabled={inSession}
+            onCoachApply={(blocklist, presetId) => {
+              post({ action: "add", sites: blocklist, category: "ai" });
+              const tp = TIMER_PRESETS.find((t) => t.id === presetId);
+              if (tp) {
+                savePrefs({
+                  ...prefs,
+                  focus_min: tp.focus,
+                  break_min: tp.break,
+                  cycles: tp.cycles,
+                });
+              }
+              toast.ok("Applied");
+            }}
+          />
+        </details>
     </div>
     </>
   );
@@ -1074,138 +961,3 @@ function Stepper({
   );
 }
 
-function ShieldCard({
-  on,
-  certReady,
-  busy,
-  count,
-  onToggle,
-}: {
-  on: boolean;
-  certReady: boolean;
-  busy: boolean;
-  count: number;
-  onToggle: () => void;
-}) {
-  return (
-    <div className={`glass-panel flex flex-wrap items-center gap-4 p-5 ${on ? "ring-1 ring-[#b8422e]/60" : ""}`}>
-      <div className="mr-auto">
-        <h2 className="text-base font-semibold text-white">
-          Shield {on ? "ON" : "OFF"}
-        </h2>
-        <p className="mt-1 text-xs text-white/60">
-          {!certReady
-            ? "Setup one-time: open Blocker in the desktop sidebar → Activate Shield."
-            : on
-            ? `Blocking ${count} site${count === 1 ? "" : "s"} system-wide.`
-            : "Turn ON to block your list across the whole computer."}
-        </p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={on}
-        disabled={busy || !certReady}
-        onClick={onToggle}
-        className={`relative h-9 w-16 shrink-0 rounded-full transition disabled:opacity-40 ${
-          on ? "bg-[#b8422e]" : "bg-white/20"
-        }`}
-        title={certReady ? "Toggle the shield" : "Certificate setup needed"}
-      >
-        <span
-          className={`absolute top-1 h-7 w-7 rounded-full bg-white transition-all ${
-            on ? "left-8" : "left-1"
-          }`}
-        />
-      </button>
-    </div>
-  );
-}
-
-function HistorySuggestPanel({
-  extReady,
-  busy,
-  suggestions,
-  blocked,
-  onScan,
-  onAdd,
-  onAddAll,
-}: {
-  extReady: boolean;
-  busy: boolean;
-  suggestions: HistorySuggestion[];
-  blocked: Set<string>;
-  onScan: () => void;
-  onAdd: (domain: string) => void;
-  onAddAll: () => void;
-}) {
-  const pending = suggestions.filter((s) => !blocked.has(s.domain));
-
-  return (
-    <div className="glass-panel p-5">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="mr-auto min-w-0">
-          <h2 className="text-base font-semibold text-white">Suggested from your browsing</h2>
-          <p className="mt-1 max-w-2xl text-xs text-white/55">
-            Scan Chrome history to rank distractors. Raw URLs stay on your machine.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onScan}
-          disabled={busy}
-          className="btn-primary shrink-0 disabled:opacity-50"
-        >
-          {busy ? "Scanning…" : "Scan history"}
-        </button>
-        {pending.length > 0 && (
-          <button type="button" onClick={onAddAll} className="btn-secondary shrink-0 border-white/15 bg-black/20 text-white">
-            Block all ({pending.length})
-          </button>
-        )}
-      </div>
-
-      {!extReady && suggestions.length === 0 && (
-        <p className="mt-3 text-xs text-white/45">
-          Needs the Fellowship Focus extension (
-          <code className="text-white/70">chrome://extensions</code>
-          ).
-        </p>
-      )}
-
-      {suggestions.length > 0 ? (
-        <ul className="mt-4 grid gap-1.5 sm:grid-cols-2">
-          {suggestions.slice(0, 16).map((s) => {
-            const onList = blocked.has(s.domain);
-            return (
-              <li
-                key={s.domain}
-                className="flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-white/90">{s.domain}</p>
-                  <p className="text-[10px] text-white/40">
-                    {s.visits} visits · score {s.score}
-                  </p>
-                </div>
-                {onList ? (
-                  <span className="text-[10px] uppercase tracking-wider text-emerald-400/80">Blocked</span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => onAdd(s.domain)}
-                    className="rounded-md border border-white/15 px-2 py-1 text-xs text-white/80 hover:bg-white/10"
-                  >
-                    Block
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="mt-3 text-xs text-white/40">No suggestions yet — run a scan.</p>
-      )}
-    </div>
-  );
-}

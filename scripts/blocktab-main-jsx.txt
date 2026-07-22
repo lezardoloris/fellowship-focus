@@ -1,0 +1,217 @@
+    <div className="space-y-4">
+        <div className="glass-panel flex flex-wrap items-center gap-3 px-4 py-3">
+          {isDesktop ? (
+            <>
+              <div className="mr-auto">
+                <p className="text-sm font-semibold text-white">Shield {on ? "ON" : "OFF"}</p>
+                <p className="text-[11px] text-white/45">{sites.length} sites</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                disabled={shieldBusy || !dt?.certReady}
+                onClick={toggleShield}
+                className={`relative h-9 w-16 shrink-0 rounded-full transition disabled:opacity-40 ${
+                  on ? "bg-[#b8422e]" : "bg-white/20"
+                }`}
+              >
+                <span className={`absolute top-1 h-7 w-7 rounded-full bg-white transition-all ${on ? "left-8" : "left-1"}`} />
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="mr-auto">
+                <p className="text-sm font-semibold text-white">
+                  {extReady ? "Chrome ready" : "Not blocking yet"}
+                </p>
+                <p className="text-[11px] text-white/45">
+                  {extReady ? `${sites.length} sites · Start or Connect` : "Connect Chrome to block"}
+                </p>
+              </div>
+              <button type="button" onClick={connectChrome} className="btn-primary shrink-0">
+                Connect Chrome
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,400px)_1fr]">
+          <div className="glass-panel overflow-hidden">
+            {inSession && (
+              <div className={`px-5 pt-5 text-center ${remaining === 0 ? "text-[#f87171]" : "text-white"}`}>
+                <div className="font-display text-5xl font-bold tabular-nums">{mm}:{ss}</div>
+                <p className="mt-1 text-[10px] uppercase tracking-[0.3em] text-white/45">
+                  {phase} · {cycle}/{prefs.cycles}
+                </p>
+              </div>
+            )}
+            <div className="border-b border-white/10 px-5 py-4">
+              <div className="mb-3 flex flex-wrap gap-1">
+                {TIMER_PRESETS.map((tp) => {
+                  const active =
+                    prefs.focus_min === tp.focus &&
+                    prefs.break_min === tp.break &&
+                    prefs.cycles === tp.cycles;
+                  return (
+                    <button
+                      key={tp.id}
+                      type="button"
+                      title={tp.basis}
+                      disabled={inSession}
+                      onClick={() =>
+                        savePrefs({
+                          ...prefs,
+                          focus_min: tp.focus,
+                          break_min: tp.break,
+                          cycles: tp.cycles,
+                          focus_sec: 0,
+                        })
+                      }
+                      className={`rounded-md border px-2 py-1 text-xs font-medium transition disabled:opacity-40 ${
+                        active
+                          ? "border-[#b8422e] bg-[#b8422e] text-white"
+                          : "border-white/15 bg-white/5 text-white/75 hover:bg-white/10"
+                      }`}
+                    >
+                      {tp.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mb-3 grid grid-cols-3 gap-2">
+                <Stepper label="Focus" value={prefs.focus_min} min={1} max={180} suffix="min" disabled={inSession} onChange={(v) => savePrefs({ ...prefs, focus_min: v })} />
+                <Stepper label="Break" value={prefs.break_min} min={0} max={60} suffix="min" disabled={inSession} onChange={(v) => savePrefs({ ...prefs, break_min: v })} />
+                <Stepper label="Cycles" value={prefs.cycles} min={1} max={12} disabled={inSession} onChange={(v) => savePrefs({ ...prefs, cycles: v })} />
+              </div>
+              <div className="flex justify-end">
+                {phase === "idle" ? (
+                  <button onClick={start} className="btn-primary px-5">Start</button>
+                ) : (
+                  <button onClick={stop} className="btn-secondary px-5">Stop</button>
+                )}
+              </div>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <div className="flex flex-wrap gap-1">
+                {ALARM_OPTS.map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => savePrefs({ ...prefs, alarm_secs: o.id })}
+                    className={`rounded-md border px-2 py-1 text-xs ${
+                      prefs.alarm_secs === o.id
+                        ? "border-[#b8422e] bg-[#b8422e] text-white"
+                        : "border-white/15 text-white/70"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+                <button type="button" onClick={testAlarm} className="btn-secondary py-1! text-xs!">Test</button>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="range" min={0} max={1} step={0.01} value={prefs.alarm_vol} onChange={(e) => savePrefs({ ...prefs, alarm_vol: Number(e.target.value) })} className="h-1.5 flex-1 accent-[#b8422e]" />
+                <button
+                  type="button"
+                  onClick={() => savePrefs({ ...prefs, anti_oops: !prefs.anti_oops })}
+                  className={`rounded-md border px-2 py-1 text-xs ${
+                    prefs.anti_oops ? "border-[#b8422e] text-white" : "border-white/15 text-white/50"
+                  }`}
+                >
+                  Anti-Oops
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-panel p-5">
+            <p className="mb-3 text-sm font-semibold text-white">Block list · {sites.length}</p>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {PRESETS.map((p) => {
+                const active = presetSites(p.cats).every((s) => blockedSet.has(s));
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => togglePreset(p)}
+                    className={`rounded-lg border px-2.5 py-2 text-left text-xs transition ${
+                      active
+                        ? "border-[#b8422e] bg-[#b8422e]/25 text-white"
+                        : "border-white/15 bg-black/30 text-white/80 hover:bg-black/40"
+                    }`}
+                  >
+                    {active ? "✓ " : ""}{p.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {CATEGORIES.map((c) => {
+                const active = c.sites.every((s) => blockedSet.has(s));
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => toggleCategory(c)}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                      active ? "border-[#b8422e] bg-[#b8422e]/20 text-white" : "border-white/15 text-white/60"
+                    }`}
+                  >
+                    {active ? "✓ " : ""}{c.label}
+                  </button>
+                );
+              })}
+            </div>
+            <form onSubmit={addCustom} className="mt-3 flex gap-2">
+              <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Add site…" className="input-premium flex-1 bg-white/5 py-1.5 text-sm" />
+              <button type="submit" className="btn-primary">Add</button>
+            </form>
+            <ul className="mt-3 max-h-56 space-y-1 overflow-y-auto pr-1">
+              {sites.length === 0 ? (
+                <li className="text-xs text-white/40">Pick a preset above.</li>
+              ) : (
+                sites.map((s) => (
+                  <li key={s.id} className="flex items-center gap-2 rounded-md bg-white/5 px-2.5 py-1.5">
+                    <span className="flex-1 truncate text-sm text-white/85">{s.site}</span>
+                    <button onClick={() => removeSite(s.site)} className="text-white/40 hover:text-red-400" aria-label={`Remove ${s.site}`}>✕</button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        </div>
+
+        <details className="glass-panel overflow-hidden">
+          <summary className="cursor-pointer list-none px-4 py-3 text-sm text-white/70 hover:text-white [&::-webkit-details-marker]:hidden">
+            More · lock, schedule, allowlist, history
+          </summary>
+          <BlockerControls
+            settings={prefs}
+            onChange={(next) => savePrefs(next)}
+            sites={sites.map((s) => s.site)}
+            devices={devices}
+            onImportSites={(list) => post({ action: "add", sites: list, category: "import" })}
+            suggestions={suggestions}
+            onScanHistory={scanHistory}
+            scanBusy={scanBusy}
+            disabled={inSession}
+            onCoachApply={(blocklist, presetId) => {
+              post({ action: "add", sites: blocklist, category: "ai" });
+              const tp = TIMER_PRESETS.find((t) => t.id === presetId);
+              if (tp) {
+                savePrefs({
+                  ...prefs,
+                  focus_min: tp.focus,
+                  break_min: tp.break,
+                  cycles: tp.cycles,
+                });
+              }
+              toast.ok("Applied");
+            }}
+          />
+        </details>
+    </div>
+    </>
+  );
+}

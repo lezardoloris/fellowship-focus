@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fellowship Focus — Blocker",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Block distracting sites, schedules, friction mode, history suggestions, sync with Fellowship Focus.",
   "permissions": ["declarativeNetRequest", "storage", "alarms", "history", "notifications"],
   "host_permissions": ["<all_urls>"],
