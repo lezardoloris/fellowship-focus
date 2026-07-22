@@ -199,9 +199,27 @@ def set_system_proxy(enable: bool) -> None:
     proxy = Uniproxy("127.0.0.1", PROXY_PORT)
     if enable:
         proxy.join()
+        _flush_dns()
     else:
         proxy.delete_proxy()
     _broadcast_proxy_change()
+
+
+def _flush_dns() -> None:
+    """Cached DNS answers let apps keep talking to already-resolved IPs for a
+    while after arming; flushing costs nothing and needs no admin rights."""
+    if os.name != "nt":
+        return
+    try:
+        subprocess.run(
+            ["ipconfig", "/flushdns"],
+            capture_output=True,
+            timeout=10,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        blocker_log("DNS cache flushed")
+    except Exception as e:
+        blocker_log(f"DNS flush failed: {e}")
 
 
 def _broadcast_proxy_change() -> None:

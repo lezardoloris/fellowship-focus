@@ -16,6 +16,9 @@ const DEFAULTS = {
   name: "",
   deviceId: "",
   manualShield: false,
+  // True while the desktop app's system-wide proxy shield is detected. Makes
+  // the extension's tab-level enforcement follow the desktop automatically.
+  desktopShieldOn: false,
   sites: DEFAULT_SITES.slice(),
   prefs: {
     focus_min: 45,
@@ -75,7 +78,7 @@ function scheduleForcesOn(prefs) {
 
 function effectiveShield(cfg) {
   const sched = scheduleForcesOn(cfg.prefs || {});
-  return cfg.manualShield || !!cfg.focus || sched.on;
+  return cfg.manualShield || !!cfg.focus || sched.on || !!cfg.desktopShieldOn;
 }
 
 function isAllowlisted(domain, allowlist) {
@@ -178,6 +181,93 @@ function liveTempAllows(cfg) {
   return out;
 }
 
+/** Would this URL be blocked right now? Mirrors the DNR rules exactly, so the
+ * tab sweep and the DNR engine can never disagree. */
+function blockDecision(urlString, cfg) {
+  let u;
+  try {
+    u = new URL(urlString);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  const host = u.hostname.replace(/^www\./, "").toLowerCase();
+  const allow = cfg.prefs.allowlist || [];
+  if (isAllowlisted(host, allow)) return null;
+  const soft = (cfg.prefs || {}).blocker_mode === "soft";
+  const modes = cfg.prefs.site_modes || {};
+
+  for (const site of (cfg.sites || []).filter(Boolean)) {
+    const base = normalizeSite(site);
+    if (!base) continue;
+    const friction = modes[base] === "friction";
+    if (soft && SOFT_PATH_RULES[base]) {
+      if (host === base || host.endsWith("." + base)) {
+        const path = u.pathname.toLowerCase();
+        for (const p of SOFT_PATH_RULES[base]) {
+          if (path === p || path.startsWith(p + "/") || path.startsWith(p + "?")) {
+            return { domain: base + p, friction };
+          }
+        }
+      }
+      continue;
+    }
+    for (const domain of expandDomains(site)) {
+      if (host === domain || host.endsWith("." + domain)) {
+        return { domain, friction };
+      }
+    }
+  }
+  return null;
+}
+
+/** Redirect every already-open tab that matches the block list.
+ * A proxy cannot reach into established connections; the extension can. This
+ * is what makes arming instant even for tabs opened long before. */
+async function sweepOpenTabs() {
+  const cfg = await getConfig();
+  if (!effectiveShield(cfg)) return 0;
+  let swept = 0;
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (!tab.id || !tab.url) continue;
+      const hit = blockDecision(tab.url, cfg);
+      if (!hit) continue;
+      const page = (hit.friction ? "/friction.html?d=" : "/block.html?d=") +
+        encodeURIComponent(hit.domain);
+      chrome.tabs.update(tab.id, { url: chrome.runtime.getURL(page) }, () => void chrome.runtime.lastError);
+      swept += 1;
+    }
+  } catch (e) {
+    /* tabs permission missing or transient — DNR still covers navigation */
+  }
+  if (swept) await chrome.storage.local.set({ lastSweep: { at: Date.now(), count: swept } });
+  return swept;
+}
+
+/** Kill the service-worker/cache shell of blocked sites so nothing renders
+ * from offline storage. Run on the off->on transition only (it is heavy). */
+async function purgeBlockedOriginData(cfg) {
+  try {
+    const origins = [];
+    for (const site of (cfg.sites || []).filter(Boolean).slice(0, 50)) {
+      for (const domain of expandDomains(site)) {
+        origins.push(`https://${domain}`, `https://www.${domain}`);
+      }
+    }
+    if (!origins.length) return;
+    await chrome.browsingData.remove(
+      { origins: [...new Set(origins)].slice(0, 100) },
+      { serviceWorkers: true, cacheStorage: true }
+    );
+  } catch (e) {
+    /* browsingData can reject origins — never let it break arming */
+  }
+}
+
+let _lastShieldOn = null;
+
 async function rebuildRules() {
   const cfg = await getConfig();
   const existing = await chrome.declarativeNetRequest.getDynamicRules();
@@ -219,6 +309,16 @@ async function rebuildRules() {
   }
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
   updateBadge(cfg);
+
+  const shieldOn = effectiveShield(cfg);
+  if (shieldOn) {
+    // Existing tabs die the moment the shield rises — not on their next reload.
+    await sweepOpenTabs();
+    if (_lastShieldOn === false || _lastShieldOn === null) {
+      await purgeBlockedOriginData(cfg);
+    }
+  }
+  _lastShieldOn = shieldOn;
   return addRules.length;
 }
 
@@ -234,6 +334,8 @@ async function getStatus() {
     siteCount: (cfg.sites || []).filter(Boolean).length,
     ruleCount: rules.filter((r) => r.id < TEMP_ALLOW_ID_BASE).length,
     mode: (cfg.prefs || {}).blocker_mode === "soft" ? "soft" : "hard",
+    desktopShieldOn: !!cfg.desktopShieldOn,
+    lastSweep: (await chrome.storage.local.get("lastSweep")).lastSweep || null,
     // Already collected every day and never shown — surface it.
     blocksToday: cfg.stats?.blocks || 0,
     focusMinutesToday: cfg.stats?.focusMinutes || 0,
@@ -524,17 +626,90 @@ function normalizeSite(site) {
 
 // ── Wiring ───────────────────────────────────────────────
 
-chrome.runtime.onInstalled.addListener(async () => {
-  await getConfig();
-  await rebuildRules();
+// ── Desktop shield auto-detection ────────────────────────
+// http://check.fellowshipfocus.internal/ only resolves through the desktop
+// app's local proxy. If it answers, the system-wide shield is up — so the
+// extension arms its tab-level enforcement with zero clicks.
+
+let _probeBusy = false;
+
+async function probeDesktopShield() {
+  if (_probeBusy) return;
+  _probeBusy = true;
+  try {
+    let up = false;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 1500);
+    try {
+      const r = await fetch("http://check.fellowshipfocus.internal/", {
+        signal: ctl.signal,
+        cache: "no-store",
+      });
+      up = r.ok;
+    } catch {
+      up = false;
+    }
+    clearTimeout(timer);
+    const cfg = await getConfig();
+    if (Boolean(cfg.desktopShieldOn) !== up) {
+      await setConfig({ desktopShieldOn: up });
+      await rebuildRules();
+    }
+  } finally {
+    _probeBusy = false;
+  }
+}
+
+// ── Instant kill on tab activation ───────────────────────
+
+async function checkActiveTab(tabId) {
+  try {
+    const cfg = await getConfig();
+    if (!effectiveShield(cfg)) return;
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || !tab.url) return;
+    const hit = blockDecision(tab.url, cfg);
+    if (!hit) return;
+    const page = (hit.friction ? "/friction.html?d=" : "/block.html?d=") +
+      encodeURIComponent(hit.domain);
+    chrome.tabs.update(tabId, { url: chrome.runtime.getURL(page) }, () => void chrome.runtime.lastError);
+  } catch {
+    /* tab gone — nothing to do */
+  }
+}
+
+chrome.tabs.onActivated.addListener((info) => {
+  probeDesktopShield();
+  checkActiveTab(info.tabId);
+});
+
+chrome.windows.onFocusChanged.addListener(async (windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, windowId });
+    if (tab?.id) checkActiveTab(tab.id);
+  } catch {
+    /* window gone */
+  }
+});
+
+function createAlarms() {
   chrome.alarms.create("sync", { periodInMinutes: 15 });
   chrome.alarms.create("scheduleTick", { periodInMinutes: 1 });
+  chrome.alarms.create("desktopProbe", { periodInMinutes: 0.5 });
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await getConfig();
+  await probeDesktopShield();
+  await rebuildRules();
+  createAlarms();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
+  await probeDesktopShield();
   await rebuildRules();
-  chrome.alarms.create("sync", { periodInMinutes: 15 });
-  chrome.alarms.create("scheduleTick", { periodInMinutes: 1 });
+  createAlarms();
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -544,6 +719,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await rebuildRules();
   } else if (alarm.name === "scheduleTick" || alarm.name === "tempAllow") {
     await rebuildRules();
+  } else if (alarm.name === "desktopProbe") {
+    await probeDesktopShield();
   }
 });
 

@@ -968,7 +968,9 @@ export function BlockTab({
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,400px)_1fr]">
+        {/* One horizontal band: Timer | Block list | Music. Equal heights, no
+            floating half-empty panel, stacks vertically under xl. */}
+        <div className="mx-auto grid w-full max-w-7xl items-stretch gap-4 xl:grid-cols-3">
           <div className="glass-panel overflow-hidden">
             {inSession && (
               <div className={`px-5 pt-5 text-center ${remaining === 0 ? "text-[#f87171]" : "text-white"}`}>
@@ -1063,8 +1065,6 @@ export function BlockTab({
             </div>
           </div>
 
-          <FocusMusicPanel autoPlay={inSession && phase === "focus"} />
-
           <div className="glass-panel p-5">
             <p className="mb-2 text-sm font-semibold text-white">Block list · {sites.length}</p>
             <div className="mb-3 flex items-center gap-1.5">
@@ -1150,6 +1150,8 @@ export function BlockTab({
               )}
             </ul>
           </div>
+
+          <FocusMusicPanel autoPlay={inSession && phase === "focus"} />
         </div>
 
     </div>
