@@ -12,6 +12,7 @@ type Prefs = {
   cycles: number;
   alarm_secs: number; // -1 = infinite
   alarm_vol: number;
+  anti_oops: boolean;
 };
 
 const ALARM_OPTS = [
@@ -19,7 +20,7 @@ const ALARM_OPTS = [
   { id: 5, label: "5 s" },
   { id: 10, label: "10 s" },
   { id: 15, label: "15 s" },
-  { id: -1, label: "∞" },
+  { id: -1, label: "infinite" },
 ] as const;
 
 const DEFAULT_PREFS: Prefs = {
@@ -29,6 +30,7 @@ const DEFAULT_PREFS: Prefs = {
   cycles: 4,
   alarm_secs: 10,
   alarm_vol: 0.6,
+  anti_oops: true,
 };
 
 const CATEGORIES: Array<{ id: string; label: string; sites: string[] }> = [
@@ -92,7 +94,8 @@ export function BlockTab({
   const [phase, setPhase] = useState<Phase>("idle");
   const [remaining, setRemaining] = useState(0);
   const [cycle, setCycle] = useState(0);
-  const [exceeded, setExceeded] = useState(0); // seconds past end when alarm is infinite
+  const [exceeded, setExceeded] = useState(0);
+  const [helpOpen, setHelpOpen] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopAlarmRef = useRef<(() => void) | null>(null);
 
@@ -353,6 +356,10 @@ export function BlockTab({
 
   const start = () => startPhase("focus", 1);
   const stop = useCallback(() => {
+    if (prefs.anti_oops && phase !== "idle") {
+      const ok = window.confirm("Stop the timer? (Anti-Oops is on)");
+      if (!ok) return;
+    }
     stopTimer();
     stopAlarm();
     setPhase("idle");
@@ -360,13 +367,22 @@ export function BlockTab({
     setCycle(0);
     setExceeded(0);
     desktopBridge.hideFloatTimer();
-  }, [stopTimer, stopAlarm]);
+  }, [stopTimer, stopAlarm, prefs.anti_oops, phase]);
 
   useEffect(() => {
-    const onClosed = () => stop();
+    const onClosed = () => {
+      // Float × bypasses anti-oops — intentional close
+      stopTimer();
+      stopAlarm();
+      setPhase("idle");
+      setRemaining(0);
+      setCycle(0);
+      setExceeded(0);
+      desktopBridge.hideFloatTimer();
+    };
     window.addEventListener("ff-float-closed", onClosed);
     return () => window.removeEventListener("ff-float-closed", onClosed);
-  }, [stop]);
+  }, [stopTimer, stopAlarm]);
 
   function testAlarm() {
     stopAlarm();
@@ -375,8 +391,6 @@ export function BlockTab({
 
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
   const ss = String(remaining % 60).padStart(2, "0");
-  const idleMm = String(prefs.focus_min).padStart(2, "0");
-  const idleSs = String(prefs.focus_sec || 0).padStart(2, "0");
 
   if (loading) return <p className="animate-pulse text-sm text-white/50">Loading your shield…</p>;
 
@@ -385,7 +399,6 @@ export function BlockTab({
 
   return (
     <>
-    {/* Compact float timer — bottom right, no fullscreen */}
     {inSession && (
       <div className="fixed bottom-5 right-5 z-[9999]">
         <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-[#141618]/95 px-1.5 py-1.5 shadow-2xl backdrop-blur-md">
@@ -400,7 +413,15 @@ export function BlockTab({
           </div>
           <button
             type="button"
-            onClick={stop}
+            onClick={() => {
+              stopTimer();
+              stopAlarm();
+              setPhase("idle");
+              setRemaining(0);
+              setCycle(0);
+              setExceeded(0);
+              desktopBridge.hideFloatTimer();
+            }}
             className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white/55 hover:bg-white/10 hover:text-white"
             aria-label="Close timer"
             title="Stop"
@@ -412,7 +433,6 @@ export function BlockTab({
     )}
 
     <div className="space-y-5">
-        {/* Shield — always a real toggle when desktop is connected */}
         <ShieldCard
           isDesktop={isDesktop}
           on={on}
@@ -422,149 +442,177 @@ export function BlockTab({
           onToggle={toggleShield}
         />
 
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,380px)_1fr]">
-          {/* Timer with timerform-style settings */}
-          <div className="glass-panel p-6">
-            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-white/50">
-              {phase === "idle"
-                ? "Timer"
-                : phase === "focus"
-                ? `Cycle ${cycle}/${prefs.cycles} · focus`
-                : `Cycle ${cycle}/${prefs.cycles} · break`}
-            </p>
-
-            <div className="my-6 text-center">
-              <div
-                className={`font-display text-7xl font-bold tabular-nums ${
-                  phase === "idle" ? "text-white" : remaining === 0 ? "text-[#f87171]" : "text-white"
-                }`}
-              >
-                {phase === "idle" ? `${idleMm}:${idleSs}` : `${mm}:${ss}`}
-              </div>
-              {phase !== "idle" && remaining === 0 && exceeded > 0 && (
-                <p className="mt-2 text-sm text-[#f87171]">
-                  exceeded {String(Math.floor(exceeded / 60)).padStart(2, "0")}:{String(exceeded % 60).padStart(2, "0")}
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,420px)_1fr]">
+          {/* Timerform-style panel */}
+          <div className="glass-panel overflow-hidden">
+            {/* Live display when running */}
+            {inSession && (
+              <div className={`px-6 pt-6 text-center ${remaining === 0 ? "text-[#f87171]" : "text-white"}`}>
+                <div className="font-display text-6xl font-bold tabular-nums">
+                  {mm}:{ss}
+                </div>
+                {remaining === 0 && exceeded > 0 && (
+                  <p className="mt-1 text-sm text-[#f87171]">
+                    exceeded {String(Math.floor(exceeded / 60)).padStart(2, "0")}:
+                    {String(exceeded % 60).padStart(2, "0")}
+                  </p>
+                )}
+                <p className="mt-1 text-[11px] uppercase tracking-[0.35em] text-white/45">
+                  {phase} · cycle {cycle}/{prefs.cycles}
                 </p>
-              )}
-              <p className="mt-2 text-[11px] uppercase tracking-[0.4em] text-white/45">
-                {phase === "idle" ? "Ready" : phase}
-              </p>
-            </div>
-
-            {phase === "idle" ? (
-              <button onClick={start} className="btn-primary w-full">
-                Start the timer
-              </button>
-            ) : (
-              <button onClick={stop} className="btn-secondary w-full">
-                Stop
-              </button>
+              </div>
             )}
 
-            {/* Duration */}
-            <div className="mt-5">
-              <p className="mb-2 text-[11px] uppercase tracking-wider text-white/45">Duration</p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  max={180}
-                  disabled={inSession}
-                  value={prefs.focus_min}
-                  onChange={(e) =>
-                    savePrefs({ ...prefs, focus_min: Math.max(0, Math.min(180, Number(e.target.value) || 0)) })
-                  }
-                  className="input-premium w-20 bg-white/5 text-center"
-                  title="Minutes"
-                />
-                <span className="text-white/40">min</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={59}
-                  disabled={inSession}
-                  value={prefs.focus_sec}
-                  onChange={(e) =>
-                    savePrefs({ ...prefs, focus_sec: Math.max(0, Math.min(59, Number(e.target.value) || 0)) })
-                  }
-                  className="input-premium w-20 bg-white/5 text-center"
-                  title="Seconds"
-                />
-                <span className="text-white/40">sec</span>
-              </div>
-            </div>
-
-            {/* Alarm duration */}
-            <div className="mt-4">
-              <p className="mb-2 text-[11px] uppercase tracking-wider text-white/45">Duration alarm</p>
-              <div className="flex flex-wrap gap-1.5">
-                {ALARM_OPTS.map((o) => (
-                  <button
-                    key={o.id}
-                    type="button"
+            {/* Timerform */}
+            <div className="border-b border-white/10 px-6 py-5">
+              <p className="mb-3 text-sm font-semibold text-white/90">Timerform</p>
+              <div className="flex flex-wrap items-stretch gap-2">
+                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={180}
                     disabled={inSession}
-                    onClick={() => savePrefs({ ...prefs, alarm_secs: o.id })}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                      prefs.alarm_secs === o.id
-                        ? "border-[#b8422e] bg-[#b8422e] text-white"
-                        : "border-white/15 text-white/70 hover:bg-white/10"
-                    }`}
-                  >
-                    {o.label}
+                    value={prefs.focus_min}
+                    onChange={(e) =>
+                      savePrefs({ ...prefs, focus_min: Math.max(0, Math.min(180, Number(e.target.value) || 0)) })
+                    }
+                    className="w-16 bg-transparent text-center text-lg font-semibold tabular-nums text-white outline-none"
+                    aria-label="Minutes"
+                  />
+                  <span className="text-sm text-white/45">min</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
+                    disabled={inSession}
+                    value={prefs.focus_sec}
+                    onChange={(e) =>
+                      savePrefs({ ...prefs, focus_sec: Math.max(0, Math.min(59, Number(e.target.value) || 0)) })
+                    }
+                    className="w-14 bg-transparent text-center text-lg font-semibold tabular-nums text-white outline-none"
+                    aria-label="Seconds"
+                  />
+                  <span className="text-sm text-white/45">sec</span>
+                </div>
+                {phase === "idle" ? (
+                  <button onClick={start} className="btn-primary shrink-0 px-5">
+                    Start the timer
                   </button>
-                ))}
+                ) : (
+                  <button onClick={stop} className="btn-secondary shrink-0 px-5">
+                    Stop
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Alarm volume */}
-            <div className="mt-4">
-              <p className="mb-2 text-[11px] uppercase tracking-wider text-white/45">Alarm volume</p>
-              <div className="flex items-center gap-3">
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={prefs.alarm_vol}
-                  onChange={(e) => savePrefs({ ...prefs, alarm_vol: Number(e.target.value) })}
-                  className="flex-1 accent-[#b8422e]"
-                />
-                <button type="button" onClick={testAlarm} className="btn-secondary py-1.5! text-xs!">
-                  Test
+            {/* Options */}
+            <div className="space-y-5 px-6 py-5">
+              <p className="text-sm font-semibold text-white/90">Options</p>
+
+              <div>
+                <p className="mb-2 text-sm text-white/70">Duration alarm</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {ALARM_OPTS.map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => savePrefs({ ...prefs, alarm_secs: o.id })}
+                      className={`rounded-md border px-3 py-1.5 text-sm font-medium transition ${
+                        prefs.alarm_secs === o.id
+                          ? "border-[#b8422e] bg-[#b8422e] text-white"
+                          : "border-white/15 bg-white/5 text-white/75 hover:bg-white/10"
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-sm text-white/70">Alarm volume</p>
+                <div className="flex items-center gap-3">
+                  <span className="text-white/40" aria-hidden>
+                    ♪
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={prefs.alarm_vol}
+                    onChange={(e) => savePrefs({ ...prefs, alarm_vol: Number(e.target.value) })}
+                    className="h-2 flex-1 accent-[#b8422e]"
+                  />
+                  <button type="button" onClick={testAlarm} className="btn-secondary py-1.5! text-xs!">
+                    Test
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => savePrefs({ ...prefs, anti_oops: !prefs.anti_oops })}
+                  className={`rounded-md border px-3 py-1.5 text-sm font-medium transition ${
+                    prefs.anti_oops
+                      ? "border-[#b8422e]/70 bg-[#b8422e]/20 text-white"
+                      : "border-white/15 bg-white/5 text-white/75 hover:bg-white/10"
+                  }`}
+                  title="Ask before stopping a running timer"
+                >
+                  Anti-Oops!{prefs.anti_oops ? " ✓" : ""}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHelpOpen((v) => !v)}
+                  className="rounded-md border border-[#b8422e]/50 bg-[#b8422e]/15 px-3 py-1.5 text-sm font-medium text-white hover:bg-[#b8422e]/25"
+                >
+                  Display help
                 </button>
               </div>
-            </div>
 
-            {/* Cycles / break — compact */}
-            <div className="mt-4 grid grid-cols-2 gap-2 text-center text-xs">
-              <label className="flex flex-col gap-1">
-                <span className="text-white/45">Break (min)</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={60}
-                  disabled={inSession}
-                  value={prefs.break_min}
-                  onChange={(e) =>
-                    savePrefs({ ...prefs, break_min: Math.max(1, Math.min(60, Number(e.target.value) || 1)) })
-                  }
-                  className="input-premium w-full bg-white/5 text-center"
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-white/45">Cycles</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={12}
-                  disabled={inSession}
-                  value={prefs.cycles}
-                  onChange={(e) =>
-                    savePrefs({ ...prefs, cycles: Math.max(1, Math.min(12, Number(e.target.value) || 1)) })
-                  }
-                  className="input-premium w-full bg-white/5 text-center"
-                />
-              </label>
+              {helpOpen && (
+                <div className="rounded-lg border border-white/10 bg-white/5 p-3 text-xs leading-relaxed text-white/65">
+                  Set minutes + seconds, then <span className="text-white/90">Start the timer</span>.
+                  When time is up, the alarm plays for the duration you picked (or forever if infinite).
+                  <span className="text-white/90"> Anti-Oops!</span> asks for confirmation before Stop.
+                  A compact timer stays bottom-right while you work — × closes it.
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-4 text-center text-xs">
+                <label className="flex flex-col gap-1">
+                  <span className="text-white/45">Break (min)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    disabled={inSession}
+                    value={prefs.break_min}
+                    onChange={(e) =>
+                      savePrefs({ ...prefs, break_min: Math.max(1, Math.min(60, Number(e.target.value) || 1)) })
+                    }
+                    className="input-premium w-full bg-white/5 text-center"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-white/45">Cycles</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    disabled={inSession}
+                    value={prefs.cycles}
+                    onChange={(e) =>
+                      savePrefs({ ...prefs, cycles: Math.max(1, Math.min(12, Number(e.target.value) || 1)) })
+                    }
+                    className="input-premium w-full bg-white/5 text-center"
+                  />
+                </label>
+              </div>
             </div>
           </div>
 
