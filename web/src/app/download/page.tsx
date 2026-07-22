@@ -1,8 +1,9 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ImmersiveScene } from "@/components/ImmersiveScene";
+import { DOWNLOAD_SCENE } from "@/lib/scenes";
 
 type DownloadInfo = {
   version: string | null;
@@ -29,26 +30,22 @@ export default function DownloadPage() {
       : "Build coming soon";
 
   return (
-    <main className="relative min-h-screen overflow-hidden">
-      <div className="absolute inset-0">
-        <Image src="/assets/focus-quest.jpg" alt="" fill priority className="object-cover object-center" />
-        <div className="hero-overlay absolute inset-0" />
-      </div>
+    <main className="relative min-h-screen overflow-hidden text-white">
+      <ImmersiveScene scene={DOWNLOAD_SCENE} />
       <div className="relative z-10 mx-auto max-w-3xl px-4 py-16">
-        <Link href="/" className="mb-8 inline-block text-sm text-[#9ca3af] hover:text-[#f4f4f5]">
+        <Link href="/" className="mb-8 inline-block text-sm text-white/70 hover:text-white">
           ← Back
         </Link>
 
-        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-[#9ca3af]">Step 1 of 3</p>
-        <h1 className="mb-4 text-4xl font-bold text-[#f4f4f5] md:text-5xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/60">Step 1 of 3</p>
+        <h1 className="mb-4 font-display text-4xl font-bold drop-shadow-lg md:text-5xl">
           Download for <span className="accent-text">Windows</span>
         </h1>
-        <p className="mb-10 text-lg text-[#9ca3af]">
+        <p className="mb-10 text-lg text-white/75">
           Block Twitter, YouTube, TikTok system-wide. Focus timer with Windows notifications.
-          Sync XP with your Fellowship on the web — no GitHub account needed.
         </p>
 
-        <div className="glass-card mb-8 p-8 text-center">
+        <div className="glass-panel mb-8 p-8 text-center">
           {ready ? (
             <a href="/api/download/windows" className="btn-primary inline-block min-w-[280px]" download>
               {label}
@@ -59,51 +56,24 @@ export default function DownloadPage() {
             </button>
           )}
           {!ready && info !== null && (
-            <p className="mt-4 text-sm text-[#9ca3af]">
-              The Windows installer is not published yet. Use the web app for now, or run the desktop source locally.
+            <p className="mt-4 text-sm text-white/60">
+              Installer not published yet — use the web app, or run desktop source locally.
             </p>
           )}
-          <p className="mt-3 text-xs text-[#9ca3af]">Windows 10/11 · direct download · no account required</p>
+          <p className="mt-3 text-xs text-white/50">Windows 10/11 · no account required</p>
         </div>
 
-        <ol className="glass-card space-y-6 p-8">
-          {[
-            {
-              n: "1",
-              title: "Unzip & launch",
-              desc: "Extract the zip, open the FellowshipFocus folder, double-click Start Fellowship Focus.bat (or FellowshipFocus.exe).",
-            },
-            {
-              n: "2",
-              title: "Connect your Fellowship",
-              desc: "Settings → paste invite link or “Copy for desktop app” from the web dashboard.",
-            },
-            {
-              n: "3",
-              title: "Start a focus session",
-              desc: "Pomodoro blocks distractions. OKRs + Guild Trust track progress. Adjust timer anytime.",
-            },
-          ].map((step) => (
-            <li key={step.n} className="flex gap-4">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#3a3d40] text-sm font-semibold text-[#f4f4f5]">
-                {step.n}
-              </span>
-              <div>
-                <p className="font-semibold text-[#f4f4f5]">{step.title}</p>
-                <p className="text-sm text-[#9ca3af]">{step.desc}</p>
-              </div>
-            </li>
-          ))}
+        <ol className="glass-panel space-y-4 p-8 text-sm text-white/75">
+          <li>
+            <strong className="text-white">1.</strong> Install & launch Fellowship Focus
+          </li>
+          <li>
+            <strong className="text-white">2.</strong> Pair from the web app (Connect Chrome / desktop)
+          </li>
+          <li>
+            <strong className="text-white">3.</strong> Turn Shield ON and start a focus quest
+          </li>
         </ol>
-
-        <details className="glass-card mt-6 p-6">
-          <summary className="cursor-pointer font-medium text-[#f4f4f5]">Run from source (developers)</summary>
-          <pre className="mt-4 overflow-x-auto rounded-lg bg-[#2e3134] p-4 text-xs text-[#9ca3af]">
-{`cd desktop
-pip install -r requirements.txt
-python main.py`}
-          </pre>
-        </details>
       </div>
     </main>
   );

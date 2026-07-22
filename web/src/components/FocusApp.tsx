@@ -7,6 +7,8 @@ import { BlockTab } from "@/components/BlockTab";
 import { FocusTab } from "@/components/FocusTab";
 import { FellowshipDashboard } from "@/components/FellowshipDashboard";
 import { GuildDirectory } from "@/components/GuildDirectory";
+import { ImmersiveScene } from "@/components/ImmersiveScene";
+import { TAB_SCENE, type SceneId } from "@/lib/scenes";
 
 type Tab = "block" | "focus" | "guild";
 
@@ -188,7 +190,7 @@ export function FocusApp() {
   const joined = Boolean(code && token);
 
   return (
-    <Shell>
+    <Shell scene={TAB_SCENE[tab]}>
       <header className="sticky top-0 z-20">
         <div className="mx-auto flex max-w-6xl items-center justify-center gap-3 px-4 py-4 md:px-8">
           <nav className="flex items-center gap-1 rounded-full border border-white/20 bg-black/25 p-1 backdrop-blur-md">
@@ -270,17 +272,10 @@ export function FocusApp() {
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, scene }: { children: React.ReactNode; scene: SceneId }) {
   return (
-    <main className="relative isolate min-h-screen overflow-x-hidden text-white">
-      {/* Decorative only — never captures clicks (Qt WebEngine can mishandle -z-index) */}
-      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden>
-        <div
-          className="focus-kenburns absolute inset-[-6%] bg-cover bg-center"
-          style={{ backgroundImage: "url('/fellowship-hero.png')" }}
-        />
-        <div className="app-scrim absolute inset-0" />
-      </div>
+    <main className="relative isolate min-h-screen overflow-x-hidden bg-transparent text-white">
+      <ImmersiveScene scene={scene} />
       <div className="relative z-10">{children}</div>
     </main>
   );

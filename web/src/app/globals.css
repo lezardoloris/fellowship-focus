@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #1a1c1e;
+  --background: #0c0e10;
   --foreground: #f4f4f5;
   --surface: #242628;
   --surface-elevated: #2e3134;
@@ -100,31 +100,52 @@ html {
 .hero-overlay {
   background: linear-gradient(
     180deg,
-    rgba(26, 28, 30, 0.55) 0%,
-    rgba(26, 28, 30, 0.85) 50%,
-    rgba(26, 28, 30, 0.98) 100%
+    rgba(12, 14, 16, 0.15) 0%,
+    rgba(12, 14, 16, 0.25) 50%,
+    rgba(12, 14, 16, 0.45) 100%
   );
 }
 
 /* Frosted translucent panel — foreground controls sit here so the
    fellowship image reads through them (premium glassmorphism). */
 .glass-panel {
-  background: rgba(18, 20, 22, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(12, 14, 16, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 16px;
-  backdrop-filter: blur(14px) saturate(1.2);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(12px) saturate(1.25);
+  -webkit-backdrop-filter: blur(12px) saturate(1.25);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.18);
   position: relative;
   z-index: 1;
 }
 
-/* Light vignette only — keep the HD fellowship scene readable */
+/* Legacy soft scrim — prefer .immersive-scrim for full-bleed scenes */
 .app-scrim {
   pointer-events: none;
   background:
-    radial-gradient(90% 70% at 50% 40%, transparent 30%, rgba(12, 14, 16, 0.28) 100%),
-    linear-gradient(180deg, rgba(12, 14, 16, 0.12) 0%, transparent 35%, rgba(12, 14, 16, 0.35) 100%);
+    radial-gradient(90% 70% at 50% 40%, transparent 35%, rgba(12, 14, 16, 0.2) 100%),
+    linear-gradient(180deg, rgba(12, 14, 16, 0.08) 0%, transparent 40%, rgba(12, 14, 16, 0.28) 100%);
+}
+
+.immersive-scrim {
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 35%, transparent 0%, rgba(8, 10, 12, 0.15) 100%),
+    linear-gradient(180deg, rgba(8, 10, 12, 0.1) 0%, transparent 28%, transparent 62%, rgba(8, 10, 12, 0.32) 100%);
+}
+
+.immersive-kenburns {
+  animation: immersive-kenburns 48s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes immersive-kenburns {
+  from {
+    transform: scale(1.05) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.14) translate3d(-1.5%, -1%, 0);
+  }
 }
 
 .header-glass {

@@ -1,10 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FEATURE_IMAGES } from "@/lib/assets";
+import { ImmersiveScene } from "@/components/ImmersiveScene";
+import { LANDING_SCENE } from "@/lib/scenes";
 
 export default function HomePage() {
   const [name, setName] = useState("");
@@ -38,125 +38,63 @@ export default function HomePage() {
   }
 
   return (
-    <main className="relative min-h-screen overflow-hidden">
-      <div className="absolute inset-0">
-        <Image
-          src="/assets/hero.jpg"
-          alt=""
-          fill
-          priority
-          className="object-cover object-center scale-105"
-        />
-        <div className="hero-overlay absolute inset-0" />
-      </div>
-
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col items-center justify-center px-4 py-16">
-        <p className="animate-fade-up mb-3 text-xs font-semibold uppercase tracking-[0.45em] text-[#9ca3af]">
-          Block · Focus · Win XP with friends
+    <main className="relative min-h-screen overflow-hidden text-white">
+      <ImmersiveScene scene={LANDING_SCENE} />
+      <div className="relative z-10 mx-auto max-w-3xl px-4 py-20">
+        <p className="font-display text-xs font-semibold tracking-[0.35em] text-white/70">
+          FELLOWSHIP FOCUS
         </p>
-        <h1 className="font-display animate-fade-up stagger-1 mb-5 text-center text-5xl font-bold tracking-wide md:text-7xl">
-          <span className="accent-text">Fellowship</span>
+        <h1 className="mt-4 font-display text-4xl font-bold drop-shadow-lg md:text-6xl">
+          Block distractions.
           <br />
-          <span className="text-stone-100">Focus</span>
+          <span className="accent-text">Keep the quest.</span>
         </h1>
-        <p className="animate-fade-up stagger-2 mb-8 max-w-xl text-center text-lg leading-relaxed text-stone-400">
-          System-wide blocker for Twitter, YouTube, TikTok. 45-min focus quests. Weekly ladder with your guild.
+        <p className="mt-4 max-w-xl text-lg text-white/75 drop-shadow">
+          Immersive focus for builders. Shield, timer, guild — over Middle-earth.
         </p>
-
-        <div className="animate-fade-up stagger-3 mb-10 w-full max-w-md">
-          <Link href="/download" className="btn-primary block w-full text-center">
-            Download for Windows — block sites & start 45-min focus
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link href="/app" className="btn-primary">
+            Open app
+          </Link>
+          <Link
+            href="/download"
+            className="btn-secondary border-white/20 bg-black/30 text-white backdrop-blur-md"
+          >
+            Windows download
           </Link>
         </div>
 
-        <form
-          onSubmit={createFellowship}
-          className="glass-card animate-fade-up stagger-3 w-full max-w-md p-8"
-        >
-          <p className="mb-4 text-center text-xs uppercase tracking-widest text-stone-500">
-            Or start in the browser
-          </p>
-          <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-stone-500">
-            Name your Fellowship
-          </label>
+        <form onSubmit={createFellowship} className="glass-panel mt-12 space-y-4 p-6">
+          <h2 className="text-lg font-semibold">Found a fellowship</h2>
           <input
-            type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="The Nine Walkers"
-            className="input-premium mb-5 w-full"
+            placeholder="Fellowship name"
+            className="input-premium w-full bg-white/5"
           />
-          <label className="mb-3 flex cursor-pointer items-start gap-3 rounded-xl border border-stone-800/80 bg-black/20 p-4">
+          <label className="flex items-center gap-2 text-sm text-white/70">
             <input
               type="checkbox"
               checked={penaltyEnabled}
               onChange={(e) => setPenaltyEnabled(e.target.checked)}
-              className="mt-1"
             />
-            <span className="text-sm leading-relaxed text-stone-400">
-              <span className="font-medium text-stone-300">Optional guild rule</span> — penalize members who
-              turn off the site blocker <em>during</em> a focus session (not outside sessions).
-            </span>
+            Bypass penalty ({blockerPenalty} XP)
           </label>
           {penaltyEnabled && (
-            <div className="mb-5">
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-widest text-stone-500">
-                XP penalty on bypass
-              </label>
-              <input
-                type="number"
-                min={5}
-                max={100}
-                value={blockerPenalty}
-                onChange={(e) => setBlockerPenalty(Number(e.target.value) || 0)}
-                className="input-premium w-full"
-              />
-            </div>
+            <input
+              type="range"
+              min={5}
+              max={100}
+              value={blockerPenalty}
+              onChange={(e) => setBlockerPenalty(Number(e.target.value))}
+              className="w-full accent-[#b8422e]"
+            />
           )}
-          {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
-          <button type="submit" disabled={loading} className="btn-secondary w-full">
-            {loading ? "Forging the Ring…" : "Create Fellowship (web)"}
+          <button type="submit" disabled={loading} className="btn-primary">
+            {loading ? "…" : "Create"}
           </button>
+          {error && <p className="text-sm text-red-400">{error}</p>}
         </form>
-
-        <div className="mt-14 grid w-full max-w-4xl gap-5 md:grid-cols-3">
-          {[
-            {
-              img: FEATURE_IMAGES.focus,
-              title: "Block everything",
-              desc: "Desktop app blocks dopamine sites in all browsers during focus.",
-            },
-            {
-              img: FEATURE_IMAGES.link,
-              title: "One guild link",
-              desc: "Share with friends. OKRs, habits, stakes, Guild Trust.",
-            },
-            {
-              img: FEATURE_IMAGES.ladder,
-              title: "XP & ladder",
-              desc: "45–50 min quests (flexible). Windows notifications when done.",
-            },
-          ].map((card, i) => (
-            <div
-              key={card.title}
-              className={`glass-card group overflow-hidden opacity-0 animate-fade-up ${["stagger-1", "stagger-2", "stagger-3"][i]}`}
-            >
-              <div className="relative h-36 overflow-hidden">
-                <Image
-                  src={card.img}
-                  alt=""
-                  fill
-                  className="object-cover transition-transform duration-500 group-hover:scale-110"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                <p className="absolute bottom-3 left-4 text-lg font-semibold text-[#f4f4f5]">
-                  {card.title}
-                </p>
-              </div>
-              <p className="p-4 text-sm leading-relaxed text-stone-400">{card.desc}</p>
-            </div>
-          ))}
-        </div>
       </div>
     </main>
   );
