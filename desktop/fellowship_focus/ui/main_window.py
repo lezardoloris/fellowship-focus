@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from fellowship_focus.activity_tracker import ActivityTracker
 from fellowship_focus.api_client import FellowshipApi
 from fellowship_focus.blocker.manager import (
+    blocker_log,
     force_release_blocker,
     is_mitmdump_running,
     proxy_engine_available,
@@ -952,8 +953,9 @@ class MainWindow(QMainWindow):
             self.toasts.show("Arming…", "Starting the blocking engine.", "info", 2000)
 
     def _on_shield_disarm(self) -> None:
-        if not self.blocker_active:
+        if not self.blocker_active and not self._blocker_arming:
             return
+        blocker_log("disarm requested by user")
         self._disable_blocker(work_bypass=True)
         self._sync_shield_toggle()
 
@@ -1319,12 +1321,14 @@ class MainWindow(QMainWindow):
             return
         if self.mitm_process and self.mitm_process.poll() is not None:
             self._blocker_arming = False
+            blocker_log("arm FAILED: engine process died during boot")
             self._on_blocker_failed(
                 "The blocking engine crashed while starting (see ~/.fellowship-focus/proxy.log)."
             )
             return
         if is_mitmdump_running():
             self._blocker_arming = False
+            blocker_log("engine up — arming system proxy")
             set_system_proxy(True)
             self.blocker_active = True
             self._blocker_on_for_session = True
@@ -1347,6 +1351,7 @@ class MainWindow(QMainWindow):
         if self.mitm_process and self.mitm_process.poll() is None and is_mitmdump_running():
             return
         self._blocker_watchdog.stop()
+        blocker_log("WATCHDOG trip: engine not answering while armed")
         self._on_blocker_failed("The blocking engine stopped (see ~/.fellowship-focus/proxy.log).")
 
     def _on_blocker_failed(self, detail: str) -> None:
@@ -1783,6 +1788,12 @@ class MainWindow(QMainWindow):
             status.setEnabled(False)
             menu.addSeparator()
 
+        if self.blocker_active or self._blocker_arming:
+            shield_a = QAction("Stop blocking", self)
+            shield_a.triggered.connect(self._on_shield_disarm)
+            menu.addAction(shield_a)
+            menu.addSeparator()
+
         show_a = QAction("Open Fellowship Focus", self)
         show_a.triggered.connect(self._show_from_tray)
         menu.addAction(show_a)
@@ -1828,13 +1839,23 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:
         self._save_window_geometry()
         if self.config.get("minimize_to_tray", True):
+            # An armed shield SURVIVES closing the window. The old behavior
+            # silently released it here whenever no Qt pomodoro was running —
+            # so arming from the web tab then closing the window killed the
+            # blocker with a toast nobody could see. "Block N sites" means
+            # blocked until the user says stop, window open or not.
             session_on = self._float_timer.isVisible() or self.pomodoro.is_running
-            # Keep focus session + floating timer alive when the window hides.
-            if not session_on:
-                self._release_blocker_on_hide()
             event.ignore()
             self.hide()
-            if session_on:
+            if self.blocker_active or self._blocker_arming:
+                blocker_log("window closed to tray — shield stays armed")
+                self.tray.showMessage(
+                    "Still blocking",
+                    "The shield stays up in the tray. Right-click the tray icon to stop it.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    3500,
+                )
+            elif session_on:
                 self._float_timer.raise_()
                 self.tray.showMessage(
                     "Focus continues",
@@ -1844,19 +1865,6 @@ class MainWindow(QMainWindow):
                 )
             return
         self._quit_app()
-
-    def _release_blocker_on_hide(self) -> None:
-        """Closing the window must restore normal browsing (app may stay in tray)."""
-        was_active = self.blocker_active
-        self._release_blocker_infra()
-        self._sync_shield_toggle()
-        if was_active:
-            self.toasts.show(
-                "Shield released",
-                "Sites are unblocked while the app runs in the tray.",
-                "info",
-                3500,
-            )
 
     def _quit_app(self) -> None:
         self._save_window_geometry()

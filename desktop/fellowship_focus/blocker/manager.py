@@ -16,6 +16,25 @@ from fellowship_focus.constants import MITMDUMP_CHECK_URL, MITMDUMP_SHUTDOWN_URL
 
 CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
+
+def blocker_log(event: str) -> None:
+    """Append one timestamped line to ~/.fellowship-focus/blocker.log.
+
+    The blocker's failures kept being invisible (armed state without engine,
+    engine shut down by a hidden code path…). Every lifecycle transition now
+    leaves a trace so 'it didn't work' is diagnosable in seconds.
+    """
+    try:
+        import datetime
+
+        log_dir = Path.home() / ".fellowship-focus"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_dir / "blocker.log", "a", encoding="utf-8", errors="replace") as f:
+            f.write(f"[{stamp}] {event}\n")
+    except Exception:
+        pass  # logging must never break the blocker
+
 KONCENTRO_MITMDUMP = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Koncentro" / "mitmdump.exe"
 
 # Flag the app passes to itself to run the embedded mitmproxy engine (see main.py).
@@ -131,7 +150,9 @@ def start_mitmdump(
 ) -> subprocess.Popen | None:
     prefix = _proxy_launch_prefix()
     if not prefix:
+        blocker_log("start_mitmdump: NO ENGINE (no embedded mitmproxy, no external binary)")
         return None
+    blocker_log(f"start_mitmdump: {len(addresses)} sites, {len(path_rules or [])} path rules")
 
     block_script = _resolve_block_script()
     joined = ",".join(addresses)
@@ -174,6 +195,7 @@ def start_mitmdump(
 def set_system_proxy(enable: bool) -> None:
     from uniproxy import Uniproxy
 
+    blocker_log(f"system proxy -> {'ON' if enable else 'OFF'}")
     proxy = Uniproxy("127.0.0.1", PROXY_PORT)
     if enable:
         proxy.join()
@@ -183,6 +205,7 @@ def set_system_proxy(enable: bool) -> None:
 
 def force_release_blocker() -> None:
     """Stop mitmdump and clear the system proxy. Safe to call repeatedly."""
+    blocker_log("force_release_blocker()")
     try:
         shutdown_mitmdump_gracefully()
     except Exception:

@@ -16,6 +16,7 @@ import {
 } from "@/lib/extensionBridge";
 import { useToast } from "@/components/Toasts";
 import { PremiumLoader } from "@/components/PremiumLoader";
+import { FocusMusicPanel } from "@/components/FocusMusicPanel";
 import { requestHardUnlock } from "@/components/BlockerControls";
 import {
   DEFAULT_BLOCKER_SETTINGS,
@@ -1061,6 +1062,8 @@ export function BlockTab({
               </div>
             </div>
           </div>
+
+          <FocusMusicPanel autoPlay={inSession && phase === "focus"} />
 
           <div className="glass-panel p-5">
             <p className="mb-2 text-sm font-semibold text-white">Block list · {sites.length}</p>
