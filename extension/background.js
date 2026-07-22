@@ -802,7 +802,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+function handleMessage(msg, sendResponse) {
   (async () => {
     switch (msg?.type) {
       case "getState":
@@ -874,10 +874,37 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       case "analyzeHistory": {
+        // history is OPTIONAL (kept out of the base manifest for easier review).
+        // chrome.permissions.request needs a direct user gesture, which a message
+        // from the web app can't carry — so here we only CHECK. The grant happens
+        // from the popup button. If not granted, tell the caller how to enable it.
+        const has = await new Promise((res) => {
+          try {
+            chrome.permissions.contains({ permissions: ["history"] }, (ok) => res(!!ok));
+          } catch {
+            res(false);
+          }
+        });
+        if (!has) {
+          sendResponse({ error: "history_permission_needed", suggestions: [] });
+          break;
+        }
         const suggestions = await analyzeHistory(msg.days || 30);
         await chrome.storage.local.set({ historySuggestions: suggestions });
         const push = await pushSuggestions(suggestions);
         sendResponse({ suggestions, push });
+        break;
+      }
+      case "requestHistoryPermission": {
+        // Called from the popup (direct user gesture) — safe to request here.
+        const ok = await new Promise((res) => {
+          try {
+            chrome.permissions.request({ permissions: ["history"] }, (g) => res(!!g));
+          } catch {
+            res(false);
+          }
+        });
+        sendResponse({ granted: ok });
         break;
       }
       case "getHistorySuggestions": {
@@ -893,4 +920,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   })();
   return true; // async
-});
+}
+
+// Internal messages (popup, block page, content script).
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) =>
+  handleMessage(msg, sendResponse)
+);
+
+// Direct messages from the web app (externally_connectable). More robust than
+// the content-script relay: works even if the content script didn't inject.
+if (chrome.runtime.onMessageExternal) {
+  chrome.runtime.onMessageExternal.addListener((msg, _sender, sendResponse) =>
+    handleMessage(msg, sendResponse)
+  );
+}

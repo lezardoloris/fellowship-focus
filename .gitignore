@@ -43,3 +43,7 @@ web/public/audio/*.ogg
 
 # Baked originals for the ping-pong script (not served)
 public/scenes/_original/
+
+# Chrome extension signing key + built store zips (never commit)
+extension/store/*.pem
+extension/store/*.zip

@@ -1,4 +1,12 @@
-/** Talk to the Fellowship Focus Chrome extension via content-script bridge. */
+/** Talk to the Fellowship Focus Chrome extension.
+ *
+ * Two channels, tried in order:
+ *  1. Direct — chrome.runtime.sendMessage(extId, …) via externally_connectable.
+ *     Robust: works even if the content script didn't inject on this origin.
+ *  2. Fallback — window.postMessage relayed by the content script (legacy).
+ * The extension id is discovered at runtime from FF_EXT_READY/PONG, so it keeps
+ * working after the Chrome Web Store assigns a different id at publish time.
+ */
 
 export type HistorySuggestion = {
   domain: string;
@@ -9,6 +17,55 @@ export type HistorySuggestion = {
 
 function requestId() {
   return `ff-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ── Direct channel (externally_connectable) ──
+
+type ChromeRuntime = {
+  sendMessage?: (id: string, msg: unknown, cb: (r: unknown) => void) => void;
+  lastError?: { message?: string } | undefined;
+};
+function chromeRuntime(): ChromeRuntime | null {
+  const c = (globalThis as { chrome?: { runtime?: ChromeRuntime } }).chrome;
+  return c?.runtime ?? null;
+}
+
+let discoveredExtId: string | null = null;
+
+/** Capture the extension id the moment it announces itself. */
+if (typeof window !== "undefined") {
+  window.addEventListener("message", (event: MessageEvent) => {
+    const d = event.data;
+    if (d?.source === "fellowship-focus-ext" && typeof d.extId === "string") {
+      discoveredExtId = d.extId;
+    }
+  });
+}
+
+/** Send a message straight to the extension; null if the direct channel is unavailable. */
+function sendDirect<T = unknown>(msg: unknown, timeoutMs = 2500): Promise<T | null> {
+  return new Promise((resolve) => {
+    const rt = chromeRuntime();
+    if (!rt?.sendMessage || !discoveredExtId) return resolve(null);
+    let settled = false;
+    const done = (v: T | null) => {
+      if (!settled) {
+        settled = true;
+        resolve(v);
+      }
+    };
+    const timer = setTimeout(() => done(null), timeoutMs);
+    try {
+      rt.sendMessage(discoveredExtId, msg, (r: unknown) => {
+        clearTimeout(timer);
+        if (chromeRuntime()?.lastError) return done(null);
+        done((r as T) ?? null);
+      });
+    } catch {
+      clearTimeout(timer);
+      done(null);
+    }
+  });
 }
 
 export function pingExtension(timeoutMs = 800): Promise<boolean> {
@@ -75,7 +132,12 @@ export type ExtensionState = {
   version: string;
 };
 
-export function getExtensionState(timeoutMs = 2500): Promise<ExtensionState | null> {
+export async function getExtensionState(timeoutMs = 2500): Promise<ExtensionState | null> {
+  // Prefer the direct channel; it works even where the content script can't run.
+  const direct = await sendDirect<{ status?: ExtensionState }>({ type: "getStatus" }, timeoutMs);
+  if (direct?.status) return direct.status;
+
+  // Fallback: content-script relay.
   return new Promise((resolve) => {
     const id = requestId();
     const onMsg = (event: MessageEvent) => {

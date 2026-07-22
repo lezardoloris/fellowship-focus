@@ -61,11 +61,11 @@
     }
 
     if (data.type === "FF_EXT_PING") {
-      send("FF_EXT_PONG", { version: chrome.runtime.getManifest().version });
+      send("FF_EXT_PONG", { version: chrome.runtime.getManifest().version, extId: chrome.runtime.id });
     }
   });
 
-  send("FF_EXT_READY", { version: chrome.runtime.getManifest().version });
+  send("FF_EXT_READY", { version: chrome.runtime.getManifest().version, extId: chrome.runtime.id });
 
   // NOTE: /pair codes are single-use and are redeemed by the pair page itself.
   // The content script must not redeem them too — both racing for the same code

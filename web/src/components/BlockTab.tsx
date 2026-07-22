@@ -910,15 +910,12 @@ export function BlockTab({
               A web page cannot block other tabs on its own.
             </span>
             <a href="/download" className="font-semibold text-[#e07a63] hover:underline">
-              Install the app (blocks everything)
+              Get the app (blocks everything)
             </a>
             <span className="text-white/40">or</span>
-            <span className="text-white/70">
-              Chrome →{" "}
-              <code className="rounded bg-white/10 px-1 py-0.5">chrome://extensions</code> →
-              Developer mode → Load unpacked →{" "}
-              <code className="rounded bg-white/10 px-1 py-0.5">fellowship-focus/extension</code>
-            </span>
+            <a href="/extension" className="font-semibold text-[#e07a63] hover:underline">
+              add the Chrome extension
+            </a>
           </div>
         )}
 

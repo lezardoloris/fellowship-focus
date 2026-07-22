@@ -103,6 +103,23 @@ els.opts.addEventListener("click", () => chrome.runtime.openOptionsPage());
 
 els.scanHistory?.addEventListener("click", async () => {
   els.scanHistory.disabled = true;
+  // history is an optional permission — request it here where the click is a
+  // genuine user gesture (the background can only check, not request).
+  const granted = await new Promise((res) => {
+    try {
+      chrome.permissions.request({ permissions: ["history"] }, (ok) => res(!!ok));
+    } catch {
+      res(false);
+    }
+  });
+  if (!granted) {
+    els.scanHistory.textContent = "Permission needed";
+    setTimeout(() => {
+      els.scanHistory.disabled = false;
+      els.scanHistory.textContent = "Scan history";
+    }, 2500);
+    return;
+  }
   els.scanHistory.textContent = "Scanning…";
   const res = await send({ type: "analyzeHistory", days: 30 });
   const n = res?.suggestions?.length || 0;
