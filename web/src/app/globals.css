@@ -133,6 +133,64 @@ html {
   z-index: 1;
 }
 
+/* Block tab — fluid timer digits (zoom-resilient). */
+.ff-timer-digits {
+  font-size: clamp(2rem, 4vw + 1rem, 3.25rem);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Block tab — named-area layouts (see blockLayout.ts). */
+.ff-block-layout {
+  display: grid;
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.ff-block-layout--session-top {
+  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-areas:
+    "a b"
+    "c c";
+}
+
+.ff-block-layout--session-side {
+  grid-template-columns: minmax(0, 1.45fr) minmax(14rem, 0.85fr);
+  grid-template-areas:
+    "c a"
+    "c b";
+}
+
+.ff-block-layout--classic-3 {
+  grid-template-columns: 1fr 1.4fr 1fr;
+  grid-template-areas: "a b c";
+}
+
+.ff-block-area-a {
+  grid-area: a;
+}
+.ff-block-area-b {
+  grid-area: b;
+}
+.ff-block-area-c {
+  grid-area: c;
+}
+
+@media (max-width: 1023px) {
+  .ff-block-layout--session-top,
+  .ff-block-layout--session-side,
+  .ff-block-layout--classic-3 {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "a"
+      "b"
+      "c";
+  }
+}
+
 /* Legacy soft scrim — prefer .immersive-scrim for full-bleed scenes */
 .app-scrim {
   pointer-events: none;

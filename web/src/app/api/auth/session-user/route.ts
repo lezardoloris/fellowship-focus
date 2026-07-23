@@ -4,11 +4,12 @@ import {
   ensureGoogleUser,
   getFellowshipById,
   getMemberByToken,
+  revealMemberToken,
 } from "@/lib/db";
 
 /** Linked guild membership for the Google account, if any (excludes personal Solo · fellowships). */
-function linkedGuild(token: string): { code: string; name: string; token: string } | null {
-  const member = getMemberByToken(token);
+function linkedGuild(plaintextToken: string): { code: string; name: string; token: string } | null {
+  const member = getMemberByToken(plaintextToken);
   if (!member) return null;
   const fellowship = getFellowshipById(member.fellowship_id);
   if (!fellowship) return null;
@@ -16,7 +17,7 @@ function linkedGuild(token: string): { code: string; name: string; token: string
   return {
     code: fellowship.code.toLowerCase(),
     name: member.name,
-    token: member.token,
+    token: plaintextToken,
   };
 }
 
@@ -39,7 +40,17 @@ export async function GET() {
     avatarUrl: session.user.image || null,
   });
 
-  const guild = linkedGuild(user.token);
+  const plaintext =
+    user.plaintextToken ||
+    (user.member_id ? revealMemberToken(user.member_id) : null);
+  if (!plaintext) {
+    return NextResponse.json(
+      { authenticated: true, error: "token_revoked", user: { id: user.id, name: user.name, email: user.email } },
+      { status: 403 }
+    );
+  }
+
+  const guild = linkedGuild(plaintext);
 
   return NextResponse.json({
     authenticated: true,
@@ -48,7 +59,7 @@ export async function GET() {
       name: user.name,
       email: user.email,
       avatarUrl: user.avatar_url,
-      token: user.token,
+      token: plaintext,
       googleId: user.google_id,
       fellowshipCode: guild?.code ?? null,
       memberName: guild?.name ?? null,
@@ -85,7 +96,11 @@ export async function POST(req: Request) {
     linkMemberId: member.id,
   });
 
-  const guild = linkedGuild(user.token);
+  const plaintext =
+    user.plaintextToken ||
+    revealMemberToken(member.id) ||
+    body.token;
+  const guild = linkedGuild(plaintext);
 
   return NextResponse.json({
     ok: true,
@@ -93,7 +108,7 @@ export async function POST(req: Request) {
       id: user.id,
       name: user.name,
       email: user.email,
-      token: user.token,
+      token: plaintext,
       fellowshipCode: guild?.code ?? null,
       memberName: guild?.name ?? null,
     },

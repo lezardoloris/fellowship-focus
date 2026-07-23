@@ -19,11 +19,24 @@ import { PremiumLoader } from "@/components/PremiumLoader";
 import { FocusMusicPanel } from "@/components/FocusMusicPanel";
 import { requestHardUnlock } from "@/components/BlockerControls";
 import { usePublishBlockerMode } from "@/components/BlockerMode";
+import { OnboardingCard } from "@/components/OnboardingCard";
 import {
   DEFAULT_BLOCKER_SETTINGS,
   mergeBlockerSettings,
   type BlockerSettings,
 } from "@/lib/blockerSettings";
+import {
+  DEFAULT_BLOCK_LAYOUT,
+  LAYOUT_LABELS,
+  areaForPanel,
+  musicCompactFor,
+  readBlockLayout,
+  setLayoutId,
+  swapTimerMusic,
+  writeBlockLayout,
+  type BlockLayoutId,
+  type BlockLayoutPrefs,
+} from "@/lib/blockLayout";
 
 type BlocklistEntry = { id: string; site: string; category: string | null };
 type Prefs = BlockerSettings;
@@ -156,6 +169,14 @@ export function BlockTab({
   const [devices, setDevices] = useState<
     Array<{ id: string; kind: string; label: string; last_seen: string; shield_on: number }>
   >([]);
+  const [blockLayout, setBlockLayout] = useState<BlockLayoutPrefs>(DEFAULT_BLOCK_LAYOUT);
+  const [unprotectedPrompt, setUnprotectedPrompt] = useState(false);
+  const [connectChooser, setConnectChooser] = useState(false);
+  const [creditPrompt, setCreditPrompt] = useState<{
+    phase: Exclude<Phase, "idle">;
+    cycle: number;
+    minutes: number;
+  } | null>(null);
   const toast = useToast();
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const stopAlarmRef = useRef<(() => void) | null>(null);
@@ -172,6 +193,15 @@ export function BlockTab({
   useEffect(() => {
     prefsRef.current = prefs;
   }, [prefs]);
+
+  useEffect(() => {
+    setBlockLayout(readBlockLayout());
+  }, []);
+
+  const persistLayout = useCallback((next: BlockLayoutPrefs) => {
+    const saved = writeBlockLayout(next);
+    setBlockLayout(saved);
+  }, []);
 
   const applyDesktopState = useCallback((st: DesktopState) => {
     setDt(st);
@@ -309,10 +339,38 @@ export function BlockTab({
       }
     }
     setShieldBusy(true);
+    const turningOn = !dt.shieldOn;
     try {
-      const st = await desktopBridge.setShield(!dt.shieldOn);
+      if (turningOn) {
+        toast.info("Arming Shield…", "Waiting for the system proxy.");
+      }
+      const st = await desktopBridge.setShield(turningOn);
       applyDesktopState(st);
-      if (st.available) {
+      if (!st.available) return;
+      // Never toast OFF while still arming — wait for live/fail.
+      if (turningOn) {
+        if (st.arming) {
+          // Poll until live or idle-off.
+          for (let i = 0; i < 20; i++) {
+            await new Promise((r) => setTimeout(r, 400));
+            const poll = await desktopBridge.getState();
+            if (poll.available) applyDesktopState(poll);
+            if (poll.shieldOn && poll.active) {
+              toast.ok("Shield ON");
+              return;
+            }
+            if (!poll.arming && !(poll.shieldOn && poll.active)) {
+              toast.error("Shield failed to arm", "Check the certificate in the Blocker tab.");
+              return;
+            }
+          }
+          toast.error("Still arming", "Shield has not confirmed live yet.");
+        } else if (st.shieldOn && st.active) {
+          toast.ok("Shield ON");
+        } else {
+          toast.error("Shield failed to arm");
+        }
+      } else {
         toast.ok(st.shieldOn ? "Shield ON" : "Shield OFF");
       }
     } finally {
@@ -679,20 +737,34 @@ export function BlockTab({
         remaining: left,
         paused: true,
       });
+      void extensionCommand("pauseFocus").catch(() => {});
       return;
     }
     const left = Math.ceil((s.endsAt - Date.now()) / 1000);
     if (left <= 0) {
+      // Expired while away — offer credit instead of silent discard.
+      const creditMins = Math.max(1, Math.round(prefs.focus_min) || 1);
       try {
         localStorage.removeItem(SESSION_KEY);
       } catch {
         /* ignore */
+      }
+      if (s.phase === "focus") {
+        setCreditPrompt({ phase: s.phase, cycle: s.cycle, minutes: creditMins });
       }
       return;
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- rehydrating a
     // persisted session from localStorage is exactly a mount-time sync.
     startPhase(s.phase, s.cycle, left);
+    void (async () => {
+      if (isDesktopShell()) return;
+      await extensionCommand("startFocus", {
+        remainingMs: left * 1000,
+        cycle: s.cycle,
+        webOwnsLog: true,
+      }).catch(() => {});
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
 
@@ -776,6 +848,7 @@ export function BlockTab({
       remaining: frozen,
       paused: true,
     });
+    extensionCommand("pauseFocus").catch(() => {});
     desktopBridge.showFloatTimer({
       remaining: frozen,
       phase,
@@ -803,45 +876,77 @@ export function BlockTab({
       remaining: secs,
       paused: false,
     });
+    extensionCommand("resumeFocus").catch(() => {});
   }, [phase, paused, remaining, cycle, persistSession]);
+
+  const beginFocusSession = useCallback(() => {
+    try {
+      localStorage.setItem("ff-started-once", "1");
+    } catch {
+      /* ignore */
+    }
+    startPhase("focus", 1);
+    void extensionCommand("startFocus", {
+      remainingMs: Math.max(1, focusTotalSec) * 1000,
+      cycle: 1,
+      webOwnsLog: true,
+    }).catch(() => {});
+  }, [startPhase, focusTotalSec]);
 
   const start = () => {
     void (async () => {
-      // Desktop drives its own system-wide blocker — start immediately.
-      // isDesktopShell() covers the case where the Qt bridge hasn't landed yet:
-      // demanding a Chrome extension inside the desktop app is never right.
+      // Desktop: arm shield first (or confirm unprotected).
       if (isDesktop || isDesktopShell()) {
-        startPhase("focus", 1);
+        if (isDesktop && dt?.certReady && !(dt.shieldOn && dt.active)) {
+          setShieldBusy(true);
+          try {
+            toast.info("Arming Shield…");
+            const st = await desktopBridge.setShield(true);
+            applyDesktopState(st);
+            let live = Boolean(st.shieldOn && st.active);
+            if (st.arming || !live) {
+              for (let i = 0; i < 20 && !live; i++) {
+                await new Promise((r) => setTimeout(r, 400));
+                const poll = await desktopBridge.getState();
+                if (poll.available) applyDesktopState(poll);
+                live = Boolean(poll.shieldOn && poll.active);
+                if (!poll.arming && !live) break;
+              }
+            }
+            if (!live) {
+              setUnprotectedPrompt(true);
+              return;
+            }
+            toast.ok("Shield ON");
+          } finally {
+            setShieldBusy(false);
+          }
+        } else if (isDesktop && !dt?.certReady) {
+          setUnprotectedPrompt(true);
+          return;
+        }
+        beginFocusSession();
         return;
       }
       if (!sitesRef.current.length) {
-        // Nothing to block is not a reason to refuse a focus session.
         toast.info("Timer started", "No sites in your list, so nothing is blocked.");
-        startPhase("focus", 1);
+        beginFocusSession();
         return;
       }
-      // Arm BEFORE the timer. Starting a "focus" session that isn't blocking
-      // anything is worse than not starting at all.
-      // Try to arm, but the session starts either way. The timer is the product;
-      // blocking is a bonus layer, and holding one hostage to the other just
-      // left people with an app that appears to do nothing.
+      if (!extReady && !extState) {
+        setUnprotectedPrompt(true);
+        return;
+      }
       const state = await armExtension();
       setExtState(state);
       if (state && isArmed(state)) {
         setArmFailed(false);
         setExtReady(true);
-        await extensionCommand("startFocus");
-        setExtState(await getExtensionState());
-      } else {
-        setArmFailed(true);
-        toast.info(
-          "Timer started — not blocking",
-          state
-            ? "The extension could not install rules."
-            : "No blocker connected. Install the app or the Chrome extension to block sites.",
-        );
+        beginFocusSession();
+        return;
       }
-      startPhase("focus", 1);
+      setArmFailed(true);
+      setUnprotectedPrompt(true);
     })();
   };
   const stop = useCallback(() => {
@@ -993,18 +1098,140 @@ export function BlockTab({
     void blockNowRef.current();
   }, []);
 
+  const publishConnect = useCallback(() => {
+    setConnectChooser(true);
+  }, []);
+
   usePublishBlockerMode({
     live: shieldLive,
     arming: shieldArming,
     busy: shieldBusy || loading,
     connected: shieldConnected,
     toggle: publishToggle,
+    connect: publishConnect,
   });
 
   if (loading) return <PremiumLoader full />;
 
   return (
     <>
+    <OnboardingCard
+      connected={shieldConnected}
+      hasSites={sites.length > 0}
+      shieldOn={shieldLive}
+      startedOnce={phase !== "idle"}
+    />
+    {unprotectedPrompt && (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4">
+        <div className="glass-panel max-w-md space-y-4 p-6" role="dialog" aria-labelledby="ff-unprotected-title">
+          <h2 id="ff-unprotected-title" className="font-display text-xl text-white">
+            Shield not connected
+          </h2>
+          <p className="text-sm text-white/70">
+            Start without blocking, or connect a Shield first. Unprotected sessions do not enforce your block list.
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <a href="/download" className="btn-primary flex-1 text-center">
+              Connect Windows app
+            </a>
+            <button
+              type="button"
+              className="btn-secondary flex-1"
+              onClick={() => {
+                setUnprotectedPrompt(false);
+                void connectChrome();
+              }}
+            >
+              Connect Chrome extension
+            </button>
+          </div>
+          <button
+            type="button"
+            className="w-full text-sm text-white/50 underline-offset-2 hover:text-white/80 hover:underline"
+            onClick={() => {
+              setUnprotectedPrompt(false);
+              toast.info("Timer started — unprotected");
+              beginFocusSession();
+            }}
+          >
+            Start without blocking
+          </button>
+          <button
+            type="button"
+            className="w-full text-xs text-white/40"
+            onClick={() => setUnprotectedPrompt(false)}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )}
+    {creditPrompt && (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4">
+        <div className="glass-panel max-w-md space-y-4 p-6" role="dialog" aria-labelledby="ff-credit-title">
+          <h2 id="ff-credit-title" className="font-display text-xl text-white">
+            Session finished while away
+          </h2>
+          <p className="text-sm text-white/70">
+            Credit {creditPrompt.minutes} focus minutes to your guild, or discard.
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="btn-primary flex-1"
+              onClick={() => {
+                const mins = creditPrompt.minutes;
+                setCreditPrompt(null);
+                logSoloSession(mins);
+                if (token) {
+                  fetch(`/api/sessions`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ token, minutes: mins, completed: true }),
+                  }).catch(() => {});
+                }
+                toast.ok("Session credited", `+${mins} min`);
+              }}
+            >
+              Credit session
+            </button>
+            <button
+              type="button"
+              className="btn-secondary flex-1"
+              onClick={() => setCreditPrompt(null)}
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    {connectChooser && (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4">
+        <div className="glass-panel max-w-sm space-y-4 p-6" role="dialog" aria-labelledby="ff-connect-title">
+          <h2 id="ff-connect-title" className="font-display text-xl text-white">
+            Connect Shield
+          </h2>
+          <p className="text-sm text-white/70">Pick how you want to block distracting sites.</p>
+          <a href="/download" className="btn-primary block text-center" onClick={() => setConnectChooser(false)}>
+            Windows app
+          </a>
+          <button
+            type="button"
+            className="btn-secondary w-full"
+            onClick={() => {
+              setConnectChooser(false);
+              void connectChrome();
+            }}
+          >
+            Chrome extension
+          </button>
+          <button type="button" className="w-full text-xs text-white/40" onClick={() => setConnectChooser(false)}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    )}
     {inSession && !isDesktop && !floatHidden && (
       <div className="fixed bottom-5 right-5 z-[9999]">
         <div className="flex items-center gap-2.5 rounded-full border border-white/12 bg-[#1a1c1e]/96 py-1.5 pl-3.5 pr-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
@@ -1058,9 +1285,55 @@ export function BlockTab({
 
         {/* Blocker Mode lives in the sticky header on every tab (product moat). */}
 
-        {/* Timer | Block list | Music */}
-        <div className="mx-auto grid w-full max-w-6xl items-start gap-4 lg:grid-cols-2 xl:grid-cols-[0.85fr_1.25fr_0.9fr]">
-          <div className="glass-panel flex flex-col p-5">
+        {/* Session tools + Block list — named CSS grid areas (ff-block-layout-v1). */}
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-end gap-2">
+          <label className="sr-only" htmlFor="ff-block-layout">
+            Block layout
+          </label>
+          <select
+            id="ff-block-layout"
+            value={blockLayout.layoutId}
+            onChange={(e) =>
+              persistLayout(setLayoutId(blockLayout, e.target.value as BlockLayoutId))
+            }
+            className="input-premium py-1.5 text-xs"
+            title="Rearrange Block panels"
+          >
+            {(Object.keys(LAYOUT_LABELS) as BlockLayoutId[]).map((id) => (
+              <option key={id} value={id}>
+                Layout · {LAYOUT_LABELS[id]}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() =>
+              persistLayout({
+                ...blockLayout,
+                areas: swapTimerMusic(blockLayout.areas),
+              })
+            }
+            className="btn-secondary min-h-8 px-2.5 py-1 text-xs"
+            title="Swap timer and music panels"
+          >
+            Swap timer / music
+          </button>
+          <button
+            type="button"
+            onClick={() => persistLayout(DEFAULT_BLOCK_LAYOUT)}
+            className="btn-secondary min-h-8 px-2.5 py-1 text-xs"
+            title="Reset to session top"
+          >
+            Reset
+          </button>
+        </div>
+
+        <div
+          className={`ff-block-layout ff-block-layout--${blockLayout.layoutId}`}
+        >
+          <div
+            className={`glass-panel flex flex-col p-4 sm:p-5 ff-block-area-${areaForPanel(blockLayout.areas, "timer")}`}
+          >
             <div
               className={`text-center ${
                 inSession && remaining === 0
@@ -1070,26 +1343,26 @@ export function BlockTab({
                     : "text-white"
               }`}
             >
-              <div className="font-display text-[3.25rem] font-bold leading-none tabular-nums tracking-tight">
+              <div className="ff-timer-digits font-display font-bold tracking-tight">
                 {inSession
                   ? `${mm}:${ss}`
                   : `${String(prefs.focus_min).padStart(2, "0")}:00`}
               </div>
               {inSession ? (
-                <p className="mt-2 text-[11px] tabular-nums tracking-[0.2em] text-white/50">
+                <p className="mt-2 text-xs tabular-nums tracking-[0.2em] text-white/50">
                   {paused ? "Paused · " : ""}
                   {cycle} / {prefs.cycles}
                   {phase === "break" ? " · break" : ""}
                 </p>
               ) : (
-                <p className="mt-2 text-[11px] text-white/45">
+                <p className="mt-2 text-xs text-white/45">
                   {prefs.focus_min}m · {prefs.break_min}m · ×{prefs.cycles}
                 </p>
               )}
             </div>
 
             {canEditTimer && (
-              <div className="mt-5 space-y-3">
+              <div className="mt-4 space-y-3 sm:mt-5">
                 <div className="flex flex-wrap gap-1.5" role="group" aria-label="Timer presets">
                   {TIMER_PRESETS.map((tp) => {
                     const active = tp.id === activePresetId;
@@ -1107,7 +1380,7 @@ export function BlockTab({
                             focus_sec: 0,
                           })
                         }
-                        className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                        className={`min-h-8 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
                           active
                             ? "border-[#b8422e] bg-[#b8422e]/25 text-white"
                             : "border-white/12 bg-white/[0.03] text-white/75 hover:border-white/25 hover:text-white"
@@ -1147,14 +1420,14 @@ export function BlockTab({
                   />
                 </div>
                 {paused ? (
-                  <p className="text-center text-[10px] text-white/40">
+                  <p className="text-center text-xs text-white/40">
                     Next phase uses these · Resume keeps remaining time
                   </p>
                 ) : null}
               </div>
             )}
 
-            <div className="mt-5 flex items-center gap-2">
+            <div className="mt-4 flex items-center gap-2 sm:mt-5">
               <select
                 value={prefs.alarm_secs}
                 onChange={(e) => savePrefs({ ...prefs, alarm_secs: Number(e.target.value) })}
@@ -1218,7 +1491,9 @@ export function BlockTab({
             )}
           </div>
 
-          <div className="glass-panel flex max-h-[min(70vh,34rem)] min-h-[22rem] flex-col overflow-hidden p-5 xl:row-span-1">
+          <div
+            className={`glass-panel flex max-h-[min(70vh,34rem)] min-h-[12rem] flex-col overflow-hidden p-4 sm:p-5 ff-block-area-${areaForPanel(blockLayout.areas, "block")}`}
+          >
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-white">
                 Block list
@@ -1226,7 +1501,7 @@ export function BlockTab({
               </h2>
               <div className="flex flex-wrap items-center gap-2">
                 <div
-                  className="inline-flex rounded-full border border-white/12 bg-black/35 p-0.5"
+                  className="inline-flex min-h-8 rounded-full border border-white/12 bg-black/35 p-0.5"
                   role="group"
                   aria-label="Block scope"
                 >
@@ -1246,7 +1521,7 @@ export function BlockTab({
                           setExtState(await getExtensionState());
                         }
                       }}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                      className={`min-h-8 rounded-full px-2.5 py-1 text-xs font-medium transition ${
                         prefs.blocker_mode === m.id
                           ? "bg-[#b8422e] text-white"
                           : "text-white/65 hover:text-white"
@@ -1257,7 +1532,7 @@ export function BlockTab({
                   ))}
                 </div>
                 <div
-                  className="inline-flex rounded-full border border-white/12 bg-black/35 p-0.5"
+                  className="inline-flex min-h-8 rounded-full border border-white/12 bg-black/35 p-0.5"
                   role="group"
                   aria-label="Hit style"
                 >
@@ -1278,7 +1553,7 @@ export function BlockTab({
                           setExtState(await getExtensionState());
                         }
                       }}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                      className={`min-h-8 rounded-full px-2.5 py-1 text-xs font-medium transition ${
                         prefs.block_style === s.id
                           ? "bg-[#b8422e] text-white"
                           : "text-white/65 hover:text-white"
@@ -1300,7 +1575,7 @@ export function BlockTab({
                     type="button"
                     title={p.desc}
                     onClick={() => togglePreset(p)}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                    className={`min-h-8 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
                       active
                         ? "border-[#b8422e] bg-[#b8422e]/25 text-white"
                         : "border-white/12 bg-white/[0.03] text-white/75 hover:border-white/25 hover:text-white"
@@ -1317,7 +1592,7 @@ export function BlockTab({
                     key={c.id}
                     type="button"
                     onClick={() => toggleCategory(c)}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
+                    className={`min-h-8 rounded-full border px-2.5 py-1 text-xs transition ${
                       active
                         ? "border-[#b8422e]/80 bg-[#b8422e]/15 text-white"
                         : "border-transparent text-white/55 hover:bg-white/5 hover:text-white/85"
@@ -1366,7 +1641,7 @@ export function BlockTab({
                         type="button"
                         onClick={() => removeSite(s.site)}
                         title={`Remove ${s.site}`}
-                        className="group inline-flex max-w-full items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] py-1 pl-2 pr-1.5 text-[11px] text-white/80 transition hover:border-[#b8422e]/50 hover:bg-[#b8422e]/15 hover:text-white"
+                        className="group inline-flex max-w-full items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] py-1 pl-2 pr-1.5 text-xs text-white/80 transition hover:border-[#b8422e]/50 hover:bg-[#b8422e]/15 hover:text-white"
                       >
                         <span className="truncate">{s.site}</span>
                         <span className="shrink-0 text-white/35 group-hover:text-[#fca5a5]" aria-hidden>
@@ -1375,7 +1650,7 @@ export function BlockTab({
                       </button>
                     ))}
                     {visible.length === 0 ? (
-                      <span className="px-1 py-2 text-[11px] text-white/45">No match</span>
+                      <span className="px-1 py-2 text-xs text-white/45">No match</span>
                     ) : null}
                   </div>
                 </div>
@@ -1383,9 +1658,11 @@ export function BlockTab({
             })()}
           </div>
 
-          <FocusMusicPanel />
+          <FocusMusicPanel
+            compact={musicCompactFor(blockLayout.layoutId)}
+            className={`ff-block-area-${areaForPanel(blockLayout.areas, "music")}`}
+          />
         </div>
-
     </div>
     </>
   );
@@ -1438,9 +1715,7 @@ function Stepper({
     <div className={compact ? "flex flex-col gap-1" : "flex flex-col gap-1.5"}>
       {label ? (
         <span
-          className={`text-center font-medium uppercase tracking-wider text-white/55 ${
-            compact ? "text-[10px]" : "text-[11px]"
-          }`}
+          className={`text-center font-medium uppercase tracking-wider text-white/55 text-xs`}
         >
           {label}
         </span>
@@ -1501,7 +1776,7 @@ function Stepper({
               compact ? "text-sm" : "text-lg"
             }`}
           />
-          {suffix ? <span className="mt-0.5 text-[10px] text-white/55">{suffix}</span> : null}
+          {suffix ? <span className="mt-0.5 text-xs text-white/55">{suffix}</span> : null}
         </div>
         <button
           type="button"

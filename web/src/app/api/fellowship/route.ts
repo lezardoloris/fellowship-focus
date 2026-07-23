@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createFellowship, GUILD_NICHES, listPublicGuilds } from "@/lib/db";
+import { allowRate, clientKey } from "@/lib/rateLimit";
 
 /** Public guild ladder — browse by niche, no invite code required. */
 export async function GET(request: Request) {
@@ -13,6 +14,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    if (!allowRate(clientKey(request, "fellowship-create"), 8, 60 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: "Too many guilds created from this network. Try again later." },
+        { status: 429 }
+      );
+    }
     const body = await request.json();
     const name = (body.name as string)?.trim() || "The Fellowship";
     const penalty = Number(body.blockerBypassPenalty) || 0;

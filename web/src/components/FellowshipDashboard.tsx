@@ -16,7 +16,8 @@ type FellowshipData = {
   fellowship: { id: string; code: string; name: string; blocker_bypass_penalty?: number };
   totalXp: number;
   stats: { totalXp: number; totalSessions: number; totalBlocks: number; totalMinutes: number };
-  members: Array<{ id: string; name: string; total_xp: number; streak: number; token: string }>;
+  members: Array<{ id: string; name: string; total_xp: number; streak: number }>;
+  me?: { id: string; name: string } | null;
   leaderboard: Array<{
     id: string;
     name: string;
@@ -78,7 +79,13 @@ export function FellowshipDashboard({
 
   const load = useCallback(async () => {
     setError("");
-    const res = await fetch(`/api/fellowship/${encodeURIComponent(code)}`);
+    const stored = typeof window !== "undefined" ? localStorage.getItem(storageKey) : null;
+    const ownToken = stored
+      ? (JSON.parse(stored) as { token?: string }).token
+      : myToken;
+    const headers: HeadersInit = {};
+    if (ownToken) headers.Authorization = `Bearer ${ownToken}`;
+    const res = await fetch(`/api/fellowship/${encodeURIComponent(code)}`, { headers });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
       setError(json.error || "Fellowship not found");
@@ -88,6 +95,7 @@ export function FellowshipDashboard({
     }
     const json = (await res.json()) as FellowshipData;
     setData(json);
+    if (json.me?.name) setMyName(json.me.name);
     const canonical = json.fellowship.code?.toLowerCase?.() || code;
     if (canonical !== code.toLowerCase()) {
       const prev = localStorage.getItem(storageKey);
@@ -96,7 +104,7 @@ export function FellowshipDashboard({
       onCodeResolved?.(canonical);
     }
     setLoading(false);
-  }, [code, storageKey, onCodeResolved]);
+  }, [code, storageKey, onCodeResolved, myToken]);
 
   useEffect(() => {
     load();
@@ -190,7 +198,7 @@ export function FellowshipDashboard({
 
   const { fellowship, totalXp, stats, leaderboard, habitLeaderboard, trustLeaderboard, feed, journey } = data;
   const memberNames = Object.fromEntries(data.members.map((m) => [m.id, m.name]));
-  const myMemberId = myToken ? data.members.find((m) => m.token === myToken)?.id : undefined;
+  const myMemberId = data.me?.id ?? undefined;
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}/f/${code}` : `/f/${code}`;
   const journeyImage =
     WAYPOINT_IMAGES[journey.currentWaypoint.id] ?? "/assets/journey-map.jpg";
@@ -355,7 +363,10 @@ export function FellowshipDashboard({
           <div className="glass-panel p-6">
             <h2 className="mb-1 text-lg font-semibold">Weekly ladder</h2>
             <p className="mb-5 text-xs text-[#9ca3af]">
-              Ranked by net XP (earned − block penalties). Leagues: Mordor ≥500 · Gondor ≥300 · Rohan ≥150
+              Ranked by net <strong className="font-medium text-white/70">XP</strong> (earned − block
+              penalties). Personal focus <strong className="font-medium text-white/70">hours</strong> on
+              the Focus tab stay separate — they are not merged into guild XP. Leagues: Mordor ≥500 ·
+              Gondor ≥300 · Rohan ≥150
             </p>
             {leaderboard.length === 0 ? (
               <p className="text-[#9ca3af]">No members yet. Share the link!</p>

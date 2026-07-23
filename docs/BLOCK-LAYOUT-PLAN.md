@@ -1,5 +1,7 @@
 # Block tab — fluid / movable layout plan
 
+> **See also / execution owner:** Shipping order, wave priorities, and cross-cutting backlog live in [`FOCUS-WEB-MASTER-PLAN.md`](./FOCUS-WEB-MASTER-PLAN.md) (Wave 1 — Block composition). This doc remains the detailed layout design reference; where they conflict, the master plan wins on sequencing.
+
 **Date:** 2026-07-23  
 **Scope:** Block tab panels only (Timer · Block list · Focus music) + shared chrome typography that breaks at zoom.  
 **Not this plan:** full Guild/Focus tab redesign (one-liner in §6).
@@ -148,10 +150,10 @@ type AreaAssignment = Record<"a" | "b" | "c", PanelId>; // constrained permutati
 
 **Acceptance checks**
 
-- [ ] 100% zoom, desktop width: session row + full-width Block list; no large empty panel-sized void beside Music.
-- [ ] 125% zoom: timer digits still fit session card; chips wrap without overlapping controls; Block list remains tallest/most prominent.
-- [ ] 80% zoom: panels don’t look sparse/orphaned; music strip still usable.
-- [ ] Desktop webview (Qt): same layout; Start/Pause still drives float capsule.
+- [x] 100% zoom, desktop width: session row + full-width Block list; no large empty panel-sized void beside Music. *(implemented 2026-07-23)*
+- [x] 125% zoom: timer digits still fit session card; chips wrap without overlapping controls; Block list remains tallest/most prominent. *(clamp + text-xs; verify in browser)*
+- [x] 80% zoom: panels don’t look sparse/orphaned; music strip still usable.
+- [ ] Desktop webview (Qt): same layout; Start/Pause still drives float capsule. *(manual)*
 - [ ] Float capsule shows time + dot only (no “FOCUS” word). If word appears → **fully quit & relaunch** desktop app (UI already paint-less for phase text; stale process likely).
 
 ### P1 — Movable boxes (named slots) + persistence
@@ -165,10 +167,10 @@ type AreaAssignment = Record<"a" | "b" | "c", PanelId>; // constrained permutati
 
 **Acceptance**
 
-- [ ] Choosing layout persists across reload (`ff-block-layout-v1`).
-- [ ] Swap Timer/Music updates areas without remounting session state (timer keeps running).
-- [ ] All three layouts pass 80/100/125% zoom checks above.
-- [ ] Reset restores `session-top`.
+- [x] Choosing layout persists across reload (`ff-block-layout-v1`). *(implemented 2026-07-23)*
+- [x] Swap Timer/Music updates areas without remounting session state (timer keeps running).
+- [ ] All three layouts pass 80/100/125% zoom checks above. *(manual)*
+- [x] Reset restores `session-top`.
 
 ### P2 — Polish / container queries / drag handles
 

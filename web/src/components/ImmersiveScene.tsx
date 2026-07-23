@@ -130,7 +130,7 @@ function SceneLayer({
           muted
           loop
           playsInline
-          preload="auto"
+          preload="metadata"
           disablePictureInPicture
           disableRemotePlayback
           onLoadedData={() => setReady(true)}

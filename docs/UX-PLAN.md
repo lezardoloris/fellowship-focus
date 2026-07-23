@@ -1,5 +1,7 @@
 # Fellowship Focus — UX / Design / Notifications Plan
 
+> **Superseded for open work:** Active roadmap, glossary (Guild / Shield), and remaining UX P0s are in [`FOCUS-WEB-MASTER-PLAN.md`](./FOCUS-WEB-MASTER-PLAN.md). This file is a historical audit + Done checklist; use it for what already shipped, not for new prioritization.
+
 Audit date: 2026-07-23. Scope: Block · Focus · Guild tabs, chrome, toasts, desktop notice parity.
 
 ## Product north star

@@ -6,6 +6,7 @@ import {
   fetchGithubJson,
   parseGithubUsername,
 } from "@/lib/githubActivity";
+import { resolveAuthSecret } from "@/lib/authSecret";
 
 type GhUser = { login: string; avatar_url: string };
 type GhEvent = {
@@ -28,7 +29,7 @@ async function readGithubJwt() {
     .join("; ");
   return getToken({
     req: { headers: { cookie: cookieHeader } } as Parameters<typeof getToken>[0]["req"],
-    secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "dev-only-change-me",
+    secret: resolveAuthSecret(),
   });
 }
 

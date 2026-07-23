@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
+import { resolveAuthSecret } from "@/lib/authSecret";
 
 /**
  * Google OAuth scopes for Fellowship Focus.
@@ -84,7 +85,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   trustHost: true,
-  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "dev-only-change-me",
+  secret: resolveAuthSecret(),
 });
 
 export const authProviders = {

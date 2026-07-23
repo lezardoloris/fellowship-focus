@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { FOCUS_MUSIC_KEY, FOCUS_TRACKS, matchLocalTrack } from "@/lib/focusMusic";
 import { desktopBridge, isDesktopShell, type MusicState } from "@/lib/desktop";
 
 type ManifestEntry = { title: string; src: string; id?: string; youtubeId?: string };
+
+type FocusMusicPanelProps = {
+  /** Horizontal session-row strip (play · title · vol) instead of tall centered panel. */
+  compact?: boolean;
+  className?: string;
+  style?: CSSProperties;
+};
 
 /**
  * Compact focus-music picker.
@@ -14,7 +21,7 @@ type ManifestEntry = { title: string; src: string; id?: string; youtubeId?: stri
  * bridge. In a plain browser it plays whatever /audio files happen to be
  * present; when there are none it says so instead of offering a dead Play.
  */
-export function FocusMusicPanel() {
+export function FocusMusicPanel({ compact = false, className, style }: FocusMusicPanelProps) {
   const inShell = isDesktopShell();
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -63,6 +70,9 @@ export function FocusMusicPanel() {
         : "Add tracks in the app";
     return (
       <Shell
+        compact={compact}
+        className={className}
+        style={style}
         count={music?.tracks.length ?? 0}
         title={title}
         playing={!!music?.playing}
@@ -83,7 +93,7 @@ export function FocusMusicPanel() {
                 (s) => s && setMusic(s)
               )
             }
-            className="input-premium w-full truncate py-2 text-sm"
+            className={`input-premium w-full truncate text-sm ${compact ? "py-1.5" : "py-2"}`}
             aria-label="Focus track"
           >
             {!available && <option value={-1}>Add tracks in the app</option>}
@@ -129,7 +139,46 @@ export function FocusMusicPanel() {
   };
 
   return (
-    <>
+    <Shell
+      compact={compact}
+      className={className}
+      style={style}
+      count={options.length}
+      title={hasLocal ? current?.label || "Focus music" : "Available in the desktop app"}
+      playing={playing}
+      disabled={!hasLocal || !current}
+      onToggle={() => current && play(current.src)}
+      volume={vol}
+      onVolume={setVol}
+      select={
+        <select
+          value={current?.src || ""}
+          disabled={!hasLocal}
+          onChange={(e) => {
+            setTrackSrc(e.target.value);
+            localStorage.setItem(FOCUS_MUSIC_KEY, e.target.value);
+            const el = audioRef.current;
+            if (el) {
+              el.src = e.target.value;
+              if (playing) {
+                el.play()
+                  .then(() => setPlaying(true))
+                  .catch(() => setPlaying(false));
+              }
+            }
+          }}
+          className={`input-premium w-full truncate text-sm ${compact ? "py-1.5" : "py-2"}`}
+          aria-label="Focus track"
+        >
+          {!hasLocal && <option value="">No local tracks</option>}
+          {options.map((o) => (
+            <option key={o.src} value={o.src}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      }
+    >
       <audio
         ref={audioRef}
         loop
@@ -137,48 +186,14 @@ export function FocusMusicPanel() {
         className="hidden"
         onEnded={() => setPlaying(false)}
       />
-      <Shell
-        count={options.length}
-        title={hasLocal ? current?.label || "Focus music" : "Available in the desktop app"}
-        playing={playing}
-        disabled={!hasLocal || !current}
-        onToggle={() => current && play(current.src)}
-        volume={vol}
-        onVolume={setVol}
-        select={
-          <select
-            value={current?.src || ""}
-            disabled={!hasLocal}
-            onChange={(e) => {
-              setTrackSrc(e.target.value);
-              localStorage.setItem(FOCUS_MUSIC_KEY, e.target.value);
-              const el = audioRef.current;
-              if (el) {
-                el.src = e.target.value;
-                if (playing) {
-                  el.play()
-                    .then(() => setPlaying(true))
-                    .catch(() => setPlaying(false));
-                }
-              }
-            }}
-            className="input-premium w-full truncate py-2 text-sm"
-            aria-label="Focus track"
-          >
-            {!hasLocal && <option value="">No local tracks</option>}
-            {options.map((o) => (
-              <option key={o.src} value={o.src}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        }
-      />
-    </>
+    </Shell>
   );
 }
 
 function Shell({
+  compact,
+  className,
+  style,
   count,
   title,
   playing,
@@ -187,7 +202,11 @@ function Shell({
   volume,
   onVolume,
   select,
+  children,
 }: {
+  compact: boolean;
+  className?: string;
+  style?: CSSProperties;
   count: number;
   title: string;
   playing: boolean;
@@ -195,13 +214,74 @@ function Shell({
   onToggle: () => void;
   volume: number;
   onVolume: (v: number) => void;
-  select: React.ReactNode;
+  select: ReactNode;
+  children?: ReactNode;
 }) {
+  const rootClass = [
+    "glass-panel flex h-full min-h-0 flex-col",
+    compact ? "p-3.5" : "p-5",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (compact) {
+    return (
+      <div className={rootClass} style={style}>
+        {children}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onToggle}
+            disabled={disabled}
+            aria-label={playing ? "Pause" : "Play"}
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white shadow-[0_6px_18px_rgba(184,66,46,0.3)] transition disabled:opacity-40 ${
+              playing
+                ? "bg-[#912a1d] hover:bg-[#b8422e]"
+                : "bg-[#b8422e] hover:bg-[#c46551]"
+            }`}
+          >
+            {playing ? (
+              <span className="text-xs tracking-widest">❚❚</span>
+            ) : (
+              <span className="ml-0.5 text-sm">▶</span>
+            )}
+          </button>
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-sm font-medium text-white/90" title={title}>
+                {title}
+              </p>
+              {count > 0 && (
+                <span className="shrink-0 text-xs tabular-nums text-white/40">{count}</span>
+              )}
+            </div>
+            {select}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-white/45">Vol</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                onChange={(e) => onVolume(Number(e.target.value))}
+                className="h-1 min-w-0 flex-1 accent-[#b8422e]"
+                aria-label="Volume"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="glass-panel flex flex-col p-5">
+    <div className={rootClass} style={style}>
+      {children}
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-white/55">Music</p>
-        {count > 0 && <span className="text-[10px] tabular-nums text-white/40">{count}</span>}
+        <p className="text-xs font-medium uppercase tracking-wider text-white/55">Music</p>
+        {count > 0 && <span className="text-xs tabular-nums text-white/40">{count}</span>}
       </div>
 
       <div className="mt-6 flex flex-col items-center text-center">
@@ -226,14 +306,14 @@ function Shell({
           {title}
         </p>
         {playing && (
-          <p className="mt-1 text-[10px] uppercase tracking-[0.25em] text-[#e07a63]/90">Playing</p>
+          <p className="mt-1 text-xs uppercase tracking-[0.25em] text-[#e07a63]/90">Playing</p>
         )}
       </div>
 
       <div className="mt-6 space-y-3">
         {select}
         <div className="flex items-center gap-2.5">
-          <span className="text-[10px] text-white/45">Vol</span>
+          <span className="text-xs text-white/45">Vol</span>
           <input
             type="range"
             min={0}

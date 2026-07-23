@@ -17,6 +17,13 @@ import {
   type BlockerSettings,
   DEFAULT_BLOCKER_SETTINGS,
 } from "./blockerSettings";
+import {
+  hashToken,
+  looksLikeLegacyPlaintext,
+  mintToken,
+  openToken,
+  sealToken,
+} from "./tokens";
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "fellowship.db");
@@ -68,7 +75,10 @@ export type Member = {
   id: string;
   fellowship_id: string;
   name: string;
+  /** SHA-256 hex of bearer (or legacy plaintext until migrated). */
   token: string;
+  /** AES vault of plaintext for authenticated re-issue; null if revoked. */
+  token_enc?: string | null;
   total_xp: number;
   streak: number;
   last_quest_date: string | null;
@@ -81,7 +91,9 @@ export type GoogleUser = {
   email: string;
   name: string;
   avatar_url: string | null;
+  /** SHA-256 hex of bearer (or legacy plaintext until migrated). */
   token: string;
+  token_enc?: string | null;
   member_id: string | null;
   created_at: string;
 };
@@ -446,6 +458,16 @@ function initSchema(database: Database.Database) {
   } catch {
     /* column exists */
   }
+  try {
+    database.exec(`ALTER TABLE members ADD COLUMN token_enc TEXT`);
+  } catch {
+    /* column exists */
+  }
+  try {
+    database.exec(`ALTER TABLE google_users ADD COLUMN token_enc TEXT`);
+  } catch {
+    /* column exists */
+  }
   database.exec(`
     CREATE TABLE IF NOT EXISTS blocker_devices (
       id TEXT PRIMARY KEY,
@@ -642,18 +664,104 @@ function ensurePublicGuilds() {
   seedPublicGuilds(getDb());
 }
 
-export function joinFellowship(fellowshipId: string, name: string): Member {
+export function joinFellowship(
+  fellowshipId: string,
+  name: string
+): { member: Member; plaintextToken: string } {
   const database = getDb();
   const id = nanoid();
-  const token = nanoid(32);
+  const plaintextToken = mintToken();
+  const tokenHash = hashToken(plaintextToken);
+  const tokenEnc = sealToken(plaintextToken);
   database
     .prepare(
-      "INSERT INTO members (id, fellowship_id, name, token) VALUES (?, ?, ?, ?)"
+      "INSERT INTO members (id, fellowship_id, name, token, token_enc) VALUES (?, ?, ?, ?, ?)"
     )
-    .run(id, fellowshipId, name, token);
+    .run(id, fellowshipId, name, tokenHash, tokenEnc);
   addFeedEvent(fellowshipId, "join", name, `${name} joined the Fellowship.`);
   seedDefaultHabits(id, fellowshipId);
-  return database.prepare("SELECT * FROM members WHERE id = ?").get(id) as Member;
+  const member = database.prepare("SELECT * FROM members WHERE id = ?").get(id) as Member;
+  return { member, plaintextToken };
+}
+
+/** Reveal plaintext for authenticated owners (session-user). Null if revoked. */
+export function revealMemberToken(memberId: string): string | null {
+  const row = getDb()
+    .prepare("SELECT token, token_enc FROM members WHERE id = ?")
+    .get(memberId) as { token: string; token_enc: string | null } | undefined;
+  if (!row) return null;
+  if (row.token_enc) {
+    const opened = openToken(row.token_enc);
+    if (opened) return opened;
+  }
+  if (looksLikeLegacyPlaintext(row.token)) return row.token;
+  return null;
+}
+
+/** Rotate bearer; returns new plaintext once. Invalidates extension/desktop until re-pair. */
+export function rotateMemberToken(memberId: string): string | null {
+  const database = getDb();
+  const existing = database.prepare("SELECT id FROM members WHERE id = ?").get(memberId) as
+    | { id: string }
+    | undefined;
+  if (!existing) return null;
+  const plaintext = mintToken();
+  const tokenHash = hashToken(plaintext);
+  const tokenEnc = sealToken(plaintext);
+  database
+    .prepare("UPDATE members SET token = ?, token_enc = ? WHERE id = ?")
+    .run(tokenHash, tokenEnc, memberId);
+  database
+    .prepare("UPDATE google_users SET token = ?, token_enc = ? WHERE member_id = ?")
+    .run(tokenHash, tokenEnc, memberId);
+  return plaintext;
+}
+
+/** Revoke bearer — lookups fail; vault cleared. */
+export function revokeMemberToken(memberId: string): boolean {
+  const database = getDb();
+  const dead = hashToken(mintToken());
+  const info = database
+    .prepare("UPDATE members SET token = ?, token_enc = NULL WHERE id = ?")
+    .run(dead, memberId);
+  database
+    .prepare("UPDATE google_users SET token = ?, token_enc = NULL WHERE member_id = ?")
+    .run(dead, memberId);
+  return info.changes > 0;
+}
+
+function migrateLegacyMemberToken(row: Member, plaintext: string): Member {
+  if (!looksLikeLegacyPlaintext(row.token)) return row;
+  const database = getDb();
+  const tokenHash = hashToken(plaintext);
+  const tokenEnc = sealToken(plaintext);
+  database
+    .prepare("UPDATE members SET token = ?, token_enc = COALESCE(token_enc, ?) WHERE id = ?")
+    .run(tokenHash, tokenEnc, row.id);
+  database
+    .prepare(
+      "UPDATE google_users SET token = ?, token_enc = COALESCE(token_enc, ?) WHERE member_id = ? OR token = ?"
+    )
+    .run(tokenHash, tokenEnc, row.id, plaintext);
+  return database.prepare("SELECT * FROM members WHERE id = ?").get(row.id) as Member;
+}
+
+export function getMemberByToken(token: string): Member | undefined {
+  if (!token) return undefined;
+  const database = getDb();
+  const hashed = hashToken(token);
+  const byHash = database.prepare("SELECT * FROM members WHERE token = ?").get(hashed) as
+    | Member
+    | undefined;
+  if (byHash) return byHash;
+  // Legacy plaintext rows (pre-hash migration).
+  const legacy = database.prepare("SELECT * FROM members WHERE token = ?").get(token) as
+    | Member
+    | undefined;
+  if (legacy && looksLikeLegacyPlaintext(legacy.token)) {
+    return migrateLegacyMemberToken(legacy, token);
+  }
+  return undefined;
 }
 
 function seedDefaultHabits(memberId: string, fellowshipId: string) {
@@ -678,10 +786,6 @@ function seedDefaultHabits(memberId: string, fellowshipId: string) {
         preset.defaultGoal
       );
   }
-}
-
-export function getMemberByToken(token: string): Member | undefined {
-  return getDb().prepare("SELECT * FROM members WHERE token = ?").get(token) as Member | undefined;
 }
 
 export function getMembers(fellowshipId: string): Member[] {
@@ -1969,7 +2073,7 @@ export function ensureGoogleUser(input: {
   name: string;
   avatarUrl: string | null;
   linkMemberId?: string;
-}): GoogleUser {
+}): GoogleUser & { plaintextToken: string | null } {
   const database = getDb();
   const existing = database
     .prepare("SELECT * FROM google_users WHERE google_id = ?")
@@ -1978,12 +2082,12 @@ export function ensureGoogleUser(input: {
   if (existing) {
     if (input.linkMemberId && input.linkMemberId !== existing.member_id) {
       const linked = database
-        .prepare("SELECT token FROM members WHERE id = ?")
-        .get(input.linkMemberId) as { token: string } | undefined;
+        .prepare("SELECT token, token_enc FROM members WHERE id = ?")
+        .get(input.linkMemberId) as { token: string; token_enc: string | null } | undefined;
       database
         .prepare(
           `UPDATE google_users SET email = ?, name = ?, avatar_url = ?,
-           member_id = ?, token = COALESCE(?, token) WHERE id = ?`
+           member_id = ?, token = COALESCE(?, token), token_enc = COALESCE(?, token_enc) WHERE id = ?`
         )
         .run(
           input.email,
@@ -1991,6 +2095,7 @@ export function ensureGoogleUser(input: {
           input.avatarUrl,
           input.linkMemberId,
           linked?.token ?? null,
+          linked?.token_enc ?? null,
           existing.id
         );
     } else {
@@ -1998,39 +2103,89 @@ export function ensureGoogleUser(input: {
         .prepare(`UPDATE google_users SET email = ?, name = ?, avatar_url = ? WHERE id = ?`)
         .run(input.email, input.name, input.avatarUrl, existing.id);
     }
-    return database.prepare("SELECT * FROM google_users WHERE id = ?").get(existing.id) as GoogleUser;
+    const user = database.prepare("SELECT * FROM google_users WHERE id = ?").get(existing.id) as GoogleUser;
+    const plaintext =
+      (user.member_id ? revealMemberToken(user.member_id) : null) ||
+      (user.token_enc ? openToken(user.token_enc) : null) ||
+      (looksLikeLegacyPlaintext(user.token) ? user.token : null);
+    return { ...user, plaintextToken: plaintext };
   }
 
   let memberId = input.linkMemberId ?? null;
-  let token = nanoid(32);
+  let tokenHash: string;
+  let tokenEnc: string;
+  let plaintext: string;
 
   if (memberId) {
     const member = database
-      .prepare("SELECT token FROM members WHERE id = ?")
-      .get(memberId) as { token: string } | undefined;
-    if (member) token = member.token;
+      .prepare("SELECT token, token_enc FROM members WHERE id = ?")
+      .get(memberId) as { token: string; token_enc: string | null } | undefined;
+    if (member) {
+      tokenHash = member.token;
+      plaintext = member.token_enc
+        ? openToken(member.token_enc) || mintToken()
+        : looksLikeLegacyPlaintext(member.token)
+          ? member.token
+          : mintToken();
+      tokenEnc = member.token_enc || sealToken(plaintext);
+      if (!member.token_enc || looksLikeLegacyPlaintext(member.token)) {
+        tokenHash = hashToken(plaintext);
+        tokenEnc = sealToken(plaintext);
+        database
+          .prepare("UPDATE members SET token = ?, token_enc = ? WHERE id = ?")
+          .run(tokenHash, tokenEnc, memberId);
+      }
+    } else {
+      plaintext = mintToken();
+      tokenHash = hashToken(plaintext);
+      tokenEnc = sealToken(plaintext);
+    }
   } else {
     // Personal solo fellowship so blocklist/prefs APIs accept this token
     const fellowship = createFellowship(`Solo · ${input.name.slice(0, 24)}`);
-    const member = joinFellowship(fellowship.id, input.name);
-    memberId = member.id;
-    token = member.token;
+    const joined = joinFellowship(fellowship.id, input.name);
+    memberId = joined.member.id;
+    plaintext = joined.plaintextToken;
+    tokenHash = joined.member.token;
+    tokenEnc = joined.member.token_enc || sealToken(plaintext);
   }
 
   const id = nanoid();
   database
     .prepare(
-      `INSERT INTO google_users (id, google_id, email, name, avatar_url, token, member_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO google_users (id, google_id, email, name, avatar_url, token, token_enc, member_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, input.googleId, input.email, input.name, input.avatarUrl, token, memberId);
-  return database.prepare("SELECT * FROM google_users WHERE id = ?").get(id) as GoogleUser;
+    .run(id, input.googleId, input.email, input.name, input.avatarUrl, tokenHash, tokenEnc, memberId);
+  const user = database.prepare("SELECT * FROM google_users WHERE id = ?").get(id) as GoogleUser;
+  return { ...user, plaintextToken: plaintext };
 }
 
 export function getGoogleUserByToken(token: string): GoogleUser | undefined {
-  return getDb().prepare("SELECT * FROM google_users WHERE token = ?").get(token) as
+  if (!token) return undefined;
+  const database = getDb();
+  const hashed = hashToken(token);
+  const byHash = database.prepare("SELECT * FROM google_users WHERE token = ?").get(hashed) as
     | GoogleUser
     | undefined;
+  if (byHash) return byHash;
+  const legacy = database.prepare("SELECT * FROM google_users WHERE token = ?").get(token) as
+    | GoogleUser
+    | undefined;
+  if (legacy && looksLikeLegacyPlaintext(legacy.token)) {
+    const tokenHash = hashToken(token);
+    const tokenEnc = sealToken(token);
+    database
+      .prepare("UPDATE google_users SET token = ?, token_enc = COALESCE(token_enc, ?) WHERE id = ?")
+      .run(tokenHash, tokenEnc, legacy.id);
+    if (legacy.member_id) {
+      database
+        .prepare("UPDATE members SET token = ?, token_enc = COALESCE(token_enc, ?) WHERE id = ?")
+        .run(tokenHash, tokenEnc, legacy.member_id);
+    }
+    return database.prepare("SELECT * FROM google_users WHERE id = ?").get(legacy.id) as GoogleUser;
+  }
+  return undefined;
 }
 
 export function getGoogleUserByGoogleId(googleId: string): GoogleUser | undefined {

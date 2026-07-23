@@ -9,6 +9,45 @@ const DEFAULT_SITES = [
   "tiktok.com", "youtube.com", "netflix.com", "twitch.tv",
 ];
 
+/** Hard-mode auto-hosts — parity with desktop HARD_HOSTS_OPTIONAL. */
+const HARD_HOSTS_OPTIONAL = [
+  "youtube.com",
+  "youtu.be",
+  "m.youtube.com",
+  "music.youtube.com",
+  "instagram.com",
+  "linkedin.com",
+];
+
+/** Origins allowed for externally_connectable messages (exact prod + local). */
+const TRUSTED_ORIGINS = new Set([
+  "https://fellowship-focus-production.up.railway.app",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://localhost:3000",
+  "http://localhost",
+  "http://127.0.0.1",
+]);
+
+function isTrustedOrigin(origin) {
+  if (!origin) return false;
+  if (TRUSTED_ORIGINS.has(origin)) return true;
+  // Allow any localhost / 127.0.0.1 port in development.
+  try {
+    const u = new URL(origin);
+    if (u.hostname === "localhost" || u.hostname === "127.0.0.1") return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+/** Config safe to echo to UI / external callers — never include the bearer. */
+function publicConfig(cfg) {
+  const { token: _t, ...rest } = cfg || {};
+  return { ...rest, token: cfg?.token ? true : false };
+}
+
 const DEFAULTS = {
   apiUrl: "",
   token: "",
@@ -36,8 +75,10 @@ const DEFAULTS = {
     //  "page"   — full block page (default)
     //  "notify" — bounce the tab back + a brief "-N XP" notification
     block_style: "page",
+    // soft = list only; hard = also auto-add HARD_HOSTS_OPTIONAL
+    blocker_mode: "hard",
   },
-  focus: null, // { phase, cycle, endsAt }
+  focus: null, // { phase, cycle, endsAt, paused?, remainingMs?, webOwnsLog? }
   stats: { date: today(), blocks: 0, focusMinutes: 0 },
 };
 
@@ -215,6 +256,16 @@ function blockDecision(urlString, cfg) {
       }
     }
   }
+  // Hard mode: also match HARD_HOSTS_OPTIONAL even when not on the user list.
+  if (!soft) {
+    for (const site of HARD_HOSTS_OPTIONAL) {
+      for (const domain of expandDomains(site)) {
+        if (host === domain || host.endsWith("." + domain)) {
+          return { domain, friction: false };
+        }
+      }
+    }
+  }
   // Soft extras: if a feed host isn't full-listed, still catch doomscroll paths.
   if (soft) {
     for (const [base, paths] of Object.entries(SOFT_PATH_RULES)) {
@@ -284,12 +335,20 @@ async function rebuildRules() {
   const temp = liveTempAllows(cfg);
 
   const soft = (cfg.prefs || {}).blocker_mode === "soft";
+  const notifyOnly = (cfg.prefs || {}).block_style === "notify";
+
+  // Effective site list: hard mode auto-adds HARD_HOSTS_OPTIONAL (desktop parity).
+  const siteList = soft
+    ? (cfg.sites || []).filter(Boolean)
+    : [...new Set([...(cfg.sites || []).filter(Boolean), ...HARD_HOSTS_OPTIONAL])];
 
   let addRules = [];
-  if (effectiveShield(cfg)) {
+  // Notify mode: do NOT install DNR redirects — tab sweep + webNavigation bounce instead.
+  // That keeps "notify" honest (no full block page) and avoids double /api/blocks with block.js.
+  if (effectiveShield(cfg) && !notifyOnly) {
     const seen = new Set();
     let id = 1;
-    for (const site of cfg.sites.filter(Boolean)) {
+    for (const site of siteList) {
       const base = normalizeSite(site);
       const friction = modes[base] === "friction";
       // Always install full-domain rules for listed sites (YouTube included).
@@ -338,21 +397,32 @@ async function rebuildRules() {
 async function getStatus() {
   const cfg = await getConfig();
   const rules = await chrome.declarativeNetRequest.getDynamicRules();
+  const soft = (cfg.prefs || {}).blocker_mode === "soft";
+  const notifyOnly = (cfg.prefs || {}).block_style === "notify";
+  const siteList = soft
+    ? (cfg.sites || []).filter(Boolean)
+    : [...new Set([...(cfg.sites || []).filter(Boolean), ...HARD_HOSTS_OPTIONAL])];
+  const dnrCount = rules.filter((r) => r.id < TEMP_ALLOW_ID_BASE).length;
+  // Notify mode installs zero DNR rules — report effective coverage so isArmed stays true.
+  const ruleCount =
+    effectiveShield(cfg) && notifyOnly ? Math.max(dnrCount, siteList.length) : dnrCount;
   return {
     ready: true,
     shieldOn: effectiveShield(cfg),
     manualShield: !!cfg.manualShield,
     focusOn: !!cfg.focus,
     siteCount: (cfg.sites || []).filter(Boolean).length,
-    ruleCount: rules.filter((r) => r.id < TEMP_ALLOW_ID_BASE).length,
-    mode: (cfg.prefs || {}).blocker_mode === "soft" ? "soft" : "hard",
-    blockStyle: (cfg.prefs || {}).block_style === "notify" ? "notify" : "page",
+    ruleCount,
+    mode: soft ? "soft" : "hard",
+    blockStyle: notifyOnly ? "notify" : "page",
     desktopShieldOn: !!cfg.desktopShieldOn,
     lastSweep: (await chrome.storage.local.get("lastSweep")).lastSweep || null,
     // Already collected every day and never shown — surface it.
     blocksToday: cfg.stats?.blocks || 0,
     focusMinutesToday: cfg.stats?.focusMinutes || 0,
     version: chrome.runtime.getManifest().version,
+  };
+}
   };
 }
 
@@ -428,12 +498,55 @@ async function syncRemote() {
 
 // ── Focus sessions ───────────────────────────────────────
 
-async function startFocus() {
+async function startFocus(opts = {}) {
   const cfg = await getConfig();
-  const endsAt = Date.now() + cfg.prefs.focus_min * 60000;
-  await setConfig({ focus: { phase: "focus", cycle: 1, endsAt } });
+  const remainingMs =
+    typeof opts.remainingMs === "number" && opts.remainingMs > 0
+      ? opts.remainingMs
+      : cfg.prefs.focus_min * 60000;
+  const endsAt = Date.now() + remainingMs;
+  const webOwnsLog = opts.webOwnsLog !== false; // web timer is primary logger by default
+  await setConfig({
+    focus: {
+      phase: "focus",
+      cycle: opts.cycle || 1,
+      endsAt,
+      paused: false,
+      webOwnsLog,
+    },
+  });
   await chrome.alarms.create("focus", { when: endsAt });
   await rebuildRules();
+}
+
+async function pauseFocus() {
+  const cfg = await getConfig();
+  if (!cfg.focus || cfg.focus.paused) return;
+  await chrome.alarms.clear("focus");
+  const remainingMs = Math.max(0, (cfg.focus.endsAt || 0) - Date.now());
+  await setConfig({
+    focus: { ...cfg.focus, paused: true, remainingMs, endsAt: Date.now() + remainingMs },
+  });
+}
+
+async function resumeFocus() {
+  const cfg = await getConfig();
+  if (!cfg.focus || !cfg.focus.paused) return;
+  const remainingMs = Math.max(
+    0,
+    typeof cfg.focus.remainingMs === "number"
+      ? cfg.focus.remainingMs
+      : (cfg.focus.endsAt || 0) - Date.now()
+  );
+  if (remainingMs <= 0) {
+    await onFocusAlarm();
+    return;
+  }
+  const endsAt = Date.now() + remainingMs;
+  await setConfig({
+    focus: { ...cfg.focus, paused: false, remainingMs: undefined, endsAt },
+  });
+  await chrome.alarms.create("focus", { when: endsAt });
 }
 
 async function stopFocus() {
@@ -444,11 +557,14 @@ async function stopFocus() {
 
 async function onFocusAlarm() {
   const cfg = await getConfig();
-  if (!cfg.focus) return;
-  const { phase, cycle } = cfg.focus;
+  if (!cfg.focus || cfg.focus.paused) return;
+  const { phase, cycle, webOwnsLog } = cfg.focus;
 
   if (phase === "focus") {
-    await logSession(cfg);
+    // Single logger: web XOR extension. Skip if the web app owns session posts.
+    if (!webOwnsLog) {
+      await logSession(cfg);
+    }
     const mins = (await getConfig()).stats.focusMinutes + cfg.prefs.focus_min;
     await setConfig({ stats: { ...cfg.stats, focusMinutes: mins } });
     if (cycle >= cfg.prefs.cycles) {
@@ -457,12 +573,12 @@ async function onFocusAlarm() {
       return;
     }
     const endsAt = Date.now() + cfg.prefs.break_min * 60000;
-    await setConfig({ focus: { phase: "break", cycle, endsAt } });
+    await setConfig({ focus: { phase: "break", cycle, endsAt, webOwnsLog } });
     await chrome.alarms.create("focus", { when: endsAt });
     notify("Break", `${cfg.prefs.break_min} min. Sites stay blocked.`);
   } else {
     const endsAt = Date.now() + cfg.prefs.focus_min * 60000;
-    await setConfig({ focus: { phase: "focus", cycle: cycle + 1, endsAt } });
+    await setConfig({ focus: { phase: "focus", cycle: cycle + 1, endsAt, webOwnsLog } });
     await chrome.alarms.create("focus", { when: endsAt });
     notify("Back to focus", `Cycle ${cycle + 1}/${cfg.prefs.cycles}.`);
   }
@@ -705,11 +821,26 @@ async function enforceBlock(tabId, url, cfg, hit) {
   chrome.tabs.update(tabId, { url: chrome.runtime.getURL(page) }, () => void chrome.runtime.lastError);
 }
 
-/** Small "-N XP" toast for notify mode; pulls the real penalty from the guild. */
+/** Small "-N XP" toast for notify mode; pulls the real penalty from the guild.
+ * This is the SINGLE penalty writer for notify hits (DNR redirects are off). */
 async function notifyBlocked(domain) {
+  // Debounce duplicate navigations within 4s for the same domain.
+  const key = String(domain || "").toLowerCase();
+  const now = Date.now();
+  if (!_notifyDebounce) _notifyDebounce = new Map();
+  const prev = _notifyDebounce.get(key) || 0;
+  if (now - prev < 4000) return;
+  _notifyDebounce.set(key, now);
+
   let penalty = 10;
   try {
     const cfg = await getConfig();
+    // Local stats only once here — do not also call reportBlock (would double-count).
+    const stats =
+      cfg.stats.date === today()
+        ? { ...cfg.stats, blocks: cfg.stats.blocks + 1 }
+        : { date: today(), blocks: 1, focusMinutes: 0 };
+    await setConfig({ stats });
     if (cfg.apiUrl && cfg.token) {
       const res = await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/api/blocks`, {
         method: "POST",
@@ -736,6 +867,8 @@ async function notifyBlocked(domain) {
     /* notifications permission missing */
   }
 }
+
+let _notifyDebounce = null;
 
 // ── Dopamine "Block this site?" prompt ───────────────────
 // During an active shield, visiting a known distractor that is NOT already
@@ -972,14 +1105,14 @@ function handleMessage(msg, sendResponse) {
   (async () => {
     switch (msg?.type) {
       case "getState":
-        sendResponse({ config: await getConfig(), status: await getStatus() });
+        sendResponse({ config: publicConfig(await getConfig()), status: await getStatus() });
         break;
       case "getStatus":
         sendResponse({ status: await getStatus() });
         break;
       case "setSites":
         await setSites(msg.sites);
-        sendResponse({ config: await getConfig(), status: await getStatus() });
+        sendResponse({ config: publicConfig(await getConfig()), status: await getStatus() });
         break;
       case "allowTemporarily":
         await allowTemporarily(msg.domain, msg.secs);
@@ -989,24 +1122,40 @@ function handleMessage(msg, sendResponse) {
         const cfg = await getConfig();
         const sched = scheduleForcesOn(cfg.prefs || {});
         if (!msg.on && (cfg.focus || sched.locked)) {
-          sendResponse({ config: cfg, error: "locked" });
+          sendResponse({ config: publicConfig(cfg), error: "locked" });
           break;
         }
         await setConfig({ manualShield: !!msg.on });
         await rebuildRules();
-        sendResponse({ config: await getConfig(), status: await getStatus() });
+        sendResponse({ config: publicConfig(await getConfig()), status: await getStatus() });
         break;
       }
       case "startFocus":
-        await startFocus();
-        sendResponse({ config: await getConfig(), status: await getStatus() });
+        await startFocus({
+          remainingMs: msg.remainingMs,
+          cycle: msg.cycle,
+          webOwnsLog: msg.webOwnsLog !== false,
+        });
+        sendResponse({ config: publicConfig(await getConfig()), status: await getStatus(), ok: true });
+        break;
+      case "pauseFocus":
+        await pauseFocus();
+        sendResponse({ config: publicConfig(await getConfig()), status: await getStatus(), ok: true });
+        break;
+      case "resumeFocus":
+        await resumeFocus();
+        sendResponse({ config: publicConfig(await getConfig()), status: await getStatus(), ok: true });
         break;
       case "stopFocus":
         await stopFocus();
-        sendResponse({ config: await getConfig(), status: await getStatus() });
+        sendResponse({ config: publicConfig(await getConfig()), status: await getStatus(), ok: true });
         break;
       case "connect":
-        sendResponse({ config: await connect(msg.payload), status: await getStatus() });
+        sendResponse({
+          config: publicConfig(await connect(msg.payload)),
+          status: await getStatus(),
+          ok: true,
+        });
         break;
       case "pairFromCode": {
         try {
@@ -1014,7 +1163,11 @@ function handleMessage(msg, sendResponse) {
           const res = await fetch(`${base}/api/blocker/pair?code=${encodeURIComponent(msg.code)}`);
           const json = await res.json();
           if (!res.ok) throw new Error(json.error || "pair_failed");
-          sendResponse({ config: await connect(json), status: await getStatus() });
+          sendResponse({
+            config: publicConfig(await connect(json)),
+            status: await getStatus(),
+            ok: true,
+          });
         } catch (e) {
           sendResponse({ error: String(e) });
         }
@@ -1022,18 +1175,18 @@ function handleMessage(msg, sendResponse) {
       }
       case "disconnect":
         await setConfig({ apiUrl: "", token: "", code: "", name: "" });
-        sendResponse({ config: await getConfig() });
+        sendResponse({ config: publicConfig(await getConfig()) });
         break;
       case "addSite":
-        sendResponse({ config: await addSite(msg.site) });
+        sendResponse({ config: publicConfig(await addSite(msg.site)) });
         break;
       case "removeSite":
-        sendResponse({ config: await removeSite(msg.site) });
+        sendResponse({ config: publicConfig(await removeSite(msg.site)) });
         break;
       case "refresh":
         await syncRemote();
         await rebuildRules();
-        sendResponse({ config: await getConfig() });
+        sendResponse({ config: publicConfig(await getConfig()), ok: true });
         break;
       case "reportBlock":
         await reportBlock(msg.domain);
@@ -1096,7 +1249,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) =>
 // Direct messages from the web app (externally_connectable). More robust than
 // the content-script relay: works even if the content script didn't inject.
 if (chrome.runtime.onMessageExternal) {
-  chrome.runtime.onMessageExternal.addListener((msg, _sender, sendResponse) =>
-    handleMessage(msg, sendResponse)
-  );
+  chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
+    if (!isTrustedOrigin(sender.origin)) {
+      sendResponse({ error: "untrusted_origin" });
+      return false;
+    }
+    return handleMessage(msg, sendResponse);
+  });
 }

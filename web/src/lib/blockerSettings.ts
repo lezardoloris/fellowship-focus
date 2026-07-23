@@ -59,6 +59,16 @@ export const SOFT_PATH_RULES: Array<{ host: string; paths: string[] }> = [
 /** Hosts that hard mode auto-adds; listed sites always full-block either mode. */
 export const SOFT_PATH_HOSTS = SOFT_PATH_RULES.map((r) => r.host);
 
+/** Parity with desktop HARD_HOSTS_OPTIONAL — auto-added when blocker_mode is hard. */
+export const HARD_HOSTS_OPTIONAL = [
+  "youtube.com",
+  "youtu.be",
+  "m.youtube.com",
+  "music.youtube.com",
+  "instagram.com",
+  "linkedin.com",
+];
+
 export const DEFAULT_BLOCKER_SETTINGS: BlockerSettings = {
   focus_min: 50,
   focus_sec: 0,

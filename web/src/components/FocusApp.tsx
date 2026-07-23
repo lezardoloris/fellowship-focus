@@ -11,6 +11,7 @@ import { ImmersiveScene } from "@/components/ImmersiveScene";
 import { SettingsPanel, useBackgroundPrefs } from "@/components/SettingsPanel";
 import { PremiumLoader } from "@/components/PremiumLoader";
 import { BlockerModePill, BlockerModeProvider } from "@/components/BlockerMode";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useToast } from "@/components/Toasts";
 import { type SceneId } from "@/lib/scenes";
 
@@ -257,24 +258,22 @@ export function FocusApp() {
     <BlockerModeProvider>
     <Shell scene={bgPrefs.scene}>
       <header className="header-glass sticky top-0 z-20">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-2 px-4 py-3 md:gap-3 md:px-8">
-          <span className="font-display hidden text-sm font-semibold tracking-wide text-white/90 sm:inline">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-2 px-3 py-2.5 sm:gap-2.5 md:gap-3 md:px-8 md:py-3">
+          <span className="font-display hidden text-sm font-semibold tracking-wide text-white/90 lg:inline">
             Fellowship Focus
           </span>
           <nav
-            className="flex items-center gap-1 rounded-full border border-white/20 bg-black/55 p-1"
-            role="tablist"
+            className="flex min-h-11 items-center gap-1 rounded-full border border-white/20 bg-black/55 p-1"
             aria-label="Main"
           >
             {TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
-                role="tab"
-                aria-selected={tab === t.id}
+                aria-current={tab === t.id ? "page" : undefined}
                 onClick={() => setTab(t.id)}
                 title={t.hint}
-                className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                className={`min-h-9 rounded-full px-3.5 py-1.5 text-sm font-medium transition sm:px-4 ${
                   tab === t.id
                     ? "bg-[#b8422e] text-white shadow-lg shadow-[#b8422e]/25"
                     : "text-white/80 hover:text-white"
@@ -285,35 +284,37 @@ export function FocusApp() {
             ))}
           </nav>
           <BlockerModePill />
+          <div className="flex min-h-11 flex-wrap items-center justify-center gap-1.5 sm:gap-2">
           {googleUser ? (
             <button
               type="button"
               onClick={disconnectGoogle}
               disabled={authBusy}
-              className="flex items-center gap-2 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85 hover:text-white"
+              className="flex min-h-9 items-center gap-2 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85 hover:text-white"
               title={googleUser.email}
             >
               {googleUser.avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={googleUser.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
               ) : null}
-              Sign out
+              <span className="hidden sm:inline">Sign out</span>
+              <span className="sm:hidden">Out</span>
             </button>
           ) : (
             <button
               type="button"
               onClick={connectGoogle}
               disabled={authBusy}
-              className="rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85 disabled:opacity-50"
+              className="min-h-9 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85 disabled:opacity-50"
             >
-              {authBusy ? "…" : "Sign in with Google"}
+              {authBusy ? "…" : "Sign in"}
             </button>
           )}
           {joined && (
             <button
               type="button"
               onClick={share}
-              className="rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85"
+              className="min-h-9 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85"
               title={code || undefined}
             >
               {shared ? "Copied" : "Share"}
@@ -323,7 +324,7 @@ export function FocusApp() {
             <button
               type="button"
               onClick={leaveGuild}
-              className="rounded-full border border-white/15 bg-transparent px-2.5 py-1.5 text-[11px] text-white/70 hover:text-white/90"
+              className="hidden min-h-9 rounded-full border border-white/15 bg-transparent px-2.5 py-1.5 text-[11px] text-white/70 hover:text-white/90 md:inline"
               title={`Leave ${code}`}
             >
               Leave
@@ -332,29 +333,38 @@ export function FocusApp() {
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-black/55 text-white/85 hover:text-white"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-black/55 text-white/85 hover:text-white"
             aria-label="Settings"
             title="Settings"
           >
             <SettingsIcon />
           </button>
+          </div>
         </div>
       </header>
 
       <div className="relative z-10 mx-auto max-w-6xl px-4 py-4 md:px-8 md:py-6">
         {/* Keep Block mounted when switching tabs so timer/shield state survives. */}
         <div className={tab === "block" ? undefined : "hidden"} aria-hidden={tab !== "block"}>
-          <BlockTab code={code} token={token} name={name} />
+          <ErrorBoundary fallbackTitle="Block panel crashed">
+            <BlockTab code={code} token={token} name={name} />
+          </ErrorBoundary>
         </div>
-        {tab === "focus" && <FocusTab token={token} fellowshipCode={code} />}
+        {tab === "focus" && (
+          <ErrorBoundary fallbackTitle="Focus panel crashed">
+            <FocusTab token={token} fellowshipCode={code} />
+          </ErrorBoundary>
+        )}
         {tab === "guild" &&
           (joined ? (
-            <FellowshipDashboard
-              code={code!}
-              onCodeResolved={(canonical) => {
-                setCode(canonical);
-              }}
-            />
+            <ErrorBoundary fallbackTitle="Guild panel crashed">
+              <FellowshipDashboard
+                code={code!}
+                onCodeResolved={(canonical) => {
+                  setCode(canonical);
+                }}
+              />
+            </ErrorBoundary>
           ) : (
             <GuildDirectory
               onJoined={onJoined}

@@ -35,6 +35,8 @@ let discoveredExtId: string | null = null;
 /** Capture the extension id the moment it announces itself. */
 if (typeof window !== "undefined") {
   window.addEventListener("message", (event: MessageEvent) => {
+    // Only trust same-window extension announcements (content script).
+    if (event.source !== window) return;
     const d = event.data;
     if (d?.source === "fellowship-focus-ext" && typeof d.extId === "string") {
       discoveredExtId = d.extId;
@@ -71,6 +73,7 @@ function sendDirect<T = unknown>(msg: unknown, timeoutMs = 2500): Promise<T | nu
 export function pingExtension(timeoutMs = 800): Promise<boolean> {
   return new Promise((resolve) => {
     const onMsg = (event: MessageEvent) => {
+      if (event.source !== window) return;
       const d = event.data;
       if (d?.source !== "fellowship-focus-ext") return;
       if (d.type === "FF_EXT_PONG" || d.type === "FF_EXT_READY") {
@@ -95,6 +98,7 @@ export function analyzeHistoryViaExtension(days = 30, timeoutMs = 12000): Promis
   return new Promise((resolve, reject) => {
     const id = requestId();
     const onMsg = (event: MessageEvent) => {
+      if (event.source !== window) return;
       const d = event.data;
       if (d?.source !== "fellowship-focus-ext" || d.type !== "FF_HISTORY_RESULT") return;
       if (d.requestId && d.requestId !== id) return;
@@ -141,6 +145,7 @@ export async function getExtensionState(timeoutMs = 2500): Promise<ExtensionStat
   return new Promise((resolve) => {
     const id = requestId();
     const onMsg = (event: MessageEvent) => {
+      if (event.source !== window) return;
       const d = event.data;
       if (d?.source !== "fellowship-focus-ext" || d.type !== "FF_EXT_STATE_RESULT") return;
       if (d.requestId && d.requestId !== id) return;
@@ -165,14 +170,26 @@ export function isArmed(state: ExtensionState | null): boolean {
   return Boolean(state?.shieldOn && state.ruleCount > 0);
 }
 
-/** One-shot connect: push apiUrl/token/sites into the extension. */
-export function connectExtension(
+/** One-shot connect: push apiUrl/token/sites into the extension. Prefer direct channel. */
+export async function connectExtension(
   payload: Record<string, unknown>,
   timeoutMs = 6000
 ): Promise<ExtensionState | null> {
+  const direct = await sendDirect<{ status?: ExtensionState; config?: unknown; error?: string }>(
+    { type: "connect", payload },
+    timeoutMs
+  );
+  if (direct?.status) return direct.status;
+  if (direct && !direct.error) {
+    // connect replied without status — fetch it
+    const st = await getExtensionState(timeoutMs);
+    if (st) return st;
+  }
+
   return new Promise((resolve) => {
     const id = requestId();
     const onMsg = (event: MessageEvent) => {
+      if (event.source !== window) return;
       const d = event.data;
       if (d?.source !== "fellowship-focus-ext" || d.type !== "FF_PAIR_RESULT") return;
       if (d.requestId && d.requestId !== id) return;
@@ -195,14 +212,34 @@ export function connectExtension(
   });
 }
 
-export function extensionCommand(
-  type: "setShield" | "startFocus" | "stopFocus" | "refresh" | "setSites",
+export type ExtensionCommand =
+  | "setShield"
+  | "startFocus"
+  | "stopFocus"
+  | "pauseFocus"
+  | "resumeFocus"
+  | "refresh"
+  | "setSites";
+
+/** Prefer direct channel; fall back to content-script postMessage. */
+export async function extensionCommand(
+  type: ExtensionCommand,
   extra?: Record<string, unknown>,
   timeoutMs = 3000
 ): Promise<boolean> {
+  const direct = await sendDirect<{ ok?: boolean; error?: string; status?: ExtensionState }>(
+    { type, ...extra },
+    timeoutMs
+  );
+  if (direct) {
+    if (direct.error === "locked") return false;
+    if (direct.status || direct.ok !== false) return true;
+  }
+
   return new Promise((resolve) => {
     const id = requestId();
     const onMsg = (event: MessageEvent) => {
+      if (event.source !== window) return;
       const d = event.data;
       if (d?.source !== "fellowship-focus-ext" || d.type !== "FF_CMD_RESULT") return;
       if (d.requestId && d.requestId !== id) return;
