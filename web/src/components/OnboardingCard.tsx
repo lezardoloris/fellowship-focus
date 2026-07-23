@@ -20,8 +20,12 @@ export function OnboardingCard({
   const [dismissed, setDismissed] = useState(true);
 
   useEffect(() => {
+    // Two stores so a dismiss sticks even if one is wiped (the desktop webview
+    // can be off-the-record for localStorage): localStorage + a long cookie.
     try {
-      setDismissed(localStorage.getItem(KEY) === "1");
+      const ls = localStorage.getItem(KEY) === "1";
+      const ck = document.cookie.includes(`${KEY}=1`);
+      setDismissed(ls || ck);
     } catch {
       setDismissed(false);
     }
@@ -40,6 +44,12 @@ export function OnboardingCard({
   function finish() {
     try {
       localStorage.setItem(KEY, "1");
+    } catch {
+      /* ignore */
+    }
+    try {
+      // ~5 year cookie — survives even if localStorage is cleared.
+      document.cookie = `${KEY}=1; max-age=157680000; path=/`;
     } catch {
       /* ignore */
     }

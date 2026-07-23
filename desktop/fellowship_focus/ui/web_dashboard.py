@@ -248,6 +248,22 @@ class WebDashboardPage(QWidget):
         self.setStyleSheet("background: #0c0e10;")
         profile = QWebEngineProfile.defaultProfile()
         profile.setHttpUserAgent(profile.httpUserAgent() + " FellowshipFocusDesktop/1.3.2")
+        # Persist localStorage / cookies across app restarts. Without an explicit
+        # storage path the webview can be effectively off-the-record, so things
+        # like the dismissed onboarding card came back every launch.
+        try:
+            from pathlib import Path as _Path
+
+            store = _Path.home() / ".fellowship-focus" / "webstorage"
+            store.mkdir(parents=True, exist_ok=True)
+            profile.setPersistentStoragePath(str(store))
+            profile.setCachePath(str(store / "cache"))
+            profile.setPersistentCookiesPolicy(
+                QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
+            )
+            profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
+        except Exception:
+            pass
         self._view.loadFinished.connect(self._on_load_finished)
         layout.addWidget(self._view, 1)
 
