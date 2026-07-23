@@ -7,7 +7,7 @@ import { desktopBridge, isDesktopShell, type MusicState } from "@/lib/desktop";
 type ManifestEntry = { title: string; src: string; id?: string; youtubeId?: string };
 
 type FocusMusicPanelProps = {
-  /** Horizontal session-row strip (play · title · vol) instead of tall centered panel. */
+  /** Horizontal session-row strip (play · select · vol) instead of tall centered panel. */
   compact?: boolean;
   className?: string;
   style?: CSSProperties;
@@ -249,15 +249,12 @@ function Shell({
             )}
           </button>
           <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <p className="truncate text-sm font-medium text-white/90" title={title}>
-                {title}
-              </p>
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">{select}</div>
               {count > 0 && (
                 <span className="shrink-0 text-xs tabular-nums text-white/40">{count}</span>
               )}
             </div>
-            {select}
             <div className="flex items-center gap-2">
               <span className="text-xs text-white/45">Vol</span>
               <input
