@@ -177,6 +177,8 @@ export function BlockTab({
     Array<{ id: string; kind: string; label: string; last_seen: string; shield_on: number }>
   >([]);
   const [blockLayout, setBlockLayout] = useState<BlockLayoutPrefs>(DEFAULT_BLOCK_LAYOUT);
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
+  const layoutMenuRef = useRef<HTMLDivElement>(null);
   const [unprotectedPrompt, setUnprotectedPrompt] = useState(false);
   const [connectChooser, setConnectChooser] = useState(false);
   const [creditPrompt, setCreditPrompt] = useState<{
@@ -204,6 +206,26 @@ export function BlockTab({
   useEffect(() => {
     setBlockLayout(readBlockLayout());
   }, []);
+
+  useEffect(() => {
+    if (!layoutMenuOpen) return;
+    function onDoc(e: MouseEvent) {
+      if (!layoutMenuRef.current?.contains(e.target as Node)) setLayoutMenuOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setLayoutMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [layoutMenuOpen]);
+
+  useEffect(() => {
+    if (phase !== "idle") setLayoutMenuOpen(false);
+  }, [phase]);
 
   const persistLayout = useCallback((next: BlockLayoutPrefs) => {
     const saved = writeBlockLayout(next);
@@ -1599,54 +1621,88 @@ export function BlockTab({
 
         {/* Blocker Mode lives in the sticky header on every tab (product moat). */}
 
-        {/* Session tools + Block list — named CSS grid areas (ff-block-layout-v1). */}
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-end gap-2">
-          <label className="sr-only" htmlFor="ff-block-layout">
-            Block layout
-          </label>
-          <select
-            id="ff-block-layout"
-            value={blockLayout.layoutId}
-            onChange={(e) =>
-              persistLayout(setLayoutId(blockLayout, e.target.value as BlockLayoutId))
-            }
-            className="input-premium py-1.5 text-xs"
-            title="Rearrange Block panels"
-          >
-            {(Object.keys(LAYOUT_LABELS) as BlockLayoutId[]).map((id) => (
-              <option key={id} value={id}>
-                Layout · {LAYOUT_LABELS[id]}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() =>
-              persistLayout({
-                ...blockLayout,
-                areas: swapTimerMusic(blockLayout.areas),
-              })
-            }
-            className="btn-secondary min-h-8 px-2.5 py-1 text-xs"
-            title="Swap timer and music panels"
-          >
-            Swap timer / music
-          </button>
-          <button
-            type="button"
-            onClick={() => persistLayout(DEFAULT_BLOCK_LAYOUT)}
-            className="btn-secondary min-h-8 px-2.5 py-1 text-xs"
-            title="Reset to session top"
-          >
-            Reset
-          </button>
-        </div>
+        {/* Layout chrome — setup-only, visually subordinate; hidden while focusing. */}
+        {!inSession && (
+          <div className="mx-auto flex w-full max-w-6xl justify-end">
+            <div ref={layoutMenuRef} className="relative">
+              <button
+                type="button"
+                aria-expanded={layoutMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setLayoutMenuOpen((o) => !o)}
+                className="inline-flex items-center gap-1 rounded border border-transparent px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/40 transition hover:border-white/10 hover:text-white/55"
+                title="Rearrange Block panels"
+              >
+                Layout
+                <span aria-hidden className="text-white/30">
+                  {layoutMenuOpen ? "▴" : "▾"}
+                </span>
+              </button>
+              {layoutMenuOpen ? (
+                <div
+                  role="menu"
+                  aria-label="Block layout"
+                  className="absolute right-0 top-[calc(100%+6px)] z-20 min-w-[10.5rem] rounded-md border border-white/10 bg-[#121416]/95 p-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-sm"
+                >
+                  {(Object.keys(LAYOUT_LABELS) as BlockLayoutId[]).map((id) => {
+                    const selected = blockLayout.layoutId === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selected}
+                        onClick={() => {
+                          persistLayout(setLayoutId(blockLayout, id));
+                          setLayoutMenuOpen(false);
+                        }}
+                        className={`flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] transition ${
+                          selected
+                            ? "text-white/65"
+                            : "text-white/45 hover:bg-white/[0.04] hover:text-white/60"
+                        }`}
+                      >
+                        {LAYOUT_LABELS[id]}
+                      </button>
+                    );
+                  })}
+                  <div className="my-1 border-t border-white/10" role="separator" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      persistLayout({
+                        ...blockLayout,
+                        areas: swapTimerMusic(blockLayout.areas),
+                      });
+                      setLayoutMenuOpen(false);
+                    }}
+                    className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-white/45 transition hover:bg-white/[0.04] hover:text-white/60"
+                  >
+                    Swap timer / music
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      persistLayout(DEFAULT_BLOCK_LAYOUT);
+                      setLayoutMenuOpen(false);
+                    }}
+                    className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-white/45 transition hover:bg-white/[0.04] hover:text-white/60"
+                  >
+                    Reset
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
 
         <div
           className={`ff-block-layout ff-block-layout--${blockLayout.layoutId}`}
         >
           <div
-            className={`glass-panel flex flex-col p-4 sm:p-5 ff-block-area-${areaForPanel(blockLayout.areas, "timer")}`}
+            className={`glass-panel flex w-full min-w-0 flex-col p-4 sm:p-5 ff-block-area-${areaForPanel(blockLayout.areas, "timer")}`}
           >
             <div
               className={`text-center ${
@@ -1974,7 +2030,7 @@ export function BlockTab({
 
           <FocusMusicPanel
             compact={musicCompactFor(blockLayout.layoutId)}
-            className={`ff-block-area-${areaForPanel(blockLayout.areas, "music")}`}
+            className={`w-full min-w-0 ff-block-area-${areaForPanel(blockLayout.areas, "music")}`}
           />
         </div>
     </div>
