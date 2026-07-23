@@ -86,24 +86,20 @@ export function FocusMusicPanel({ compact = false, className, style }: FocusMusi
           desktopBridge.musicCmd({ cmd: "volume", value: v }).then((s) => s && setMusic(s))
         }
         select={
-          <select
-            value={music?.index ?? -1}
+          <MusicTrackPicker
+            compact={compact}
             disabled={!available}
-            onChange={(e) =>
-              desktopBridge.musicCmd({ cmd: "select", value: Number(e.target.value) }).then(
+            value={music?.index ?? -1}
+            placeholder="Add tracks in the app"
+            ariaLabel="Focus track"
+            options={(music?.tracks ?? []).map((t, i) => ({ value: i, label: t }))}
+            onChange={(index) => {
+              if (typeof index !== "number") return;
+              desktopBridge.musicCmd({ cmd: "select", value: index }).then(
                 (s) => s && setMusic(s)
-              )
-            }
-            className={`input-premium w-full truncate text-sm ${compact ? "py-1.5" : "py-2"}`}
-            aria-label="Focus track"
-          >
-            {!available && <option value={-1}>Add tracks in the app</option>}
-            {music?.tracks.map((t, i) => (
-              <option key={i} value={i}>
-                {t}
-              </option>
-            ))}
-          </select>
+              );
+            }}
+          />
         }
       />
     );
@@ -152,15 +148,20 @@ export function FocusMusicPanel({ compact = false, className, style }: FocusMusi
       volume={vol}
       onVolume={setVol}
       select={
-        <select
-          value={current?.src || ""}
+        <MusicTrackPicker
+          compact={compact}
           disabled={!hasLocal}
-          onChange={(e) => {
-            setTrackSrc(e.target.value);
-            localStorage.setItem(FOCUS_MUSIC_KEY, e.target.value);
+          value={current?.src || ""}
+          placeholder="No local tracks"
+          ariaLabel="Focus track"
+          options={options.map((o) => ({ value: o.src, label: o.label }))}
+          onChange={(src) => {
+            if (typeof src !== "string") return;
+            setTrackSrc(src);
+            localStorage.setItem(FOCUS_MUSIC_KEY, src);
             const el = audioRef.current;
             if (el) {
-              el.src = e.target.value;
+              el.src = src;
               if (playing) {
                 el.play()
                   .then(() => setPlaying(true))
@@ -168,16 +169,7 @@ export function FocusMusicPanel({ compact = false, className, style }: FocusMusi
               }
             }
           }}
-          className={`input-premium w-full truncate text-sm ${compact ? "py-1.5" : "py-2"}`}
-          aria-label="Focus track"
-        >
-          {!hasLocal && <option value="">No local tracks</option>}
-          {options.map((o) => (
-            <option key={o.src} value={o.src}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        />
       }
     >
       <audio
@@ -188,6 +180,123 @@ export function FocusMusicPanel({ compact = false, className, style }: FocusMusi
         onEnded={() => setPlaying(false)}
       />
     </Shell>
+  );
+}
+
+type TrackOption = { value: string | number; label: string };
+
+function MusicTrackPicker({
+  value,
+  options,
+  disabled = false,
+  compact = false,
+  placeholder,
+  ariaLabel,
+  onChange,
+}: {
+  value: string | number;
+  options: TrackOption[];
+  disabled?: boolean;
+  compact?: boolean;
+  placeholder: string;
+  ariaLabel: string;
+  onChange: (value: string | number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const selected = options.find((o) => o.value === value);
+  const label = selected?.label ?? placeholder;
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const triggerClass = [
+    "music-track-trigger",
+    compact ? "music-track-trigger--compact" : "",
+    open ? "music-track-trigger--open" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <div ref={wrapRef} className="relative min-w-0">
+      <button
+        type="button"
+        disabled={disabled}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={ariaLabel}
+        onClick={() => !disabled && setOpen((o) => !o)}
+        className={triggerClass}
+      >
+        <span className="min-w-0 truncate">{label}</span>
+        <ChevronDown open={open} />
+      </button>
+      {open && options.length > 0 ? (
+        <div
+          role="listbox"
+          aria-label={ariaLabel}
+          className="music-track-panel music-track-panel-in"
+        >
+          <ul className="music-track-list music-track-scroll">
+            {options.map((o) => {
+              const isSelected = o.value === value;
+              return (
+                <li key={String(o.value)}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => {
+                      onChange(o.value);
+                      setOpen(false);
+                    }}
+                    className={`music-track-option${isSelected ? " music-track-option--selected" : ""}`}
+                  >
+                    <span className="music-track-option-mark" aria-hidden>
+                      ●
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ChevronDown({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden
+      className={`h-3.5 w-3.5 shrink-0 text-white/45 transition-transform duration-200 ${
+        open ? "rotate-180" : ""
+      }`}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 6l4 4 4-4" />
+    </svg>
   );
 }
 

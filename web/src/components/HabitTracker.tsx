@@ -8,12 +8,14 @@ import {
   getMonthDays,
   verificationBadge,
 } from "@/lib/habits";
+import { applyHabitOrder, moveInOrder, saveHabitOrder } from "@/lib/habitOrder";
 import {
   addSoloCustom,
   addSoloPreset,
   getSoloHabitGrid,
   listSoloHabits,
   removeSoloHabit,
+  reorderSoloHabits,
   soloPresetIdsInUse,
   toggleSoloCheckin,
 } from "@/lib/soloHabits";
@@ -56,6 +58,10 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [customGoal, setCustomGoal] = useState(20);
   const emojiWrapRef = useRef<HTMLDivElement>(null);
+  const tbodyRef = useRef<HTMLTableSectionElement>(null);
+  const dragRef = useRef<{ id: string; fromIndex: number } | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
   const solo = !token;
 
   useEffect(() => {
@@ -85,9 +91,13 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
           (h) => !HABIT_PRESETS.some((p) => p.label === h.label)
         );
         const apiLabels = new Set(api.grid.map((h) => h.label.toLowerCase()));
+        const merged = [
+          ...api.grid,
+          ...soloRows.filter((h) => !apiLabels.has(h.label.toLowerCase())),
+        ];
         setData({
           ...api,
-          grid: [...api.grid, ...soloRows.filter((h) => !apiLabels.has(h.label.toLowerCase()))],
+          grid: applyHabitOrder(merged, token),
         });
       } else {
         setData({
@@ -176,6 +186,99 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
     load();
   }
 
+  const persistHabitOrder = useCallback(
+    (orderedIds: string[]) => {
+      const soloIds = new Set(listSoloHabits().map((h) => h.id));
+      if (solo) {
+        reorderSoloHabits(orderedIds);
+      } else if (token) {
+        saveHabitOrder(token, orderedIds);
+        reorderSoloHabits(orderedIds.filter((id) => soloIds.has(id)));
+      }
+      setData((prev) => {
+        if (!prev) return prev;
+        const byId = new Map(prev.grid.map((h) => [h.id, h]));
+        const grid = orderedIds
+          .map((id) => byId.get(id))
+          .filter((h): h is HabitRow => Boolean(h));
+        for (const h of prev.grid) {
+          if (!orderedIds.includes(h.id)) grid.push(h);
+        }
+        return { ...prev, grid };
+      });
+    },
+    [solo, token]
+  );
+
+  function resolveDropIndex(clientY: number): number {
+    const rows = tbodyRef.current?.querySelectorAll<HTMLTableRowElement>("[data-habit-row]");
+    if (!rows?.length) return 0;
+    for (let i = 0; i < rows.length; i++) {
+      const rect = rows[i].getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      if (clientY < mid) return i;
+    }
+    return rows.length;
+  }
+
+  function finishDrag(toIndex: number) {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    setDraggingId(null);
+    setDropIndex(null);
+    if (!drag || !data) return;
+    if (drag.fromIndex === toIndex || drag.fromIndex + 1 === toIndex) return;
+
+    const ids = data.grid.map((h) => h.id);
+    persistHabitOrder(moveInOrder(ids, drag.fromIndex, toIndex));
+  }
+
+  function onDragHandlePointerDown(
+    e: React.PointerEvent<HTMLButtonElement>,
+    habitId: string,
+    index: number
+  ) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { id: habitId, fromIndex: index };
+    setDraggingId(habitId);
+    setDropIndex(index);
+  }
+
+  function onDragHandlePointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+    if (!dragRef.current) return;
+    setDropIndex(resolveDropIndex(e.clientY));
+  }
+
+  function onDragHandlePointerUp(e: React.PointerEvent<HTMLButtonElement>) {
+    if (!dragRef.current) return;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    finishDrag(resolveDropIndex(e.clientY));
+  }
+
+  function onDragHandlePointerCancel() {
+    dragRef.current = null;
+    setDraggingId(null);
+    setDropIndex(null);
+  }
+
+  function onDragHandleKeyDown(
+    e: React.KeyboardEvent<HTMLButtonElement>,
+    index: number
+  ) {
+    if (!data) return;
+    if (e.key === "ArrowUp" && index > 0) {
+      e.preventDefault();
+      const ids = data.grid.map((h) => h.id);
+      persistHabitOrder(moveInOrder(ids, index, index - 1));
+    } else if (e.key === "ArrowDown" && index < data.grid.length - 1) {
+      e.preventDefault();
+      const ids = data.grid.map((h) => h.id);
+      persistHabitOrder(moveInOrder(ids, index, index + 2));
+    }
+  }
+
   if (loading) return <PremiumLoader full className="min-h-[12vh]" size="sm" />;
   if (!data) return <p className="text-red-400">Could not load habits</p>;
 
@@ -184,7 +287,11 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
     month: "long",
     year: "numeric",
   });
-  const today = new Date().toISOString().slice(0, 10);
+  const nowLocal = new Date();
+  const today = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth() + 1).padStart(2, "0")}-${String(nowLocal.getDate()).padStart(2, "0")}`;
+  const isViewingCurrentMonth =
+    year === nowLocal.getFullYear() && month === nowLocal.getMonth() + 1;
+  const todayDay = isViewingCurrentMonth ? nowLocal.getDate() : null;
   const myPresetIds = (() => {
     const ids = solo ? soloPresetIdsInUse() : new Set<string>();
     if (!solo) {
@@ -247,49 +354,122 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
                 <th className="sticky left-0 bg-[#242628] py-2 pr-3 pl-3 text-left font-normal">
                   Habit
                 </th>
-                {Array.from({ length: daysInMonth }, (_, i) => (
-                  <th key={i} className="w-6 px-0.5 py-2 font-normal">
-                    {i + 1}
-                  </th>
-                ))}
+                {Array.from({ length: daysInMonth }, (_, i) => {
+                  const dayNum = i + 1;
+                  const isTodayCol = todayDay === dayNum;
+                  return (
+                    <th
+                      key={i}
+                      aria-current={isTodayCol ? "date" : undefined}
+                      className={`w-6 px-0.5 py-2 font-normal ${
+                        isTodayCol
+                          ? "habit-col-today habit-col-today-header"
+                          : isViewingCurrentMonth
+                            ? "text-stone-600/70"
+                            : ""
+                      }`}
+                    >
+                      {isTodayCol ? (
+                        <span className="habit-today-head">
+                          <span className="habit-today-num">{dayNum}</span>
+                          <span className="habit-today-label">Today</span>
+                        </span>
+                      ) : (
+                        dayNum
+                      )}
+                    </th>
+                  );
+                })}
                 <th className="px-2 py-2 font-normal">Goal</th>
                 <th className="px-2 py-2 font-normal">Done</th>
                 <th className="px-2 py-2 font-normal">%</th>
                 <th className="px-2 py-2 font-normal" />
               </tr>
             </thead>
-            <tbody>
-              {data.grid.map((habit) => {
+            <tbody ref={tbodyRef}>
+              {data.grid.map((habit, rowIndex) => {
                 const badge = verificationBadge(
                   habit.verification as "manual" | "auto_focus" | "auto_clean"
                 );
+                const isDragging = draggingId === habit.id;
+                const showDropBefore =
+                  dropIndex === rowIndex && draggingId !== null && !isDragging;
+                const showDropAfter =
+                  dropIndex === data.grid.length &&
+                  rowIndex === data.grid.length - 1 &&
+                  draggingId !== null &&
+                  !isDragging;
                 return (
-                  <tr key={habit.id} className="border-b border-white/5">
-                    <td className="sticky left-0 bg-[#242628] py-2 pr-3 pl-3">
-                      <HabitMark mark={habit.emoji} className="mr-1.5 text-[1.05rem]" />
-                      <span className="text-stone-300">{habit.label}</span>
-                      <span className={`ml-1 ${badge.color}`}>({badge.label})</span>
+                  <tr
+                    key={habit.id}
+                    data-habit-row
+                    className={`border-b border-white/5 transition-opacity ${
+                      isDragging ? "habit-row-dragging opacity-40" : ""
+                    } ${showDropBefore ? "habit-row-drop-before" : ""} ${
+                      showDropAfter ? "habit-row-drop-after" : ""
+                    }`}
+                  >
+                    <td className="sticky left-0 bg-[#242628] py-2 pr-3 pl-2">
+                      <div className="flex items-start gap-1.5">
+                        <button
+                          type="button"
+                          aria-label={`Reorder ${habit.label}`}
+                          className="habit-drag-handle mt-0.5 shrink-0 touch-none"
+                          onPointerDown={(e) => onDragHandlePointerDown(e, habit.id, rowIndex)}
+                          onPointerMove={onDragHandlePointerMove}
+                          onPointerUp={onDragHandlePointerUp}
+                          onPointerCancel={onDragHandlePointerCancel}
+                          onKeyDown={(e) => onDragHandleKeyDown(e, rowIndex)}
+                        >
+                          <svg
+                            width="10"
+                            height="14"
+                            viewBox="0 0 10 14"
+                            fill="currentColor"
+                            aria-hidden
+                          >
+                            <circle cx="2.5" cy="2.5" r="1.2" />
+                            <circle cx="7.5" cy="2.5" r="1.2" />
+                            <circle cx="2.5" cy="7" r="1.2" />
+                            <circle cx="7.5" cy="7" r="1.2" />
+                            <circle cx="2.5" cy="11.5" r="1.2" />
+                            <circle cx="7.5" cy="11.5" r="1.2" />
+                          </svg>
+                        </button>
+                        <span className="min-w-0">
+                          <HabitMark mark={habit.emoji} className="mr-1.5 text-[1.05rem]" />
+                          <span className="text-stone-300">{habit.label}</span>
+                          <span className={`ml-1 ${badge.color}`}>({badge.label})</span>
+                        </span>
+                      </div>
                     </td>
                     {Array.from({ length: daysInMonth }, (_, i) => {
-                      const d = `${year}-${String(month).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`;
+                      const dayNum = i + 1;
+                      const d = `${year}-${String(month).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
                       const cell = habit.checkins[d];
                       const done = cell?.completed;
                       const isFuture = d > today;
                       const isManual = habit.verification === "manual";
+                      const isTodayCol = todayDay === dayNum;
                       return (
-                        <td key={d} className="px-0.5 py-1 text-center">
+                        <td
+                          key={d}
+                          className={`px-0.5 py-1 text-center ${isTodayCol ? "habit-col-today" : ""}`}
+                        >
                           <button
                             type="button"
                             disabled={isFuture || !isManual}
                             onClick={() => toggleDay(habit.id, d, habit.verification)}
-                            aria-label={`${habit.label} · day ${i + 1}${done ? " · done" : ""}`}
-                            className={`h-5 w-5 rounded ${
+                            aria-label={`${habit.label} · day ${dayNum}${isTodayCol ? " · today" : ""}${done ? " · done" : ""}`}
+                            className={`${isTodayCol ? "habit-day-btn-today" : "h-5 w-5 rounded"} ${
                               done
                                 ? "bg-[#b8422e] text-white"
                                 : isFuture
                                   ? "bg-white/5"
                                   : isManual
-                                    ? "bg-white/10 hover:bg-white/20"
+                                    ? isTodayCol
+                                      ? "bg-[#b8422e]/18 hover:bg-[#b8422e]/28"
+                                      : "bg-white/10 hover:bg-white/20"
                                     : "bg-white/5"
                             } ${!isManual && done ? "ring-1 ring-green-500/50" : ""}`}
                             title={cell?.verified_by ?? habit.verification}

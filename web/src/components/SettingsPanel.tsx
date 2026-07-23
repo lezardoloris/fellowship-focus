@@ -137,6 +137,9 @@ export function SettingsPanel({
     if (p.scene) {
       const label = SCENES[scene]?.label ?? scene;
       toast.ok("Background", label);
+    } else if (p.quality) {
+      const labels = { high: "High", balanced: "Balanced", still: "Still" } as const;
+      toast.ok("Background quality", labels[p.quality]);
     }
   }
 
@@ -251,6 +254,37 @@ export function SettingsPanel({
             One loop for the whole app — tabs won’t change it. Poster shows first; the loop fades in
             when ready.
           </p>
+          <div
+            className="flex flex-wrap gap-1.5"
+            role="group"
+            aria-label="Background quality"
+          >
+            {(
+              [
+                { id: "high", label: "High", hint: "Full HD loop" },
+                { id: "balanced", label: "Balanced", hint: "Lighter preload" },
+                { id: "still", label: "Still", hint: "Poster only" },
+              ] as const
+            ).map((q) => {
+              const selected = bgPrefs.quality === q.id;
+              return (
+                <button
+                  key={q.id}
+                  type="button"
+                  title={q.hint}
+                  aria-pressed={selected}
+                  onClick={() => patchBg({ quality: q.id })}
+                  className={`min-h-9 rounded-md border px-3 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/50 ${
+                    selected
+                      ? "border-[#b8422e] bg-[#b8422e]/20 text-white"
+                      : "border-white/15 text-white/70 hover:border-white/35 hover:text-white"
+                  }`}
+                >
+                  {q.label}
+                </button>
+              );
+            })}
+          </div>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-3" role="listbox" aria-label="Background scene">
             {PICKER_SCENE_IDS.map((id) => {
               const s = SCENES[id];

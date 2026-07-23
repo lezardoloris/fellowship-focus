@@ -14,6 +14,7 @@ import { BlockerModePill, BlockerModeProvider } from "@/components/BlockerMode";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useToast } from "@/components/Toasts";
 import { type SceneId } from "@/lib/scenes";
+import type { BackgroundQuality } from "@/lib/backgroundPrefs";
 
 type Tab = "block" | "focus" | "guild";
 
@@ -263,7 +264,7 @@ export function FocusApp() {
 
   if (!ready) {
     return (
-      <Shell scene={bgPrefs.scene}>
+      <Shell scene={bgPrefs.scene} quality={bgPrefs.quality}>
         <PremiumLoader full className="min-h-screen" size="lg" />
       </Shell>
     );
@@ -273,7 +274,7 @@ export function FocusApp() {
 
   return (
     <BlockerModeProvider>
-    <Shell scene={bgPrefs.scene}>
+    <Shell scene={bgPrefs.scene} quality={bgPrefs.quality}>
       <header className="header-glass sticky top-0 z-20">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-2 px-3 py-2.5 sm:gap-2.5 md:gap-3 md:px-8 md:py-3">
           <span className="font-display hidden text-sm font-semibold tracking-wide text-white/90 lg:inline">
@@ -423,10 +424,18 @@ function SettingsIcon() {
   );
 }
 
-function Shell({ children, scene }: { children: React.ReactNode; scene: SceneId }) {
+function Shell({
+  children,
+  scene,
+  quality,
+}: {
+  children: React.ReactNode;
+  scene: SceneId;
+  quality: BackgroundQuality;
+}) {
   return (
     <main className="relative isolate min-h-screen overflow-x-hidden bg-transparent text-white">
-      <ImmersiveScene scene={scene} />
+      <ImmersiveScene scene={scene} quality={quality} />
       <div className="relative z-10">{children}</div>
     </main>
   );

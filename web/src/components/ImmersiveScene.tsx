@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { BackgroundQuality } from "@/lib/backgroundPrefs";
 import { scenePoster, sceneVideo, type SceneId } from "@/lib/scenes";
 
 /**
@@ -10,9 +11,11 @@ import { scenePoster, sceneVideo, type SceneId } from "@/lib/scenes";
  */
 export function ImmersiveScene({
   scene,
+  quality = "balanced",
   className = "",
 }: {
   scene: SceneId;
+  quality?: BackgroundQuality;
   className?: string;
 }) {
   const [current, setCurrent] = useState(scene);
@@ -53,6 +56,8 @@ export function ImmersiveScene({
     img.src = scenePoster(scene);
   }, [scene]);
 
+  const stillOnly = quality === "still" || reduceMotion;
+
   return (
     <div
       className={`pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#0a0c0e] ${className}`}
@@ -63,15 +68,17 @@ export function ImmersiveScene({
           scene={prev}
           className={`transition-opacity duration-500 ${fading ? "opacity-0" : "opacity-100"}`}
           play={false}
-          reduceMotion={reduceMotion}
+          quality={quality}
+          stillOnly={stillOnly}
         />
       )}
       <SceneLayer
         key={current}
         scene={current}
         className="opacity-100"
-        play={visible && !reduceMotion}
-        reduceMotion={reduceMotion}
+        play={visible && !stillOnly}
+        quality={quality}
+        stillOnly={stillOnly}
       />
       <div className="immersive-scrim absolute inset-0" />
     </div>
@@ -82,19 +89,22 @@ function SceneLayer({
   scene,
   className,
   play,
-  reduceMotion,
+  quality,
+  stillOnly,
 }: {
   scene: SceneId;
   className?: string;
   play: boolean;
-  reduceMotion: boolean;
+  quality: BackgroundQuality;
+  stillOnly: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const poster = scenePoster(scene);
   const video = sceneVideo(scene);
-  const useVideo = Boolean(video) && !reduceMotion && !failed;
+  const useVideo = Boolean(video) && !stillOnly && !failed;
+  const preload = quality === "high" ? "auto" : "metadata";
 
   const tryPlay = useCallback(() => {
     const el = videoRef.current;
@@ -139,7 +149,7 @@ function SceneLayer({
           autoPlay={play}
           loop
           playsInline
-          preload={play ? "auto" : "none"}
+          preload={play ? preload : "none"}
           disablePictureInPicture
           disableRemotePlayback
           onLoadedData={() => {

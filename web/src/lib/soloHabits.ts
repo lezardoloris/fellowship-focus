@@ -213,6 +213,25 @@ export function removeSoloHabit(habitId: string): void {
   saveStore(store);
 }
 
+/** Reorder solo habits to match the given id list (unknown ids stay at the end). */
+export function reorderSoloHabits(orderedIds: string[]): void {
+  const store = loadStore();
+  const byId = new Map(store.habits.map((h) => [h.id, h]));
+  const next: SoloHabit[] = [];
+  for (const id of orderedIds) {
+    const habit = byId.get(id);
+    if (habit) {
+      next.push(habit);
+      byId.delete(id);
+    }
+  }
+  for (const habit of store.habits) {
+    if (byId.has(habit.id)) next.push(habit);
+  }
+  store.habits = next;
+  saveStore(store);
+}
+
 export function soloPresetIdsInUse(): Set<string> {
   return new Set(
     loadStore()
