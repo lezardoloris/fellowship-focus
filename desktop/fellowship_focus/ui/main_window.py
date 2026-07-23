@@ -1634,6 +1634,7 @@ class MainWindow(QMainWindow):
             prev = self._filter_ok
             self._filter_ok = ok
             if ok:
+                self._health_misses = 0
                 blocker_log(f"verify: filtering confirmed on {target}")
                 if gate_on:
                     self._blocker_arming = False
@@ -1650,7 +1651,22 @@ class MainWindow(QMainWindow):
                 self._on_blocker_failed(
                     f"Proxy is up but {target} is not being filtered. See ~/.fellowship-focus/proxy.log."
                 )
-            elif prev is not False:
+                return
+            # Continuous health check: a single miss is almost always the proxy
+            # being momentarily busy (a flood of failing pinned-TLS connections
+            # from X), not the shield dying. Trust the hosts layer as ground
+            # truth when it's up, and require repeated misses before warning.
+            try:
+                from fellowship_focus.blocker.layers import layers_status
+
+                if layers_status().get("hosts"):
+                    self._health_misses = 0
+                    return  # hosts is deterministic — sites are blocked
+            except Exception:
+                pass
+            self._health_misses = getattr(self, "_health_misses", 0) + 1
+            blocker_log(f"verify: health miss {self._health_misses}/3")
+            if self._health_misses >= 3 and prev is not False:
                 self.toasts.show(
                     "Shield not filtering",
                     "Sites may still load. See ~/.fellowship-focus/proxy.log.",
@@ -1742,13 +1758,17 @@ class MainWindow(QMainWindow):
         import threading
 
         from fellowship_focus.blocker.layers import apply_layers
+        from fellowship_focus.constants import hosts_domains
 
         sites, _ = self._effective_block_lists()
         if not sites:
             return
+        # Pass the pinned subdomains too (api.x.com…) — the hosts layer is the
+        # only thing that can stop those, since the proxy can't MITM them.
+        domains = hosts_domains(list(sites))
 
         def worker() -> None:
-            res = apply_layers(list(sites))
+            res = apply_layers(domains)
             self._layers_status = res
 
         threading.Thread(target=worker, daemon=True, name="blocker-layers").start()

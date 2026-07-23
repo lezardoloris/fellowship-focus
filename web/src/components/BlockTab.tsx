@@ -152,6 +152,27 @@ export function BlockTab({
   const [sites, setSites] = useState<BlocklistEntry[]>([]);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [custom, setCustom] = useState("");
+  // The full URL grid is useful at first, but once you always block everything
+  // it's just noise — let it fold away, remembering the choice.
+  const [listCollapsed, setListCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setListCollapsed(localStorage.getItem("ff-blocklist-collapsed") === "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const toggleListCollapsed = () => {
+    setListCollapsed((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem("ff-blocklist-collapsed", next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
   const [loading, setLoading] = useState(true);
   const [dtReady, setDtReady] = useState(false);
   const [dt, setDt] = useState<DesktopState | null>(null);
@@ -1082,60 +1103,10 @@ export function BlockTab({
   }, [startPhase, focusTotalSec]);
 
   const start = () => {
-    void (async () => {
-      // Desktop: arm shield first (or confirm unprotected).
-      if (isDesktop || isDesktopShell()) {
-        if (isDesktop && dt?.certReady && !isDesktopShieldLive(dt)) {
-          setShieldBusy(true);
-          try {
-            toast.info("Arming Shield…");
-            const st = await desktopBridge.setShield(true);
-            applyDesktopState(st);
-            let live = isDesktopShieldLive(st);
-            if (st.arming || !live) {
-              for (let i = 0; i < ARM_WAIT_ATTEMPTS && !live; i++) {
-                await new Promise((r) => setTimeout(r, ARM_POLL_MS));
-                const poll = await desktopBridge.getState();
-                if (poll.available) applyDesktopState(poll);
-                live = isDesktopShieldLive(poll);
-                if (!poll.arming && !live) break;
-              }
-            }
-            if (!live) {
-              setUnprotectedPrompt(true);
-              return;
-            }
-            toast.ok("Shield ON");
-          } finally {
-            setShieldBusy(false);
-          }
-        } else if (isDesktop && !dt?.certReady) {
-          setUnprotectedPrompt(true);
-          return;
-        }
-        beginFocusSession();
-        return;
-      }
-      if (!sitesRef.current.length) {
-        toast.info("Timer started", "No sites in your list, so nothing is blocked.");
-        beginFocusSession();
-        return;
-      }
-      if (!extReady && !extState) {
-        setUnprotectedPrompt(true);
-        return;
-      }
-      const state = await armExtension();
-      setExtState(state);
-      if (state && isArmed(state)) {
-        setArmFailed(false);
-        setExtReady(true);
-        beginFocusSession();
-        return;
-      }
-      setArmFailed(true);
-      setUnprotectedPrompt(true);
-    })();
+    // Start is JUST the focus timer. The shield is a separate, always-available
+    // control (the "Block N sites" button / toggle) — starting a session must
+    // never flip the blocker on or off. They are independent by design.
+    beginFocusSession();
   };
   const stop = useCallback(() => {
     void (async () => {
@@ -1869,10 +1840,16 @@ export function BlockTab({
             className={`glass-panel flex max-h-[min(70vh,34rem)] min-h-[12rem] flex-col overflow-hidden p-4 sm:p-5 ff-block-area-${areaForPanel(blockLayout.areas, "block")}`}
           >
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold text-white">
+              <button
+                type="button"
+                onClick={toggleListCollapsed}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-white transition hover:text-white/80"
+                title={listCollapsed ? "Show the list" : "Hide the list"}
+              >
+                <span className={`text-[10px] text-white/40 transition-transform ${listCollapsed ? "" : "rotate-90"}`} aria-hidden>▶</span>
                 Block list
-                <span className="ml-1.5 font-normal tabular-nums text-white/45">{sites.length}</span>
-              </h2>
+                <span className="font-normal tabular-nums text-white/45">{sites.length}</span>
+              </button>
               <div className="flex flex-wrap items-center gap-2">
                 <div
                   className="inline-flex min-h-8 rounded-full border border-white/12 bg-black/35 p-0.5"
@@ -1940,6 +1917,12 @@ export function BlockTab({
               </div>
             </div>
 
+            {listCollapsed ? (
+              <p className="mt-1 text-xs text-white/45">
+                {sites.length} site{sites.length === 1 ? "" : "s"} blocked. Tap “Block list” to edit.
+              </p>
+            ) : (
+            <>
             <div className="flex flex-wrap gap-1.5">
               {PRESETS.map((p) => {
                 const active = presetSites(p.cats).every((s) => blockedSet.has(s));
@@ -2030,6 +2013,8 @@ export function BlockTab({
                 </div>
               );
             })()}
+            </>
+            )}
           </div>
 
           <FocusMusicPanel

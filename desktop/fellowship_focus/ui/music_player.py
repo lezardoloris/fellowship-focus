@@ -353,12 +353,21 @@ class FocusMusicPlayer(GlassCard):
         )
 
     def bridge_state(self) -> dict:
+        pos = dur = 0
+        if self._player is not None:
+            try:
+                pos = int(self._player.position())
+                dur = int(self._player.duration())
+            except Exception:
+                pos = dur = 0
         return {
             "available": bool(MULTIMEDIA_OK),
             "tracks": [display_title(p) for p in self._tracks],
             "index": self._index if self._tracks else -1,
             "playing": self.is_playing(),
             "volume": float(self._audio.volume()) if self._audio else 0.5,
+            "positionMs": pos,
+            "durationMs": dur,
         }
 
     def bridge_cmd(self, payload: dict) -> dict:
@@ -398,6 +407,13 @@ class FocusMusicPlayer(GlassCard):
             except (TypeError, ValueError):
                 v = 0.5
             self.volume_slider.setValue(int(v * 100))
+        elif cmd == "seek":
+            # Scrub to a position in the current track (ms).
+            if self._player is not None:
+                try:
+                    self._player.setPosition(max(0, int(payload.get("value", 0))))
+                except Exception:
+                    pass
         return self.bridge_state()
 
     # ── Session hooks (called by the Pomodoro engine) ───────

@@ -43,6 +43,8 @@ export type MusicState = {
   index: number;
   playing: boolean;
   volume: number;
+  positionMs?: number;
+  durationMs?: number;
 };
 
 export type FloatTimerPayload = {

@@ -101,6 +101,18 @@ export function FocusMusicPanel({ compact = false, className, style }: FocusMusi
             }}
           />
         }
+        scrubber={
+          available && (music?.durationMs ?? 0) > 0 ? (
+            <MusicScrubber
+              positionMs={music?.positionMs ?? 0}
+              durationMs={music?.durationMs ?? 0}
+              playing={!!music?.playing}
+              onSeek={(ms) =>
+                desktopBridge.musicCmd({ cmd: "seek", value: ms }).then((s) => s && setMusic(s))
+              }
+            />
+          ) : undefined
+        }
       />
     );
   }
@@ -300,6 +312,67 @@ function ChevronDown({ open }: { open: boolean }) {
   );
 }
 
+function fmt(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** Seek bar for the current track: advances smoothly while playing, drag to seek. */
+function MusicScrubber({
+  positionMs,
+  durationMs,
+  playing,
+  onSeek,
+}: {
+  positionMs: number;
+  durationMs: number;
+  playing: boolean;
+  onSeek: (ms: number) => void;
+}) {
+  const [pos, setPos] = useState(positionMs);
+  const [dragging, setDragging] = useState(false);
+
+  // Adopt the authoritative position from the bridge unless mid-drag.
+  useEffect(() => {
+    if (!dragging) setPos(positionMs);
+  }, [positionMs, dragging]);
+
+  // Tick locally between 2 s bridge syncs so the bar doesn't stutter.
+  useEffect(() => {
+    if (!playing || dragging) return;
+    const id = setInterval(() => setPos((p) => Math.min(durationMs, p + 500)), 500);
+    return () => clearInterval(id);
+  }, [playing, dragging, durationMs]);
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-9 shrink-0 text-right text-[10px] tabular-nums text-white/45">{fmt(pos)}</span>
+      <input
+        type="range"
+        min={0}
+        max={durationMs}
+        step={1000}
+        value={pos}
+        onChange={(e) => {
+          setDragging(true);
+          setPos(Number(e.target.value));
+        }}
+        onMouseUp={(e) => {
+          onSeek(Number((e.target as HTMLInputElement).value));
+          setDragging(false);
+        }}
+        onTouchEnd={(e) => {
+          onSeek(Number((e.target as HTMLInputElement).value));
+          setDragging(false);
+        }}
+        className="h-1 min-w-0 flex-1 accent-[#b8422e]"
+        aria-label="Seek"
+      />
+      <span className="w-9 shrink-0 text-[10px] tabular-nums text-white/45">{fmt(durationMs)}</span>
+    </div>
+  );
+}
+
 function Shell({
   compact,
   className,
@@ -312,6 +385,7 @@ function Shell({
   volume,
   onVolume,
   select,
+  scrubber,
   children,
 }: {
   compact: boolean;
@@ -325,6 +399,7 @@ function Shell({
   volume: number;
   onVolume: (v: number) => void;
   select: ReactNode;
+  scrubber?: ReactNode;
   children?: ReactNode;
 }) {
   const rootClass = [
@@ -365,6 +440,7 @@ function Shell({
                 <span className="shrink-0 text-xs tabular-nums text-white/40">{count}</span>
               )}
             </div>
+            {scrubber}
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-white/45">Vol</span>
               <input
@@ -420,6 +496,7 @@ function Shell({
 
       <div className="mt-6 space-y-3">
         {select}
+        {scrubber}
         <div className="flex items-center gap-2.5">
           <span className="text-xs text-white/45">Vol</span>
           <input

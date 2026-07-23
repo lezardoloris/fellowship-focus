@@ -235,6 +235,40 @@ def expand_domains(site: str) -> list[str]:
     return out
 
 
+# Big sites pin their TLS cert on API/mobile subdomains, so the proxy can't
+# intercept them — only the hosts layer can, and hosts has no wildcard. Map the
+# high-traffic subdomains that actually carry the app so 0.0.0.0 kills them.
+HOSTS_SUBDOMAINS = {
+    "x.com": ["api.x.com", "mobile.x.com", "abs.twimg.com", "pbs.twimg.com", "video.twimg.com"],
+    "twitter.com": ["api.twitter.com", "mobile.twitter.com", "abs.twimg.com", "pbs.twimg.com"],
+    "instagram.com": ["i.instagram.com", "graph.instagram.com"],
+    "facebook.com": ["graph.facebook.com", "m.facebook.com", "api.facebook.com"],
+    "tiktok.com": ["api.tiktok.com", "m.tiktok.com", "www.tiktok.com"],
+    "reddit.com": ["oauth.reddit.com", "gateway.reddit.com", "www.reddit.com", "old.reddit.com"],
+    "youtube.com": ["www.youtube.com", "m.youtube.com", "music.youtube.com"],
+}
+
+
+def hosts_domains(sites: list[str]) -> list[str]:
+    """Full domain set for the hosts layer: apex + aliases + www + the pinned
+    subdomains that would otherwise leak (api.x.com, abs.twimg.com…)."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(d: str) -> None:
+        d = d.strip().lower()
+        if d and d not in seen:
+            seen.add(d)
+            out.append(d)
+
+    for site in sites:
+        for domain in expand_domains(site):
+            add(domain)
+            for sub in HOSTS_SUBDOMAINS.get(domain, []):
+                add(sub)
+    return out
+
+
 def effective_block_lists(config: dict) -> tuple[list[str], list]:
     """Resolve the (domains, path_rules) to block for the given config.
 

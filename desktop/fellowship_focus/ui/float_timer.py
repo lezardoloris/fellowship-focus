@@ -422,11 +422,25 @@ class FloatTimerWindow(QWidget):
         self._panel.setVisible(self._expanded)
         self._expand_btn.setText("⌃" if self._expanded else "⌄")
         self._expand_btn.setToolTip("Less" if self._expanded else "More")
-        # Grow upward so the header stays put.
-        before = self.geometry()
-        self.adjustSize()
+        # A frameless translucent Tool window won't auto-shrink on adjustSize,
+        # so pin it to the content's exact hint each toggle. setFixedSize is
+        # deterministic in both directions; dragging still works (it moves).
+        before_h = self.height()
+        # A SHOWN top-level window's sizeHint() echoes its current size, not the
+        # content — so compute from the inner card's hint plus the outer margins.
+        # That is deterministic in both directions.
+        self.setMinimumSize(0, 0)
+        self.setMaximumSize(16777215, 16777215)
+        self._panel.updateGeometry()
+        root = self.findChild(QWidget, "floatRoot")
+        m = self.layout().contentsMargins()
+        (root or self).layout().activate()
+        rh = root.sizeHint() if root else self.sizeHint()
+        w = rh.width() + m.left() + m.right()
+        h = rh.height() + m.top() + m.bottom()
+        self.setFixedSize(w, h)
         if self._placed:
-            delta = self.height() - before.height()
+            delta = h - before_h
             if delta:
                 self.move(self.x(), max(8, self.y() - delta))
 
