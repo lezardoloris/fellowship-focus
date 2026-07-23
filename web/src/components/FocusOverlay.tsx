@@ -13,7 +13,10 @@ type Props = {
   remaining: number;
   cycle: number;
   cycles: number;
+  paused?: boolean;
   onStop: () => void;
+  onPause?: () => void;
+  onResume?: () => void;
   onMinimize?: () => void;
 };
 
@@ -31,7 +34,18 @@ function fmt(seconds: number) {
  * Portaled to document.body so parent overflow/transform can't clip it.
  * Qt WebEngine often rejects the Fullscreen API — we never auto-collapse on that.
  */
-export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, onMinimize }: Props) {
+export function FocusOverlay({
+  open,
+  phase,
+  remaining,
+  cycle,
+  cycles,
+  paused = false,
+  onStop,
+  onPause,
+  onResume,
+  onMinimize,
+}: Props) {
   const [immersive, setImmersive] = useState(true);
   const [ambient, setAmbient] = useState<AmbientId>("off");
   const [volume, setVolume] = useState(0.35);
@@ -59,9 +73,10 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
       phase,
       cycle,
       cycles,
-      label: phase === "focus" ? "FOCUS" : "BREAK",
+      label: paused ? "PAUSED" : phase === "focus" ? "FOCUS" : "BREAK",
+      paused,
     });
-  }, [open, phase, remaining, cycle, cycles]);
+  }, [open, phase, remaining, cycle, cycles, paused]);
 
   useEffect(() => {
     if (!open || phase === "idle") {
@@ -105,9 +120,12 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
 
   if (!open || phase === "idle" || !mounted) return null;
 
-  const label = phase === "focus" ? "FOCUS" : "BREAK";
-  const sub =
-    phase === "focus" ? `Cycle ${cycle}/${cycles} · deep work` : `Cycle ${cycle}/${cycles} · break`;
+  const label = paused ? "PAUSED" : phase === "focus" ? "FOCUS" : "BREAK";
+  const sub = paused
+    ? `Cycle ${cycle}/${cycles} · paused`
+    : phase === "focus"
+      ? `Cycle ${cycle}/${cycles} · deep work`
+      : `Cycle ${cycle}/${cycles} · break`;
 
   async function pickAmbient(id: AmbientId) {
     setAmbient(id);
@@ -192,7 +210,11 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
 
           <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6">
             <p className="mb-3 text-[11px] uppercase tracking-[0.35em] text-white/75">{sub}</p>
-            <div className="font-display text-[6.5rem] font-bold leading-none tabular-nums tracking-tight sm:text-[8rem] md:text-[9rem]">
+            <div
+              className={`font-display text-[6.5rem] font-bold leading-none tabular-nums tracking-tight sm:text-[8rem] md:text-[9rem] ${
+                paused ? "text-white/45" : ""
+              }`}
+            >
               {fmt(remaining)}
             </div>
             <p className="mt-4 text-sm uppercase tracking-[0.45em] text-white/60">{label}</p>
@@ -242,6 +264,20 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
             <button type="button" onClick={minimize} className="btn-secondary px-6">
               Work with timer
             </button>
+            {paused ? (
+              onResume && (
+                <button type="button" onClick={onResume} className="btn-primary px-6">
+                  Resume
+                </button>
+              )
+            ) : (
+              onPause &&
+              remaining > 0 && (
+                <button type="button" onClick={onPause} className="btn-secondary px-6">
+                  Pause
+                </button>
+              )
+            )}
             <button type="button" onClick={closeAll} className="btn-primary px-6">
               End session
             </button>
@@ -259,11 +295,19 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
               title="Back to immersive"
             >
               <span
-                className={`h-2 w-2 shrink-0 animate-pulse rounded-full ${
-                  phase === "break" ? "bg-[#60a5fa]" : "bg-[#b8422e]"
+                className={`h-2 w-2 shrink-0 rounded-full ${
+                  paused
+                    ? "bg-white/40"
+                    : phase === "break"
+                      ? "animate-pulse bg-[#60a5fa]"
+                      : "animate-pulse bg-[#b8422e]"
                 }`}
               />
-              <span className="font-sans text-[15px] font-semibold tabular-nums tracking-wide text-[#f4f4f5]">
+              <span
+                className={`font-sans text-[15px] font-semibold tabular-nums tracking-wide ${
+                  paused ? "text-white/45" : "text-[#f4f4f5]"
+                }`}
+              >
                 {fmt(remaining)}
               </span>
             </button>

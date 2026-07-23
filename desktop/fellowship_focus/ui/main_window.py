@@ -1302,9 +1302,10 @@ class MainWindow(QMainWindow):
         except (TypeError, ValueError):
             remaining = 0
         label = str(payload.get("label") or payload.get("phase") or "FOCUS")
-        self._float_timer.update_timer(remaining, label)
+        paused = bool(payload.get("paused"))
+        self._float_timer.update_timer(remaining, label, paused=paused)
         self._refresh_tray_menu()
-        return {"ok": True, "remaining": remaining}
+        return {"ok": True, "remaining": remaining, "paused": paused}
 
     def _web_hide_float_timer(self) -> dict:
         self._float_timer.hide_timer()
@@ -1980,7 +1981,11 @@ class MainWindow(QMainWindow):
             self._show_from_tray()
 
     def _update_tray_tooltip(self, remaining: int, label: str) -> None:
-        if remaining > 0 and label:
+        if self._float_timer.is_session_active() and self._float_timer.is_paused():
+            rem = self._float_timer.remaining()
+            m, s = divmod(max(0, rem), 60)
+            tip = f"Fellowship Focus · Paused {m:02d}:{s:02d}"
+        elif remaining > 0 and label:
             m, s = divmod(remaining, 60)
             tip = f"Fellowship Focus · {label} {m:02d}:{s:02d}"
         elif self._float_timer.is_session_active():
@@ -1997,9 +2002,11 @@ class MainWindow(QMainWindow):
         if active:
             rem = self._float_timer.remaining()
             m, s = divmod(max(0, rem), 60)
-            status = menu.addAction(
-                f"{self._float_timer.phase_label()}  {m:02d}:{s:02d}"
-            )
+            phase = self._float_timer.phase_label() or "Focus"
+            if self._float_timer.is_paused():
+                status = menu.addAction(f"Paused  {m:02d}:{s:02d}")
+            else:
+                status = menu.addAction(f"{phase}  {m:02d}:{s:02d}")
             status.setEnabled(False)
             menu.addSeparator()
 

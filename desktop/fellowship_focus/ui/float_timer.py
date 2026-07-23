@@ -48,6 +48,7 @@ class FloatTimerWindow(QWidget):
 
         self._remaining = 0
         self._label = "FOCUS"
+        self._paused = False
         self._drag_pos = None
         self._dragged = False
         self._placed = False
@@ -130,14 +131,18 @@ class FloatTimerWindow(QWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._context_menu)
 
-    def update_timer(self, remaining: int, label: str = "FOCUS") -> None:
+    def update_timer(self, remaining: int, label: str = "FOCUS", paused: bool = False) -> None:
         self._remaining = max(0, int(remaining))
         self._label = (label or "FOCUS").upper()[:8]
+        self._paused = bool(paused)
         self._last_web_sync = time.monotonic()
         self._session_active = True
         self._render()
-        # Local countdown keeps tray/tooltip honest even while the pill is hidden.
-        if not self._tick.isActive():
+        # Freeze local countdown while paused; otherwise keep ticking if the
+        # webview is throttled / main window hidden.
+        if self._paused:
+            self._tick.stop()
+        elif not self._tick.isActive():
             self._tick.start()
         self.remaining_changed.emit(self._remaining, self._label)
         # User dismissed the pill — keep syncing state, do not force it back on.
@@ -160,6 +165,7 @@ class FloatTimerWindow(QWidget):
         self._tick.stop()
         self._topmost.stop()
         self._remaining = 0
+        self._paused = False
         self._session_active = False
         self._dismissed = False
         self._placed = False  # next session re-restores the saved spot
@@ -180,13 +186,16 @@ class FloatTimerWindow(QWidget):
         if not self._session_active:
             return
         self._dismissed = False
-        self.update_timer(self._remaining, self._label)
+        self.update_timer(self._remaining, self._label, paused=self._paused)
 
     def is_session_active(self) -> bool:
         return self._session_active
 
     def is_dismissed(self) -> bool:
         return self._dismissed
+
+    def is_paused(self) -> bool:
+        return self._paused
 
     def remaining(self) -> int:
         return self._remaining
@@ -197,14 +206,23 @@ class FloatTimerWindow(QWidget):
     def _render(self) -> None:
         m, s = divmod(max(0, self._remaining), 60)
         self._time.setText(f"{m:02d}:{s:02d}")
-        self._dot.setStyleSheet(
-            f"color: {'#60a5fa' if self._label == 'BREAK' else ACCENT}; font-size: 10px;"
-        )
+        if self._paused:
+            self._time.setStyleSheet(f"color: {MUTED}; background: transparent; padding: 0 2px;")
+            self._dot.setStyleSheet(f"color: {MUTED}; font-size: 10px;")
+            self._dot.setToolTip("Paused")
+        else:
+            self._time.setStyleSheet(f"color: {FG}; background: transparent; padding: 0 2px;")
+            self._dot.setStyleSheet(
+                f"color: {'#60a5fa' if self._label == 'BREAK' else ACCENT}; font-size: 10px;"
+            )
+            self._dot.setToolTip("")
         self.adjustSize()
 
     def _on_tick(self) -> None:
         # Web bridge usually drives the clock. If the main window is hidden and
         # JS is throttled, take over locally after ~1.4s without a sync.
+        if self._paused:
+            return
         if time.monotonic() - self._last_web_sync < 1.4:
             return
         if self._remaining > 0:

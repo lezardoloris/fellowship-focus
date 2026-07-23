@@ -606,6 +606,7 @@ export function BlockTab({
     (p: Phase, cyc: number, resumeSecs?: number) => {
       stopAlarm();
       setExceeded(0);
+      setPaused(false);
       setPhase(p);
       setCycle(cyc);
       if (p !== "idle") setFloatHidden(false);
@@ -618,7 +619,7 @@ export function BlockTab({
         try {
           localStorage.setItem(
             SESSION_KEY,
-            JSON.stringify({ phase: p, cycle: cyc, endsAt: endsAtRef.current })
+            JSON.stringify({ phase: p, cycle: cyc, endsAt: endsAtRef.current, paused: false })
           );
         } catch {
           /* storage full / private mode — timer still runs in-memory */
@@ -628,8 +629,20 @@ export function BlockTab({
     [focusTotalSec, prefs.break_min, stopAlarm]
   );
 
+  const persistSession = useCallback(
+    (patch: { phase: Exclude<Phase, "idle">; cycle: number; endsAt: number; remaining?: number; paused?: boolean }) => {
+      try {
+        localStorage.setItem(SESSION_KEY, JSON.stringify(patch));
+      } catch {
+        /* ignore */
+      }
+    },
+    []
+  );
+
   const clearSession = useCallback(() => {
     endsAtRef.current = 0;
+    setPaused(false);
     try {
       localStorage.removeItem(SESSION_KEY);
     } catch {
@@ -641,6 +654,36 @@ export function BlockTab({
   useEffect(() => {
     const s = readSession();
     if (!s) return;
+    if (s.paused) {
+      const left = Math.max(0, Math.floor(Number(s.remaining) || 0));
+      if (left <= 0) {
+        try {
+          localStorage.removeItem(SESSION_KEY);
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- rehydrating a
+      // persisted paused session from localStorage is a mount-time sync.
+      stopAlarm();
+      setExceeded(0);
+      setPhase(s.phase);
+      setCycle(s.cycle);
+      setRemaining(left);
+      setPaused(true);
+      setFloatHidden(false);
+      firedRef.current = false;
+      endsAtRef.current = Date.now() + left * 1000;
+      persistSession({
+        phase: s.phase,
+        cycle: s.cycle,
+        endsAt: endsAtRef.current,
+        remaining: left,
+        paused: true,
+      });
+      return;
+    }
     const left = Math.ceil((s.endsAt - Date.now()) / 1000);
     if (left <= 0) {
       try {
@@ -662,19 +705,29 @@ export function BlockTab({
       desktopBridge.hideFloatTimer();
       return;
     }
+    const floatPayload = (left: number) =>
+      desktopBridge.showFloatTimer({
+        remaining: left,
+        phase,
+        cycle,
+        cycles: prefs.cycles,
+        label: paused ? "PAUSED" : phase === "focus" ? "FOCUS" : "BREAK",
+        paused,
+      });
+
+    if (paused) {
+      stopTimer();
+      floatPayload(remaining);
+      return;
+    }
+
     timerRef.current = setInterval(() => {
       // Derive from the stored deadline, never by decrementing: background tabs
       // are throttled, so a counter would drift and under-report deep work.
       const left = Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000));
       setRemaining(left);
       if (left > 0) {
-        desktopBridge.showFloatTimer({
-          remaining: left,
-          phase,
-          cycle,
-          cycles: prefs.cycles,
-          label: phase === "focus" ? "FOCUS" : "BREAK",
-        });
+        floatPayload(left);
         return;
       }
       if (firedRef.current) return;
@@ -693,26 +746,67 @@ export function BlockTab({
         startPhase("focus", cycle + 1);
       }
     }, 1000);
-    desktopBridge.showFloatTimer({
-      remaining,
-      phase,
-      cycle,
-      cycles: prefs.cycles,
-      label: phase === "focus" ? "FOCUS" : "BREAK",
-    });
+    floatPayload(remaining);
     return stopTimer;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- tick only on phase/cycle changes
-  }, [phase, cycle, prefs.cycles, startPhase, stopTimer, logSession, fireAlarm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tick only on phase/cycle/pause changes
+  }, [phase, cycle, paused, prefs.cycles, startPhase, stopTimer, logSession, fireAlarm, clearSession]);
 
   // Track exceeded seconds when sitting at 0 (infinite alarm style)
   useEffect(() => {
-    if (phase === "idle" || remaining > 0) {
+    if (phase === "idle" || paused || remaining > 0) {
       setExceeded(0);
       return;
     }
     const id = setInterval(() => setExceeded((e) => e + 1), 1000);
     return () => clearInterval(id);
-  }, [phase, remaining]);
+  }, [phase, remaining, paused]);
+
+  const pause = useCallback(() => {
+    if (phase === "idle" || paused || remaining <= 0) return;
+    const left = Math.max(
+      0,
+      Math.ceil((endsAtRef.current - Date.now()) / 1000)
+    );
+    const frozen = left > 0 ? left : remaining;
+    setRemaining(frozen);
+    setPaused(true);
+    stopTimer();
+    stopAlarm();
+    persistSession({
+      phase: phase as Exclude<Phase, "idle">,
+      cycle,
+      endsAt: Date.now() + frozen * 1000,
+      remaining: frozen,
+      paused: true,
+    });
+    desktopBridge.showFloatTimer({
+      remaining: frozen,
+      phase,
+      cycle,
+      cycles: prefs.cycles,
+      label: "PAUSED",
+      paused: true,
+    });
+  }, [phase, paused, remaining, cycle, prefs.cycles, stopTimer, stopAlarm, persistSession]);
+
+  const resume = useCallback(() => {
+    if (phase === "idle" || !paused) return;
+    const secs = Math.max(0, remaining);
+    if (secs <= 0) {
+      setPaused(false);
+      return;
+    }
+    endsAtRef.current = Date.now() + secs * 1000;
+    setPaused(false);
+    firedRef.current = false;
+    persistSession({
+      phase: phase as Exclude<Phase, "idle">,
+      cycle,
+      endsAt: endsAtRef.current,
+      remaining: secs,
+      paused: false,
+    });
+  }, [phase, paused, remaining, cycle, persistSession]);
 
   const start = () => {
     void (async () => {
@@ -768,13 +862,14 @@ export function BlockTab({
       getExtensionState().then(setExtState);
       stopTimer();
       stopAlarm();
+      clearSession();
       setPhase("idle");
       setRemaining(0);
       setCycle(0);
       setExceeded(0);
       desktopBridge.hideFloatTimer();
     })();
-  }, [stopTimer, stopAlarm, phase, token]);
+  }, [stopTimer, stopAlarm, clearSession, phase, token]);
 
   useEffect(() => {
     const onClosed = () => {
@@ -782,6 +877,7 @@ export function BlockTab({
       extensionCommand("stopFocus").catch(() => {});
       stopTimer();
       stopAlarm();
+      clearSession();
       setPhase("idle");
       setRemaining(0);
       setCycle(0);
@@ -790,7 +886,7 @@ export function BlockTab({
     };
     window.addEventListener("ff-float-closed", onClosed);
     return () => window.removeEventListener("ff-float-closed", onClosed);
-  }, [stopTimer, stopAlarm]);
+  }, [stopTimer, stopAlarm, clearSession]);
 
   useEffect(() => {
     // No extension can exist in the desktop webview — don't poll for one.
@@ -907,11 +1003,19 @@ export function BlockTab({
       <div className="fixed bottom-5 right-5 z-[9999]">
         <div className="flex items-center gap-2.5 rounded-full border border-white/12 bg-[#1a1c1e]/96 py-1.5 pl-3.5 pr-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
           <span
-            className={`h-2 w-2 shrink-0 animate-pulse rounded-full ${
-              phase === "break" ? "bg-[#60a5fa]" : "bg-[#b8422e]"
+            className={`h-2 w-2 shrink-0 rounded-full ${
+              paused
+                ? "bg-white/40"
+                : phase === "break"
+                  ? "animate-pulse bg-[#60a5fa]"
+                  : "animate-pulse bg-[#b8422e]"
             }`}
           />
-          <span className="font-sans text-[15px] font-semibold tabular-nums tracking-wide text-[#f4f4f5]">
+          <span
+            className={`font-sans text-[15px] font-semibold tabular-nums tracking-wide ${
+              paused ? "text-white/45" : "text-[#f4f4f5]"
+            }`}
+          >
             {mm}:{ss}
           </span>
           <button
@@ -953,7 +1057,11 @@ export function BlockTab({
           <div className="glass-panel flex flex-col p-5">
             <div
               className={`text-center ${
-                inSession && remaining === 0 ? "text-[#f87171]" : "text-white"
+                inSession && remaining === 0
+                  ? "text-[#f87171]"
+                  : paused
+                    ? "text-white/45"
+                    : "text-white"
               }`}
             >
               <div className="font-display text-[3.25rem] font-bold leading-none tabular-nums tracking-tight">
@@ -963,6 +1071,7 @@ export function BlockTab({
               </div>
               {inSession ? (
                 <p className="mt-2 text-[11px] tabular-nums tracking-[0.2em] text-white/50">
+                  {paused ? "Paused · " : ""}
                   {cycle} / {prefs.cycles}
                   {phase === "break" ? " · break" : ""}
                 </p>
@@ -1075,9 +1184,31 @@ export function BlockTab({
                 Start
               </button>
             ) : (
-              <button onClick={stop} className="btn-secondary mt-4 w-full py-2.5">
-                Stop
-              </button>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                {paused ? (
+                  <button
+                    type="button"
+                    onClick={resume}
+                    className="btn-primary py-2.5"
+                    title="Continue from remaining time"
+                  >
+                    Resume
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={pause}
+                    className="btn-secondary py-2.5"
+                    disabled={remaining <= 0}
+                    title={remaining <= 0 ? "Nothing left to pause" : "Freeze countdown"}
+                  >
+                    Pause
+                  </button>
+                )}
+                <button type="button" onClick={stop} className="btn-secondary py-2.5">
+                  Stop
+                </button>
+              </div>
             )}
           </div>
 

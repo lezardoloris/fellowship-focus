@@ -41,6 +41,8 @@ export type FloatTimerPayload = {
   cycle: number;
   cycles: number;
   label: string;
+  /** When true, desktop float must freeze (no local tick-down). */
+  paused?: boolean;
 };
 
 export type WeeklyStatsDay = {
