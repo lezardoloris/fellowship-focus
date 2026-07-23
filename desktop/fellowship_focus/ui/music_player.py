@@ -4,6 +4,11 @@ Plays looping ambient tracks (e.g. Suno-generated LOTR/DUNE-style soundscapes)
 from the user's music folder. Deliberately local/offline: the website blocker
 routes traffic through a system proxy, so streaming YouTube in-app would fight
 the shield. The same tracks power the long-form focus videos on YouTube.
+
+Playback is always user-initiated (Play button / media hotkey / next-prev).
+Never auto-starts on app launch, page reload, Block-tab show, timer start,
+break→focus, tray restore, or settings restore. Breaks still pause music;
+the user must press Play again to continue.
 """
 
 from __future__ import annotations
@@ -124,6 +129,8 @@ class FocusMusicPlayer(GlassCard):
         self._tracks: list[Path] = []
         self._index = 0
         self._suspended_for_break = False
+        # True only after an explicit user transport action (Play / next / prev / hotkey).
+        self._user_started = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 18, 20, 18)
@@ -132,7 +139,7 @@ class FocusMusicPlayer(GlassCard):
         header_row = QHBoxLayout()
         header_row.addWidget(PageHeader("Soundscape", "Ambient focus music"), 1)
         self.enable_toggle = ToggleSwitch()
-        self.enable_toggle.setToolTip("Play ambient music during focus sessions")
+        self.enable_toggle.setToolTip("Enable ambient music controls (does not auto-play)")
         self.enable_toggle.setChecked(bool(config.get("focus_music_enabled", True)), animate=False)
         self.enable_toggle.toggled.connect(self._on_enable_toggled)
         header_row.addWidget(self.enable_toggle, 0, Qt.AlignmentFlag.AlignTop)
@@ -194,6 +201,8 @@ class FocusMusicPlayer(GlassCard):
 
         self.reload_tracks()
         self._apply_enabled_ui()
+        # Hard guarantee: constructing / restoring settings never leaves audio running.
+        self.ensure_stopped()
 
     # ── Track management ────────────────────────────────────
 
@@ -204,7 +213,6 @@ class FocusMusicPlayer(GlassCard):
         self.track_combo.clear()
         for path in self._tracks:
             self.track_combo.addItem(display_title(path), path.name)
-        self.track_combo.blockSignals(False)
         if self._tracks:
             saved = self._config.get("focus_music_track", "")
             idx = next((i for i, p in enumerate(self._tracks) if p.name in (current, saved)), 0)
@@ -217,9 +225,10 @@ class FocusMusicPlayer(GlassCard):
                 "No tracks yet. Click Add tracks and drop your ambient .mp3 files "
                 "(e.g. from Suno) into the folder, then Refresh."
             )
+        self.track_combo.blockSignals(False)
         has = bool(self._tracks) and MULTIMEDIA_OK
         for b in (self.play_btn, self.prev_btn, self.next_btn):
-            b.setEnabled(has)
+            b.setEnabled(has and self._enabled())
 
     def open_music_folder(self) -> None:
         try:
@@ -235,6 +244,14 @@ class FocusMusicPlayer(GlassCard):
 
     # ── Playback ────────────────────────────────────────────
 
+    def ensure_stopped(self) -> None:
+        """Force silent state — used on construct, reload, and page remount."""
+        self._suspended_for_break = False
+        self._user_started = False
+        if self._player:
+            self._player.stop()
+        self.play_btn.setText("\u25b6")
+
     def _load_current(self) -> bool:
         if not (self._player and self._tracks and 0 <= self._index < len(self._tracks)):
             return False
@@ -242,14 +259,22 @@ class FocusMusicPlayer(GlassCard):
         self._player.setSource(QUrl.fromLocalFile(str(path)))
         self._config["focus_music_track"] = path.name
         self._save(self._config)
+        # Some backends briefly start on setSource — kill that unless the user
+        # already asked us to play (caller will call play() next).
+        if not self._user_started:
+            self._player.stop()
         return True
 
     def play(self) -> None:
         if not (self._player and self._tracks):
             return
         if self._player.source().isEmpty():
+            # Mark intent before load so setSource stop-guard does not fight us.
+            self._user_started = True
             if not self._load_current():
+                self._user_started = False
                 return
+        self._user_started = True
         self._player.play()
         self.play_btn.setText("\u2016")
 
@@ -259,6 +284,8 @@ class FocusMusicPlayer(GlassCard):
         self.play_btn.setText("\u25b6")
 
     def stop(self) -> None:
+        self._user_started = False
+        self._suspended_for_break = False
         if self._player:
             self._player.stop()
         self.play_btn.setText("\u25b6")
@@ -275,7 +302,10 @@ class FocusMusicPlayer(GlassCard):
         if not self._tracks:
             return
         self._index = (self._index + 1) % len(self._tracks)
+        self.track_combo.blockSignals(True)
         self.track_combo.setCurrentIndex(self._index)
+        self.track_combo.blockSignals(False)
+        self._user_started = True
         self._load_current()
         self.play()
 
@@ -283,7 +313,10 @@ class FocusMusicPlayer(GlassCard):
         if not self._tracks:
             return
         self._index = (self._index - 1) % len(self._tracks)
+        self.track_combo.blockSignals(True)
         self.track_combo.setCurrentIndex(self._index)
+        self.track_combo.blockSignals(False)
+        self._user_started = True
         self._load_current()
         self.play()
 
@@ -307,11 +340,16 @@ class FocusMusicPlayer(GlassCard):
     def bridge_cmd(self, payload: dict) -> dict:
         cmd = str(payload.get("cmd", ""))
         if cmd == "toggle":
+            # Explicit Play/Pause from the Focus Music panel (or media hotkey).
             self.toggle_play()
         elif cmd == "play":
-            self.play()
+            # Ignored: older web builds auto-sent "play" on Block mount, focus
+            # phase, and page reload. User-driven playback uses "toggle".
+            pass
         elif cmd == "pause":
             self.pause()
+        elif cmd == "stop":
+            self.ensure_stopped()
         elif cmd == "next":
             self.next()
         elif cmd == "prev":
@@ -322,10 +360,14 @@ class FocusMusicPlayer(GlassCard):
             except (TypeError, ValueError):
                 i = -1
             if self._tracks and 0 <= i < len(self._tracks):
+                was_playing = self.is_playing()
                 self._index = i
+                self.track_combo.blockSignals(True)
                 self.track_combo.setCurrentIndex(i)
+                self.track_combo.blockSignals(False)
                 self._load_current()
-                self.play()
+                if was_playing:
+                    self.play()
         elif cmd == "volume":
             try:
                 v = max(0.0, min(1.0, float(payload.get("value", 0.5))))
@@ -337,12 +379,11 @@ class FocusMusicPlayer(GlassCard):
     # ── Session hooks (called by the Pomodoro engine) ───────
 
     def on_focus_start(self) -> None:
+        """Focus phase began — never start or resume music."""
         self._suspended_for_break = False
-        if self._enabled() and self._tracks:
-            self.play()
 
     def on_break(self) -> None:
-        if self._player and self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+        if self.is_playing():
             self._suspended_for_break = True
             self.pause()
 
@@ -350,13 +391,11 @@ class FocusMusicPlayer(GlassCard):
         self.on_break()
 
     def on_resume(self) -> None:
-        if self._suspended_for_break and self._enabled():
-            self._suspended_for_break = False
-            self.play()
+        # Do not auto-resume — user must press Play after a pause/break.
+        self._suspended_for_break = False
 
     def on_session_end(self) -> None:
-        self._suspended_for_break = False
-        self.stop()
+        self.ensure_stopped()
 
     # ── Internal ────────────────────────────────────────────
 
@@ -378,13 +417,11 @@ class FocusMusicPlayer(GlassCard):
         self._save(self._config)
         self._apply_enabled_ui()
         if not on:
-            self.stop()
+            self.ensure_stopped()
 
     def _on_track_selected(self, index: int) -> None:
         if 0 <= index < len(self._tracks):
-            was_playing = bool(
-                self._player and self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
-            )
+            was_playing = self.is_playing()
             self._index = index
             self._load_current()
             if was_playing:
@@ -400,6 +437,15 @@ class FocusMusicPlayer(GlassCard):
     def _on_media_status(self, status) -> None:
         if not MULTIMEDIA_OK:
             return
-        if status == QMediaPlayer.MediaStatus.EndOfMedia and self._tracks:
-            # Loop the playlist so a focus session never falls silent.
-            self.next()
+        if (
+            status == QMediaPlayer.MediaStatus.EndOfMedia
+            and self._tracks
+            and self._user_started
+        ):
+            # Loop only while the user has an active listen.
+            self._index = (self._index + 1) % len(self._tracks)
+            self.track_combo.blockSignals(True)
+            self.track_combo.setCurrentIndex(self._index)
+            self.track_combo.blockSignals(False)
+            self._load_current()
+            self.play()

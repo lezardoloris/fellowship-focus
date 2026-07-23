@@ -24,6 +24,7 @@ type RawBridge = {
   hideFloatTimer?: (cb?: (r: string) => void) => void;
   musicState?: (cb: (r: string) => void) => void;
   musicCmd?: (json: string, cb: (r: string) => void) => void;
+  setPrefs?: (json: string, cb: (r: string) => void) => void;
 } & Record<string, QtSlot>;
 
 export type MusicState = {
@@ -179,6 +180,19 @@ export const desktopBridge = {
         });
       } catch {
         resolve(null);
+      }
+    });
+  },
+
+  /** Push web-edited prefs (blocker_mode, block_style) into the desktop config. */
+  setPrefs(patch: Record<string, unknown>): Promise<DesktopState> {
+    const b = raw();
+    if (!b?.setPrefs) return Promise.resolve(EMPTY);
+    return new Promise((resolve) => {
+      try {
+        b.setPrefs!(JSON.stringify(patch), (r) => resolve(parse(r)));
+      } catch {
+        resolve(EMPTY);
       }
     });
   },

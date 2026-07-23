@@ -126,6 +126,16 @@ class DesktopBridge(QObject):
         return self._call("music_state")
 
     @Slot(str, result=str)
+    def setPrefs(self, patch_json: str) -> str:
+        try:
+            patch = json.loads(patch_json)
+        except (TypeError, json.JSONDecodeError):
+            patch = {}
+        if not isinstance(patch, dict):
+            patch = {}
+        return self._call("set_prefs", patch)
+
+    @Slot(str, result=str)
     def musicCmd(self, payload_json: str) -> str:
         try:
             payload = json.loads(payload_json)
@@ -251,23 +261,21 @@ class WebDashboardPage(QWidget):
         self._apply_zoom()
 
     def _apply_zoom(self) -> None:
-        """Scale the whole web UI with the window, like a responsive app.
+        """Keep the Block tab slightly zoomed-out at the medium shell size.
 
-        The web layout was built for a wide immersive window; in a small
-        window the cards stayed full-size and overflowed. Zooming the view
-        proportionally to its width keeps everything readable and in-frame at
-        any size — the real fix for 'les encarts doivent être proportionnels'.
+        Prior formula (w/1150, ceiling 1.7) treated ~1180px as 1.0× and grew
+        with wider windows — large type, chunky controls, cramped columns.
+        Target ~0.88 at the default 1180 shell so panels keep breathing room;
+        still shrink on tiny windows, but never inflate past 1.0.
         """
         if not self._view:
             return
         w = self._view.width()
         if w <= 0:
             return
-        # Scale the UI with the window in BOTH directions: shrink so a small
-        # window doesn't clip, and grow so a large window fills with bigger
-        # text instead of a sea of empty background. 1.0 at ~1150px, floor
-        # 0.62, ceiling 1.7.
-        zoom = max(0.62, min(1.7, w / 1150))
+        # 1180 / 1340 ≈ 0.88 (medium + slight zoom-out). Cap at 1.0 so
+        # maximizing the window adds margin instead of magnifying the UI.
+        zoom = max(0.62, min(1.0, w / 1340))
         try:
             if abs(self._view.zoomFactor() - zoom) > 0.01:
                 self._view.setZoomFactor(zoom)
@@ -319,7 +327,7 @@ class WebDashboardPage(QWidget):
 
     def reload_dashboard(self) -> None:
         cfg = self._get_config()
-        code = cfg.get("fellowship_code", "").strip()
+        code = str(cfg.get("fellowship_code", "") or "").strip().lower()
         token = cfg.get("member_token", "").strip()
         name = cfg.get("member_name", "").strip()
         api = cfg.get("api_url", "https://fellowship-focus-production.up.railway.app").rstrip("/")
@@ -351,9 +359,9 @@ class WebDashboardPage(QWidget):
             if not self._pull_timer.isActive():
                 self._pull_timer.start(4000)
         else:
-            # Solo mode — the app is fully usable without a guild
-            # (block sites + focus timer + player). A guild is optional.
-            self._pull_timer.stop()
+            # Solo mode — still poll so a join inside the web UI syncs to desktop config.
+            if not self._pull_timer.isActive():
+                self._pull_timer.start(4000)
             current = self._view.url().toString().rstrip("/")
             if current != base and not current.startswith(base + "?"):
                 self._view.setUrl(QUrl(base))
@@ -373,9 +381,40 @@ class WebDashboardPage(QWidget):
         </div></body></html>"""
 
     def _load_dashboard_with_auth(self, url: str, code: str, token: str, name: str) -> None:
-        """Inject localStorage before navigation so the web app recognizes the member."""
+        """Navigate then inject localStorage on the real origin (not about:blank)."""
+        code = code.strip().lower()
+        target = QUrl(url)
+        if self._view.url().host() == target.host() and self._view.url().path().startswith("/app"):
+            # Already on the app origin — inject now and let reload pick up membership.
+            self._auth_pending = None
+            self._inject_auth_credentials(code, token, name, reload_once=True)
+            if self._view.url().toString().rstrip("/") != url.rstrip("/"):
+                self._view.setUrl(target)
+            return
         self._auth_pending = (url, code, token, name)
-        self._view.setUrl(QUrl("about:blank"))
+        self._view.setUrl(target)
+
+    def _inject_auth_credentials(self, code: str, token: str, name: str, *, reload_once: bool = False) -> None:
+        if not self._view:
+            return
+        payload = json.dumps({"token": token, "name": name})
+        key = f"ff-member-{code}"
+        reload_js = ""
+        if reload_once:
+            reload_js = """
+          if (!sessionStorage.getItem('ff-desktop-auth-reloaded')) {
+            sessionStorage.setItem('ff-desktop-auth-reloaded', '1');
+            location.reload();
+          }
+            """
+        js = f"""
+        (function() {{
+          localStorage.setItem('ff-app-code', {json.dumps(code)});
+          localStorage.setItem({json.dumps(key)}, {json.dumps(payload)});
+          {reload_js}
+        }})();
+        """
+        self._view.page().runJavaScript(js)
 
     def _connect_from_input(self) -> None:
         raw = self._invite_input.text()
@@ -395,13 +434,14 @@ class WebDashboardPage(QWidget):
         if not ok or not self._view:
             return
 
-        if self._auth_pending and self._view.url().toString() in ("about:blank", ""):
+        if self._auth_pending:
             url, code, token, name = self._auth_pending
+            current = self._view.url().toString()
+            if "about:blank" in current or not current:
+                self._view.setUrl(QUrl(url))
+                return
             self._auth_pending = None
-            payload = json.dumps({"token": token, "name": name})
-            key = f"ff-member-{code}"
-            js = f"localStorage.setItem({json.dumps(key)}, {json.dumps(payload)});"
-            self._view.page().runJavaScript(js, lambda _: self._view.setUrl(QUrl(url)))
+            self._inject_auth_credentials(code, token, name, reload_once=True)
             return
 
         self._inject_bridge()
@@ -412,11 +452,25 @@ class WebDashboardPage(QWidget):
     def _pull_credentials_from_web(self) -> None:
         if not self._view:
             return
-        cfg = self._get_config()
-        code = cfg.get("fellowship_code", "").strip()
-        if not code:
-            return
-        js = f"localStorage.getItem('ff-member-{code}')"
+        # Discover code+token from the embedded web join flow (not only when
+        # desktop config already knows fellowship_code).
+        js = """
+        (function() {
+          var code = (localStorage.getItem('ff-app-code') || '').trim().toLowerCase();
+          if (!code) return null;
+          var raw = localStorage.getItem('ff-member-' + code);
+          if (!raw) return null;
+          try {
+            var parsed = JSON.parse(raw);
+            if (!parsed || !parsed.token) return null;
+            return JSON.stringify({
+              code: code,
+              token: String(parsed.token || ''),
+              name: String(parsed.name || '')
+            });
+          } catch (e) { return null; }
+        })();
+        """
         self._view.page().runJavaScript(js, self._handle_stored_credentials)
 
     def _handle_stored_credentials(self, result) -> None:
@@ -426,12 +480,15 @@ class WebDashboardPage(QWidget):
             parsed = json.loads(result)
         except (TypeError, json.JSONDecodeError):
             return
+        code = str(parsed.get("code", "")).strip().lower()
         token = str(parsed.get("token", "")).strip()
         name = str(parsed.get("name", "")).strip()
-        if not token:
+        if not code or not token:
             return
         cfg = self._get_config()
         updates: dict[str, str] = {}
+        if code != str(cfg.get("fellowship_code", "") or "").strip().lower():
+            updates["fellowship_code"] = code
         if token != cfg.get("member_token", ""):
             updates["member_token"] = token
         if name and name != cfg.get("member_name", ""):
@@ -444,7 +501,7 @@ class WebDashboardPage(QWidget):
         if not self._view or self._injected:
             return
         cfg = self._get_config()
-        code = cfg.get("fellowship_code", "").strip()
+        code = str(cfg.get("fellowship_code", "") or "").strip().lower()
         token = cfg.get("member_token", "").strip()
         name = cfg.get("member_name", "").strip()
         if not code or not token:
@@ -455,13 +512,20 @@ class WebDashboardPage(QWidget):
         (function() {{
           const key = 'ff-member-{code}';
           const data = {json.dumps(payload)};
+          let changed = false;
+          if (localStorage.getItem('ff-app-code') !== {json.dumps(code)}) {{
+            localStorage.setItem('ff-app-code', {json.dumps(code)});
+            changed = true;
+          }}
           if (localStorage.getItem(key) !== data) {{
             localStorage.setItem(key, data);
-            if (!sessionStorage.getItem('ff-desktop-reloaded')) {{
-              sessionStorage.setItem('ff-desktop-reloaded', '1');
-              location.reload();
-            }}
+            changed = true;
+          }}
+          if (changed && !sessionStorage.getItem('ff-desktop-reloaded')) {{
+            sessionStorage.setItem('ff-desktop-reloaded', '1');
+            location.reload();
           }}
         }})();
         """
         self._view.page().runJavaScript(js)
+

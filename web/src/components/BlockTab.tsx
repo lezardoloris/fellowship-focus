@@ -380,6 +380,16 @@ export function BlockTab({
   async function savePrefs(next: Prefs) {
     const merged = mergeBlockerSettings(next);
     setPrefs(merged);
+    // Inside the desktop app the proxy reads config.json, so mode/style edits
+    // must reach it — otherwise "Whole sites" changed only the web copy and
+    // the engine kept blocking in soft mode (YouTube stayed reachable).
+    if (isDesktopShell() || isDesktop) {
+      const st = await desktopBridge.setPrefs({
+        blocker_mode: merged.blocker_mode,
+        block_style: merged.block_style,
+      });
+      if (st.available) setDt(st);
+    }
     if (!token) {
       localStorage.setItem(LOCAL_PREFS_KEY, JSON.stringify(merged));
       return;
@@ -919,10 +929,12 @@ export function BlockTab({
           </div>
         )}
 
-        {/* One control, one line, right-aligned. The shield state is the only
-            thing that matters here; everything else is a quiet fallback. */}
+        {/* Blocker Mode — one label + ON/OFF. Site count lives on the list. */}
         <div className="flex justify-end">
-          <div className="inline-flex items-center gap-2.5 rounded-full border border-white/15 bg-[#0c0e10]/90 py-1.5 pl-3.5 pr-1.5 shadow-lg">
+          <div className="inline-flex select-none items-center gap-3 rounded-full border border-white/15 bg-[#0c0e10]/90 py-1.5 pl-3.5 pr-1.5 shadow-lg">
+            <span className="text-xs font-medium tracking-wide text-white/85">
+              Blocker Mode
+            </span>
             <span
               className={`h-2 w-2 shrink-0 rounded-full ${
                 shieldLive
@@ -931,10 +943,8 @@ export function BlockTab({
                     ? "animate-pulse bg-amber-400"
                     : "bg-white/25"
               }`}
+              aria-hidden
             />
-            <span className="text-xs font-medium text-white/85">
-              {shieldArming ? "Arming…" : `Shield ${shieldLive ? "ON" : "OFF"}`}
-            </span>
 
             {!useDesktopUi && !extReady && (
               <a
@@ -944,23 +954,24 @@ export function BlockTab({
                 Get the app
               </a>
             )}
-            {/* One unmistakable action. A bare switch read as decoration and
-                left people thinking nothing could be blocked. */}
             <button
               type="button"
+              role="switch"
+              aria-checked={shieldLive}
+              aria-label={
+                shieldArming
+                  ? "Blocker Mode arming"
+                  : `Blocker Mode ${shieldLive ? "ON" : "OFF"}`
+              }
               disabled={shieldBusy || shieldArming}
               onClick={blockNow}
-              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
-                shieldLive
-                  ? "bg-white/10 text-white/80 hover:bg-white/15"
-                  : "bg-[#b8422e] text-white hover:bg-[#c46551]"
+              className={`min-w-[3.25rem] rounded-full px-3.5 py-1.5 text-xs font-bold tracking-wider transition disabled:opacity-50 ${
+                shieldLive || shieldArming
+                  ? "bg-[#b8422e] text-white hover:bg-[#c46551]"
+                  : "bg-white/12 text-white/75 hover:bg-white/18 hover:text-white"
               }`}
             >
-              {shieldBusy || shieldArming
-                ? "Arming…"
-                : shieldLive
-                  ? "Stop blocking"
-                  : `Block ${sites.length} site${sites.length === 1 ? "" : "s"}`}
+              {shieldBusy || shieldArming ? "…" : shieldLive ? "ON" : "OFF"}
             </button>
           </div>
         </div>
@@ -1117,7 +1128,7 @@ export function BlockTab({
                   : "Full block page (Chrome only)"}
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            <div className="flex flex-wrap gap-1.5">
               {PRESETS.map((p) => {
                 const active = presetSites(p.cats).every((s) => blockedSet.has(s));
                 return (
@@ -1125,7 +1136,7 @@ export function BlockTab({
                     key={p.id}
                     type="button"
                     onClick={() => togglePreset(p)}
-                    className={`rounded-lg border px-2.5 py-2 text-left text-xs transition ${
+                    className={`whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-left text-[11px] leading-tight transition ${
                       active
                         ? "border-[#b8422e] bg-[#b8422e]/25 text-white"
                         : "border-white/15 bg-black/30 text-white/80 hover:bg-black/40"
@@ -1171,7 +1182,7 @@ export function BlockTab({
             </ul>
           </div>
 
-          <FocusMusicPanel autoPlay={inSession && phase === "focus"} />
+          <FocusMusicPanel />
         </div>
 
     </div>

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
+import { HabitTracker } from "@/components/HabitTracker";
 import { desktopBridge, type WeeklyStats } from "@/lib/desktop";
 import { parseGithubUsername } from "@/lib/githubActivity";
 import { buildSoloWeeklyStats, saveSoloOkr } from "@/lib/soloStats";
@@ -48,7 +49,12 @@ type GitHubStats = {
   error?: string;
 };
 
-export function FocusTab() {
+type FocusTabProps = {
+  token?: string | null;
+  fellowshipCode?: string | null;
+};
+
+export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps) {
   const [stats, setStats] = useState<WeeklyStats>(() => buildSoloWeeklyStats());
   const [source, setSource] = useState<"desktop" | "solo">("solo");
 
@@ -115,7 +121,8 @@ export function FocusTab() {
         <div>
           <h1 className="font-display text-2xl font-bold text-white">Your week</h1>
           <p className="mt-1 text-xs text-white/70">
-            Ladder · calendar · OKRs — no guild.{" "}
+            Ladder · habit calendar · OKRs
+            {fellowshipCode ? " · synced with guild when connected" : " — works solo"}.{" "}
             {source === "desktop" ? "Desktop screen-time live." : "Filled by timers you finish on Block."}
           </p>
         </div>
@@ -123,11 +130,15 @@ export function FocusTab() {
 
       {empty && (
         <div className="glass-panel border border-[#b8422e]/40 px-5 py-4 text-sm text-white/80">
-          Calendar is empty until you complete a focus session. Go to{" "}
+          Focus week is empty until you complete a session. Go to{" "}
           <span className="font-semibold text-white">Block → Start the timer</span>, finish a cycle —
-          it lands here automatically (streak + ladder XP).
+          it lands here automatically (streak + ladder XP). Habit check-ins still work below.
         </div>
       )}
+
+      <div className="glass-panel p-6">
+        <HabitTracker token={token} fellowshipCode={fellowshipCode} />
+      </div>
 
       <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
         <WeekPanel stats={stats} today={today} onSaveOkr={saveOkr} />

@@ -1,6 +1,24 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ensureGoogleUser, getMemberByToken } from "@/lib/db";
+import {
+  ensureGoogleUser,
+  getFellowshipById,
+  getMemberByToken,
+} from "@/lib/db";
+
+/** Linked guild membership for the Google account, if any (excludes personal Solo · fellowships). */
+function linkedGuild(token: string): { code: string; name: string; token: string } | null {
+  const member = getMemberByToken(token);
+  if (!member) return null;
+  const fellowship = getFellowshipById(member.fellowship_id);
+  if (!fellowship) return null;
+  if (fellowship.name.startsWith("Solo ·")) return null;
+  return {
+    code: fellowship.code.toLowerCase(),
+    name: member.name,
+    token: member.token,
+  };
+}
 
 /** Returns the signed-in Google user + linked blocker token (creates solo account if needed). */
 export async function GET() {
@@ -21,6 +39,8 @@ export async function GET() {
     avatarUrl: session.user.image || null,
   });
 
+  const guild = linkedGuild(user.token);
+
   return NextResponse.json({
     authenticated: true,
     user: {
@@ -30,6 +50,8 @@ export async function GET() {
       avatarUrl: user.avatar_url,
       token: user.token,
       googleId: user.google_id,
+      fellowshipCode: guild?.code ?? null,
+      memberName: guild?.name ?? null,
     },
   });
 }
@@ -63,6 +85,8 @@ export async function POST(req: Request) {
     linkMemberId: member.id,
   });
 
+  const guild = linkedGuild(user.token);
+
   return NextResponse.json({
     ok: true,
     user: {
@@ -70,6 +94,8 @@ export async function POST(req: Request) {
       name: user.name,
       email: user.email,
       token: user.token,
+      fellowshipCode: guild?.code ?? null,
+      memberName: guild?.name ?? null,
     },
   });
 }

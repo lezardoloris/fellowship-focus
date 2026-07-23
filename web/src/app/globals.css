@@ -37,6 +37,17 @@ body {
   min-height: 100vh;
 }
 
+/* Heritage selection — avoid system blue highlight in the desktop webview */
+::selection {
+  background: rgba(184, 66, 46, 0.45);
+  color: #ffffff;
+}
+
+::-moz-selection {
+  background: rgba(184, 66, 46, 0.45);
+  color: #ffffff;
+}
+
 html {
   background: #0c0e10;
 }

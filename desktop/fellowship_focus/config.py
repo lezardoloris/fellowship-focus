@@ -94,6 +94,7 @@ def default_config() -> dict:
         "proof_mode": "signal",
         "proof_interval_min": 10,
         "proof_webcam": False,
+        # Enables Soundscape controls; does NOT auto-play on timer start.
         "focus_music_enabled": True,
         "focus_music_volume": 0.5,
         "focus_music_track": "",

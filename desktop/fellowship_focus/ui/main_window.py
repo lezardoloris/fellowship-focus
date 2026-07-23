@@ -114,17 +114,9 @@ class MainWindow(QMainWindow):
         self.pomodoro.session_finished.connect(self._on_pomo_finished)
 
         self.setWindowTitle("Fellowship Focus")
+        # Compact three-panel shell (Block · Focus · Music) — fixed default every launch.
         self.setMinimumSize(980, 640)
-        self.resize(1220, 800)
-        # Reopen where the user left the window, not wherever Qt decides.
-        try:
-            from PySide6.QtCore import QByteArray
-
-            geo = self.config.get("window_geometry")
-            if geo:
-                self.restoreGeometry(QByteArray.fromBase64(geo.encode("ascii")))
-        except Exception:
-            pass
+        self._apply_default_window_size()
         load_fonts()
         self.setStyleSheet(app_stylesheet())
         self.setFont(font_sans())
@@ -192,6 +184,7 @@ class MainWindow(QMainWindow):
                 "hide_float_timer": self._web_hide_float_timer,
                 "music_state": self._web_music_state,
                 "music_cmd": self._web_music_cmd,
+                "set_prefs": self._web_set_prefs,
             },
         )
         self.stack.addWidget(self.web_dashboard)
@@ -204,6 +197,7 @@ class MainWindow(QMainWindow):
 
         self._float_timer = FloatTimerWindow()
         self._float_timer.closed_by_user.connect(self._on_float_timer_closed)
+        self._float_timer.dismissed_by_user.connect(self._refresh_tray_menu)
         self._float_timer.open_app_requested.connect(self._show_from_tray)
         self._float_timer.remaining_changed.connect(self._on_float_remaining)
 
@@ -270,6 +264,36 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self.toasts.reposition()
+
+    def _apply_default_window_size(self) -> None:
+        """Always open at the compact three-panel size (screenshot default)."""
+        from PySide6.QtGui import QGuiApplication
+
+        # Drop any legacy maximized/fullscreen blob so reload cannot re-inflate.
+        if self.config.pop("window_geometry", None) is not None:
+            try:
+                save_config(self.config)
+            except Exception:
+                pass
+
+        width, height = 1180, 740
+        # Clear maximized/fullscreen before resize — Windows may restore
+        # the previous show state and ignore a plain resize().
+        self.setWindowState(Qt.WindowState.WindowNoState)
+        self.resize(width, height)
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            geo = screen.availableGeometry()
+            # Prefer last position if still on-screen; else center.
+            x = self.config.get("window_x")
+            y = self.config.get("window_y")
+            if isinstance(x, int) and isinstance(y, int):
+                if geo.contains(x + 40, y + 40):
+                    self.move(x, y)
+                    return
+            x = geo.x() + max(0, (geo.width() - width) // 2)
+            y = geo.y() + max(0, (geo.height() - height) // 2)
+            self.move(x, y)
 
     def _go_pomodoro(self) -> None:
         self.sidebar.set_current(3)
@@ -1054,6 +1078,27 @@ class MainWindow(QMainWindow):
             s = s[4:]
         return s.split("/", 1)[0].strip()
 
+    def _web_set_prefs(self, patch: dict) -> dict:
+        """Push prefs edited in the web UI (mode, block style…) into the desktop
+        config the proxy actually reads, and re-arm if needed. Without this the
+        'Whole sites / Feeds only' toggle changed only the web copy while the
+        engine kept using config.json — so YouTube stayed reachable in soft mode
+        even though the UI showed Lockdown."""
+        if not isinstance(patch, dict):
+            return self._web_blocker_state()
+        mode = patch.get("blocker_mode")
+        if mode in ("soft", "hard") and mode != self.config.get("blocker_mode"):
+            self.config["blocker_mode"] = mode
+            if hasattr(self, "preset_soft_btn"):
+                self._sync_preset_ui()
+        if "block_style" in patch:
+            self.config["block_style"] = "notify" if patch["block_style"] == "notify" else "page"
+        save_config(self.config)
+        if self.blocker_active:
+            self._release_blocker_infra()
+            self._enable_blocker()
+        return self._web_blocker_state()
+
     def _web_music_state(self) -> dict:
         return self.music_player.bridge_state()
 
@@ -1268,7 +1313,7 @@ class MainWindow(QMainWindow):
         return {"ok": True}
 
     def _on_float_timer_closed(self) -> None:
-        """User hit × on the OS float timer — ask the web app to end the session."""
+        """User chose End session (context menu / tray) — ask the web app to stop."""
         self._refresh_tray_menu()
         try:
             view = getattr(self.web_dashboard, "_view", None)
@@ -1889,7 +1934,7 @@ class MainWindow(QMainWindow):
 
         # Never over an already-running session, a visible main window, or a
         # still-showing nudge; respect a snooze after a dismissal.
-        if self.pomodoro.is_running or self._float_timer.isVisible():
+        if self.pomodoro.is_running or self._float_timer.is_session_active():
             self._nudge_active_streak = 0
             return
         if self.isVisible() and not self.isMinimized():
@@ -1923,9 +1968,11 @@ class MainWindow(QMainWindow):
         self._nudge_snooze_until = time.monotonic() + 1800
 
     def _show_from_tray(self) -> None:
+        self._apply_default_window_size()
         self.showNormal()
         self.raise_()
         self.activateWindow()
+        QTimer.singleShot(50, self.web_dashboard._apply_zoom)
 
     def _toggle_from_tray(self) -> None:
         if self.isVisible() and not self.isMinimized():
@@ -1937,7 +1984,7 @@ class MainWindow(QMainWindow):
         if remaining > 0 and label:
             m, s = divmod(remaining, 60)
             tip = f"Fellowship Focus · {label} {m:02d}:{s:02d}"
-        elif self._float_timer.isVisible():
+        elif self._float_timer.is_session_active():
             tip = f"Fellowship Focus · {self._float_timer.phase_label() or 'Focus'}"
         else:
             tip = "Fellowship Focus — click to open"
@@ -1947,7 +1994,7 @@ class MainWindow(QMainWindow):
         menu = self._tray_menu
         menu.clear()
 
-        active = self._float_timer.isVisible()
+        active = self._float_timer.is_session_active()
         if active:
             rem = self._float_timer.remaining()
             m, s = divmod(max(0, rem), 60)
@@ -1977,13 +2024,10 @@ class MainWindow(QMainWindow):
             end_a.triggered.connect(self._tray_end_session)
             menu.addAction(end_a)
 
-            show_float = QAction("Show floating timer", self)
-            show_float.triggered.connect(
-                lambda: self._float_timer.update_timer(
-                    self._float_timer.remaining(), self._float_timer.phase_label()
-                )
-            )
-            menu.addAction(show_float)
+            if self._float_timer.is_dismissed() or not self._float_timer.isVisible():
+                show_float = QAction("Show floating timer", self)
+                show_float.triggered.connect(self._float_timer.reshow)
+                menu.addAction(show_float)
 
         menu.addSeparator()
         update_a = QAction("Check for updates", self)
@@ -1999,8 +2043,13 @@ class MainWindow(QMainWindow):
         self._refresh_tray_menu()
 
     def _save_window_geometry(self) -> None:
+        # Size is fixed at launch (1180×740). Persist position only so a move
+        # across monitors is remembered without reopening oversized.
         try:
-            self.config["window_geometry"] = bytes(self.saveGeometry().toBase64()).decode("ascii")
+            pos = self.pos()
+            self.config["window_x"] = int(pos.x())
+            self.config["window_y"] = int(pos.y())
+            self.config.pop("window_geometry", None)
             save_config(self.config)
         except Exception:
             pass
@@ -2013,7 +2062,7 @@ class MainWindow(QMainWindow):
             # so arming from the web tab then closing the window killed the
             # blocker with a toast nobody could see. "Block N sites" means
             # blocked until the user says stop, window open or not.
-            session_on = self._float_timer.isVisible() or self.pomodoro.is_running
+            session_on = self._float_timer.is_session_active() or self.pomodoro.is_running
             event.ignore()
             self.hide()
             if self.blocker_active or self._blocker_arming:
@@ -2025,10 +2074,11 @@ class MainWindow(QMainWindow):
                     3500,
                 )
             elif session_on:
-                self._float_timer.raise_()
+                if self._float_timer.isVisible():
+                    self._float_timer.raise_()
                 self.tray.showMessage(
                     "Focus continues",
-                    "Timer stays on screen. Right-click the tray icon for controls.",
+                    "Timer keeps running. Right-click the tray icon for controls.",
                     QSystemTrayIcon.MessageIcon.Information,
                     3500,
                 )
@@ -2083,5 +2133,10 @@ def run(start_minimized: bool = False) -> None:
     if start_minimized or "--minimized" in sys.argv:
         window.hide()
     else:
-        window.show()
+        # showNormal + re-apply size after show so Windows cannot reopen
+        # maximized from the last session (that looked like "zoom in").
+        window.showNormal()
+        window._apply_default_window_size()
+        QTimer.singleShot(0, window._apply_default_window_size)
+        QTimer.singleShot(80, window.web_dashboard._apply_zoom)
     sys.exit(app.exec())

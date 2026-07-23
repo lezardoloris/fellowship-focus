@@ -14,7 +14,7 @@ type ManifestEntry = { title: string; src: string; id?: string; youtubeId?: stri
  * bridge. In a plain browser it plays whatever /audio files happen to be
  * present; when there are none it says so instead of offering a dead Play.
  */
-export function FocusMusicPanel({ autoPlay = false }: { autoPlay?: boolean }) {
+export function FocusMusicPanel() {
   const inShell = isDesktopShell();
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -27,26 +27,13 @@ export function FocusMusicPanel({ autoPlay = false }: { autoPlay?: boolean }) {
 
   useEffect(() => {
     if (!inShell) return;
+    // Older deployed web builds auto-sent play on mount / reload / focus restore.
+    // Kill that race once per panel lifetime; Play still works via toggle.
+    void desktopBridge.musicCmd({ cmd: "stop" }).then((s) => s && setMusic(s));
     refreshMusic();
     const id = setInterval(refreshMusic, 2000);
     return () => clearInterval(id);
   }, [inShell, refreshMusic]);
-
-  // Auto-play ONCE when a focus phase begins — on the rising edge of autoPlay,
-  // never on every state change. The old effect depended on `music`, so pausing
-  // (or the 2 s poll) re-ran it and instantly restarted playback: pause could
-  // never stick during a session.
-  const autoPlayedRef = useRef(false);
-  useEffect(() => {
-    if (!inShell) return;
-    if (!autoPlay) {
-      autoPlayedRef.current = false;
-      return;
-    }
-    if (autoPlayedRef.current) return;
-    autoPlayedRef.current = true;
-    desktopBridge.musicCmd({ cmd: "play" }).then((s) => s && setMusic(s));
-  }, [inShell, autoPlay]);
 
   // ── Browser (HTML audio over /audio) ──
   const [manifest, setManifest] = useState<ManifestEntry[]>([]);
@@ -141,7 +128,14 @@ export function FocusMusicPanel({ autoPlay = false }: { autoPlay?: boolean }) {
           onChange={(e) => {
             setTrackSrc(e.target.value);
             localStorage.setItem(FOCUS_MUSIC_KEY, e.target.value);
-            play(e.target.value);
+            // Selecting a track must not start playback — only the Play button.
+            const el = audioRef.current;
+            if (el) {
+              el.src = e.target.value;
+              if (playing) {
+                el.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+              }
+            }
           }}
           className="input-premium min-w-0 flex-1 truncate py-1.5 text-sm"
         >

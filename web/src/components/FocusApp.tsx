@@ -29,7 +29,27 @@ type GoogleUserInfo = {
   email: string;
   avatarUrl: string | null;
   token: string;
+  fellowshipCode?: string | null;
+  memberName?: string | null;
 };
+
+function readStoredMember(code: string): { token: string; name: string } | null {
+  const raw = localStorage.getItem(`ff-member-${code}`);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { token?: string; name?: string };
+    if (!parsed.token) return null;
+    return { token: parsed.token, name: parsed.name || "" };
+  } catch {
+    return null;
+  }
+}
+
+function persistMembership(code: string, token: string, name: string) {
+  const clean = code.trim().toLowerCase();
+  localStorage.setItem(LAST_CODE_KEY, clean);
+  localStorage.setItem(`ff-member-${clean}`, JSON.stringify({ token, name }));
+}
 
 export function FocusApp() {
   const params = useSearchParams();
@@ -56,26 +76,18 @@ export function FocusApp() {
     let resolvedName: string | null = null;
 
     if (urlCode && urlToken) {
-      localStorage.setItem(LAST_CODE_KEY, urlCode);
-      localStorage.setItem(`ff-member-${urlCode}`, JSON.stringify({ token: urlToken, name: urlName }));
+      persistMembership(urlCode, urlToken, urlName);
       resolvedCode = urlCode;
       resolvedToken = urlToken;
       resolvedName = urlName || null;
     } else {
       const candidate = urlCode || stored;
       if (candidate) {
-        const raw = localStorage.getItem(`ff-member-${candidate}`);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw) as { token: string; name: string };
-            if (parsed.token) {
-              resolvedCode = candidate;
-              resolvedToken = parsed.token;
-              resolvedName = parsed.name || null;
-            }
-          } catch {
-            /* ignore */
-          }
+        const member = readStoredMember(candidate);
+        if (member) {
+          resolvedCode = candidate;
+          resolvedToken = member.token;
+          resolvedName = member.name || null;
         }
         if (!resolvedToken && !urlToken) localStorage.removeItem(LAST_CODE_KEY);
       }
@@ -108,15 +120,36 @@ export function FocusApp() {
               body: JSON.stringify({ token: resolvedToken }),
             }).catch(() => {});
           } else if (!resolvedToken) {
-            setToken(gu.token);
-            setName(gu.name);
+            // Google may already be linked to a guild member — restore code+token
+            // so the Guild tab shows the dashboard instead of Join again.
+            const linkedCode = (gu.fellowshipCode || "").trim().toLowerCase();
+            if (linkedCode && gu.token) {
+              const linkedName = gu.memberName || gu.name || "";
+              persistMembership(linkedCode, gu.token, linkedName);
+              setCode(linkedCode);
+              setToken(gu.token);
+              setName(linkedName || null);
+            } else {
+              setToken(gu.token);
+              setName(gu.name);
+            }
           }
         } else {
           const cached = localStorage.getItem(GOOGLE_USER_KEY);
           if (cached && !resolvedToken) {
             try {
               const gu = JSON.parse(cached) as GoogleUserInfo;
-              if (gu.token) {
+              const linkedCode = (gu.fellowshipCode || "").trim().toLowerCase();
+              if (linkedCode && gu.token) {
+                const member = readStoredMember(linkedCode);
+                const linkedName = member?.name || gu.memberName || gu.name || "";
+                const linkedToken = member?.token || gu.token;
+                persistMembership(linkedCode, linkedToken, linkedName);
+                setGoogleUser(gu);
+                setCode(linkedCode);
+                setToken(linkedToken);
+                setName(linkedName || null);
+              } else if (gu.token) {
                 setGoogleUser(gu);
                 setToken(gu.token);
                 setName(gu.name);
@@ -135,8 +168,7 @@ export function FocusApp() {
   const onJoined = useCallback(
     (c: string, t: string, n: string) => {
       const clean = c.trim().toLowerCase();
-      localStorage.setItem(LAST_CODE_KEY, clean);
-      localStorage.setItem(`ff-member-${clean}`, JSON.stringify({ token: t, name: n }));
+      persistMembership(clean, t, n);
       setCode(clean);
       setToken(t);
       setName(n);
@@ -145,7 +177,16 @@ export function FocusApp() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: t }),
-        }).catch(() => {});
+        })
+          .then((res) => res.json())
+          .then((json) => {
+            if (json?.user?.token) {
+              const gu = { ...googleUser, ...json.user } as GoogleUserInfo;
+              setGoogleUser(gu);
+              localStorage.setItem(GOOGLE_USER_KEY, JSON.stringify(gu));
+            }
+          })
+          .catch(() => {});
       }
     },
     [googleUser]
@@ -280,8 +321,12 @@ export function FocusApp() {
       </header>
 
       <div className="relative z-10 mx-auto max-w-6xl px-4 py-4 md:px-8 md:py-6">
-        {tab === "block" && <BlockTab code={code} token={token} name={name} />}
-        {tab === "focus" && <FocusTab />}
+        {/* Keep Block mounted when switching tabs. Remounting FocusMusicPanel used
+            to re-fire auto-play (and still can against older deployed web builds). */}
+        <div className={tab === "block" ? undefined : "hidden"} aria-hidden={tab !== "block"}>
+          <BlockTab code={code} token={token} name={name} />
+        </div>
+        {tab === "focus" && <FocusTab token={token} fellowshipCode={code} />}
         {tab === "guild" &&
           (joined ? (
             <FellowshipDashboard

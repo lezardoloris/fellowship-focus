@@ -20,7 +20,7 @@ def parse_invite_or_sync(text: str) -> dict[str, str] | None:
             data = json.loads(raw)
         except json.JSONDecodeError:
             return None
-        code = str(data.get("code") or data.get("fellowship_code") or "").strip()
+        code = str(data.get("code") or data.get("fellowship_code") or "").strip().lower()
         token = str(data.get("token") or data.get("member_token") or "").strip()
         if not code:
             return None
@@ -39,11 +39,11 @@ def parse_invite_or_sync(text: str) -> dict[str, str] | None:
     if match:
         return {
             "api_url": match.group(1).rstrip("/"),
-            "fellowship_code": match.group(2),
+            "fellowship_code": match.group(2).lower(),
         }
 
     if "://" not in raw and "/" not in raw:
-        return {"fellowship_code": raw}
+        return {"fellowship_code": raw.lower()}
 
     return None
 

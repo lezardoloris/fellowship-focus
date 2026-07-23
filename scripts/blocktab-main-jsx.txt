@@ -127,7 +127,7 @@
 
           <div className="glass-panel p-5">
             <p className="mb-3 text-sm font-semibold text-white">Block list · {sites.length}</p>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            <div className="flex flex-wrap gap-1.5">
               {PRESETS.map((p) => {
                 const active = presetSites(p.cats).every((s) => blockedSet.has(s));
                 return (
@@ -135,7 +135,7 @@
                     key={p.id}
                     type="button"
                     onClick={() => togglePreset(p)}
-                    className={`rounded-lg border px-2.5 py-2 text-left text-xs transition ${
+                    className={`whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-left text-[11px] leading-tight transition ${
                       active
                         ? "border-[#b8422e] bg-[#b8422e]/25 text-white"
                         : "border-white/15 bg-black/30 text-white/80 hover:bg-black/40"

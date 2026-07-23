@@ -33,7 +33,7 @@ function fmt(seconds: number) {
  */
 export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, onMinimize }: Props) {
   const [immersive, setImmersive] = useState(true);
-  const [ambient, setAmbient] = useState<AmbientId>("brown");
+  const [ambient, setAmbient] = useState<AmbientId>("off");
   const [volume, setVolume] = useState(0.35);
   const [playerOpen, setPlayerOpen] = useState(true);
   const [mounted, setMounted] = useState(false);
@@ -68,12 +68,11 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
       ambientPlayer.stop();
       return;
     }
-    const saved = (localStorage.getItem(AMBIENT_KEY) as AmbientId) || "brown";
+    // Timer/overlay open stays silent — ambient only starts when the user picks a preset.
     const vol = Number(localStorage.getItem(VOL_KEY) || "0.35");
-    setAmbient(saved);
+    setAmbient("off");
     setVolume(Number.isFinite(vol) ? vol : 0.35);
     ambientPlayer.setVolume(Number.isFinite(vol) ? vol : 0.35);
-    void ambientPlayer.set(saved);
     return () => {
       ambientPlayer.stop();
     };
