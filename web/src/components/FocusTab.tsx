@@ -12,7 +12,7 @@ const GITHUB_KEY = "ff-github-user";
 const LEAGUE_STYLE: Record<string, { color: string; blurb: string }> = {
   Shire: { color: "#9ca3af", blurb: "Peaceful start — build the habit" },
   Rohan: { color: "#60a5fa", blurb: "Riders of focus — momentum building" },
-  Gondor: { color: "#c084fc", blurb: "Steadfast — deep work is your default" },
+  Gondor: { color: "#d4a574", blurb: "Steadfast — deep work is your default" },
   Mordor: { color: "#f97316", blurb: "Forged in fire — elite focus" },
 };
 
@@ -136,16 +136,16 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
         </div>
       )}
 
-      <div className="glass-panel p-6">
-        <HabitTracker token={token} fellowshipCode={fellowshipCode} />
-      </div>
-
       <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
         <WeekPanel stats={stats} today={today} onSaveOkr={saveOkr} />
         <div className="space-y-5">
           <LadderCard stats={stats} />
           <GitHubCard />
         </div>
+      </div>
+
+      <div className="glass-panel p-6">
+        <HabitTracker token={token} fellowshipCode={fellowshipCode} />
       </div>
     </div>
   );
@@ -173,7 +173,7 @@ function WeekPanel({
   return (
     <div className="glass-panel p-6">
       <div className="mb-5">
-        <h2 className="text-lg font-semibold text-white">This week</h2>
+        <h2 className="text-lg font-semibold text-white">Week overview</h2>
         <p className="mt-0.5 text-xs text-[#9ca3af]">
           Week of {rangeLabel(stats.weekStart)} · from your local screen-time data
         </p>

@@ -159,19 +159,31 @@ export function SettingsPanel({
     }
   }
 
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-16 md:pt-20"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
       role="presentation"
     >
       <div
         className="glass-panel relative w-full max-w-lg p-5"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-modal
+        aria-modal="true"
         aria-label="Settings"
       >
         <div className="mb-4 flex items-center justify-between gap-3">

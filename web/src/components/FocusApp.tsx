@@ -11,6 +11,7 @@ import { ImmersiveScene } from "@/components/ImmersiveScene";
 import { SettingsPanel, useBackgroundPrefs } from "@/components/SettingsPanel";
 import { PremiumLoader } from "@/components/PremiumLoader";
 import { BlockerModePill, BlockerModeProvider } from "@/components/BlockerMode";
+import { useToast } from "@/components/Toasts";
 import { type SceneId } from "@/lib/scenes";
 
 type Tab = "block" | "focus" | "guild";
@@ -54,6 +55,7 @@ function persistMembership(code: string, token: string, name: string) {
 
 export function FocusApp() {
   const params = useSearchParams();
+  const toast = useToast();
   const [tab, setTab] = useState<Tab>("block");
   const [code, setCode] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -194,7 +196,9 @@ export function FocusApp() {
   );
 
   const leaveGuild = useCallback(() => {
-    if (code) localStorage.removeItem(`ff-member-${code}`);
+    if (!code) return;
+    if (!window.confirm(`Leave guild “${code}”? You can rejoin anytime.`)) return;
+    localStorage.removeItem(`ff-member-${code}`);
     localStorage.removeItem(LAST_CODE_KEY);
     setCode(null);
     if (googleUser?.token) {
@@ -204,7 +208,8 @@ export function FocusApp() {
       setToken(null);
       setName(null);
     }
-  }, [code, googleUser]);
+    toast.info("Left guild");
+  }, [code, googleUser, toast]);
 
   async function connectGoogle() {
     setAuthBusy(true);
@@ -233,6 +238,7 @@ export function FocusApp() {
   function share() {
     if (!code) return;
     navigator.clipboard.writeText(`${window.location.origin}/app?code=${code}`);
+    toast.ok("Invite link copied");
     setShared(true);
     setTimeout(() => setShared(false), 2000);
   }
@@ -250,12 +256,22 @@ export function FocusApp() {
   return (
     <BlockerModeProvider>
     <Shell scene={bgPrefs.scene}>
-      <header className="sticky top-0 z-20">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-2 px-4 py-4 md:gap-3 md:px-8">
-          <nav className="flex items-center gap-1 rounded-full border border-white/20 bg-black/55 p-1">
+      <header className="header-glass sticky top-0 z-20">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-2 px-4 py-3 md:gap-3 md:px-8">
+          <span className="font-display hidden text-sm font-semibold tracking-wide text-white/90 sm:inline">
+            Fellowship Focus
+          </span>
+          <nav
+            className="flex items-center gap-1 rounded-full border border-white/20 bg-black/55 p-1"
+            role="tablist"
+            aria-label="Main"
+          >
             {TABS.map((t) => (
               <button
                 key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
                 onClick={() => setTab(t.id)}
                 title={t.hint}
                 className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
@@ -281,7 +297,7 @@ export function FocusApp() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={googleUser.avatarUrl} alt="" className="h-5 w-5 rounded-full" />
               ) : null}
-              Out
+              Sign out
             </button>
           ) : (
             <button
@@ -290,25 +306,27 @@ export function FocusApp() {
               disabled={authBusy}
               className="rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85 disabled:opacity-50"
             >
-              {authBusy ? "…" : "Google"}
+              {authBusy ? "…" : "Sign in with Google"}
             </button>
           )}
           {joined && (
             <button
+              type="button"
               onClick={share}
               className="rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85"
               title={code || undefined}
             >
-              {shared ? "✓" : "Share"}
+              {shared ? "Copied" : "Share"}
             </button>
           )}
           {joined && (
             <button
+              type="button"
               onClick={leaveGuild}
-              className="rounded-full border border-white/15 bg-transparent px-2 py-1.5 text-[10px] text-white/70 underline hover:text-white/80"
-              title="Leave guild"
+              className="rounded-full border border-white/15 bg-transparent px-2.5 py-1.5 text-[11px] text-white/70 hover:text-white/90"
+              title={`Leave ${code}`}
             >
-              {code}
+              Leave
             </button>
           )}
           <button

@@ -284,7 +284,7 @@ export function BlockTab({
     if (dt.shieldOn) {
       const ok = await requestHardUnlock(prefs, "Turn Shield OFF");
       if (!ok) {
-        toast.error("Unlock cancelled");
+        toast.info("Unlock cancelled");
         return;
       }
       if (token) {
@@ -299,6 +299,9 @@ export function BlockTab({
     try {
       const st = await desktopBridge.setShield(!dt.shieldOn);
       applyDesktopState(st);
+      if (st.available) {
+        toast.ok(st.shieldOn ? "Shield ON" : "Shield OFF");
+      }
     } finally {
       setShieldBusy(false);
     }
@@ -439,7 +442,7 @@ export function BlockTab({
     if (turningOff) {
       const ok = await requestHardUnlock(prefs, "Turn Shield OFF");
       if (!ok) {
-        toast.error("Unlock cancelled");
+        toast.info("Unlock cancelled");
         return;
       }
       if (token) {
@@ -737,7 +740,7 @@ export function BlockTab({
       if (phase !== "idle") {
         const ok = await requestHardUnlock(prefs, "Stop the timer");
         if (!ok) {
-          toast.error("Unlock cancelled");
+          toast.info("Unlock cancelled");
           return;
         }
         if (token) {
@@ -906,18 +909,10 @@ export function BlockTab({
           </div>
           <button
             type="button"
-            onClick={() => {
-              stopTimer();
-              stopAlarm();
-              setPhase("idle");
-              setRemaining(0);
-              setCycle(0);
-              setExceeded(0);
-              desktopBridge.hideFloatTimer();
-            }}
+            onClick={() => stop()}
             className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white/75 hover:bg-white/10 hover:text-white"
-            aria-label="Close timer"
-            title="Stop"
+            aria-label="Stop timer"
+            title="Stop timer"
           >
             ×
           </button>
@@ -1011,6 +1006,7 @@ export function BlockTab({
               </div>
             </div>
             <div className="space-y-3 px-5 py-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/55">Alarm</p>
               <div className="flex flex-wrap gap-1">
                 {ALARM_OPTS.map((o) => (
                   <button

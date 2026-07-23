@@ -178,7 +178,7 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
   if (!data) return <p className="text-red-400">Could not load habits</p>;
 
   const daysInMonth = getMonthDays(year, month);
-  const monthLabel = new Date(year, month - 1).toLocaleString("fr-FR", {
+  const monthLabel = new Date(year, month - 1).toLocaleString("en-US", {
     month: "long",
     year: "numeric",
   });
@@ -202,15 +202,16 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
         <div>
           <h2 className="text-xl font-semibold text-white">Habit tracker</h2>
           <p className="text-xs text-white/65">
-            Grille mensuelle · objectif vs réalisé
+            Monthly grid · goal vs done
             {fellowshipCode
-              ? ` · potes voient tout sur /f/${fellowshipCode}`
-              : " · solo (guild optional) — stays on this device"}
+              ? ` · visible to guild mates on /f/${fellowshipCode}`
+              : " · solo — stays on this device"}
           </p>
         </div>
         <div className="flex gap-2">
           <button
             type="button"
+            aria-label="Previous month"
             className="rounded-lg border border-[#3a3d40] px-3 py-1 text-sm text-[#9ca3af] hover:border-[#9ca3af]"
             onClick={() => {
               const m = month === 1 ? 12 : month - 1;
@@ -224,6 +225,7 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
           <span className="px-2 py-1 text-sm capitalize text-[#f4f4f5]">{monthLabel}</span>
           <button
             type="button"
+            aria-label="Next month"
             className="rounded-lg border border-[#3a3d40] px-3 py-1 text-sm text-[#9ca3af] hover:border-[#9ca3af]"
             onClick={() => {
               const m = month === 12 ? 1 : month + 1;
@@ -238,14 +240,16 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
       </div>
 
       {data.grid.length === 0 ? (
-        <p className="text-stone-500">Aucune habitude. Ajoute-en ci-dessous.</p>
+        <div className="rounded-xl border border-[#b8422e]/35 bg-[#b8422e]/10 px-4 py-3 text-sm text-white/80">
+          No habits yet. Add a preset below or create your own activity.
+        </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-[#3a3d40] bg-[#1a1c1e]/60">
           <table className="w-full min-w-[640px] border-collapse text-xs">
             <thead>
               <tr className="border-b border-white/10 text-stone-500">
                 <th className="sticky left-0 bg-[#242628] py-2 pr-3 pl-3 text-left font-normal">
-                  Habitude
+                  Habit
                 </th>
                 {Array.from({ length: daysInMonth }, (_, i) => (
                   <th key={i} className="w-6 px-0.5 py-2 font-normal">
@@ -282,6 +286,7 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
                             type="button"
                             disabled={isFuture || !isManual}
                             onClick={() => toggleDay(habit.id, d, habit.verification)}
+                            aria-label={`${habit.label} · day ${i + 1}${done ? " · done" : ""}`}
                             className={`h-5 w-5 rounded ${
                               done
                                 ? "bg-[#b8422e] text-white"
@@ -322,8 +327,8 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
       )}
 
       <div className="mt-6">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-stone-600">
-          Ajouter depuis PERSO.xlsx
+        <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-stone-500">
+          Quick add
         </p>
         <div className="flex flex-wrap gap-2">
           {HABIT_PRESETS.filter((p) => !myPresetIds.has(p.id)).map((p) => (

@@ -62,6 +62,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 export function useToast(): ToastApi {
   const ctx = useContext(ToastContext);
   if (!ctx) {
+    if (typeof console !== "undefined") {
+      console.warn("[toast] ToastProvider missing — notification dropped");
+    }
     return {
       push: () => {},
       error: () => {},
@@ -79,10 +82,11 @@ function ToastHost({
   items: ToastItem[];
   onDismiss: (id: string) => void;
 }) {
+  const hasError = items.some((t) => t.kind === "error");
   return (
     <div
-      className="pointer-events-none fixed right-4 top-4 z-[10000] flex w-[min(100vw-2rem,22rem)] flex-col gap-2"
-      aria-live="polite"
+      className="pointer-events-none fixed right-4 bottom-4 z-[10000] flex w-[min(100vw-2rem,22rem)] flex-col-reverse gap-2"
+      aria-live={hasError ? "assertive" : "polite"}
     >
       {items.map((t) => (
         <ToastCard key={t.id} item={t} onDismiss={onDismiss} />
@@ -111,7 +115,7 @@ function ToastCard({
         ? "border-emerald-500/40 bg-[#0f1a14]/95 text-emerald-100"
         : "border-white/15 bg-[#141618]/95 text-white/90";
 
-  const label = item.kind === "error" ? "Error" : item.kind === "ok" ? "OK" : "Info";
+  const label = item.kind === "error" ? "Error" : item.kind === "ok" ? "Success" : "Info";
 
   return (
     <div

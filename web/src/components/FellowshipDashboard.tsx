@@ -10,6 +10,7 @@ import { StakesPanel } from "@/components/StakesPanel";
 import { TrustPanel } from "@/components/TrustPanel";
 import { AgendaPanel } from "@/components/AgendaPanel";
 import { PremiumLoader } from "@/components/PremiumLoader";
+import { useToast } from "@/components/Toasts";
 
 type FellowshipData = {
   fellowship: { id: string; code: string; name: string; blocker_bypass_penalty?: number };
@@ -62,6 +63,7 @@ export function FellowshipDashboard({
   code: string;
   onCodeResolved?: (canonicalCode: string) => void;
 }) {
+  const toast = useToast();
   const [data, setData] = useState<FellowshipData | null>(null);
   const [loading, setLoading] = useState(true);
   const [joinName, setJoinName] = useState("");
@@ -125,7 +127,9 @@ export function FellowshipDashboard({
       setMyName(json.member.name);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to join");
+      const msg = err instanceof Error ? err.message : "Failed to join";
+      setError(msg);
+      toast.error("Join failed", msg);
     } finally {
       setJoining(false);
     }
@@ -133,6 +137,7 @@ export function FellowshipDashboard({
 
   function copyLink() {
     navigator.clipboard.writeText(`${window.location.origin}/f/${code}`);
+    toast.ok("Invite link copied");
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
@@ -146,6 +151,7 @@ export function FellowshipDashboard({
       name: myName,
     });
     navigator.clipboard.writeText(payload);
+    toast.ok("Desktop sync copied");
     setDesktopCopied(true);
     setTimeout(() => setDesktopCopied(false), 2000);
   }
@@ -190,7 +196,7 @@ export function FellowshipDashboard({
     WAYPOINT_IMAGES[journey.currentWaypoint.id] ?? "/assets/journey-map.jpg";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <header className="glass-panel px-5 py-5">
         <p className="text-xs font-semibold uppercase tracking-[0.35em] text-white/70">Guild</p>
         <h1 className="font-display mt-1 text-2xl font-bold text-white md:text-3xl">{fellowship.name}</h1>
@@ -221,8 +227,8 @@ export function FellowshipDashboard({
       </div>
 
         {!myToken && (
-          <form onSubmit={joinFellowship} className="glass-card mb-8 p-6">
-            <h2 className="mb-1 text-lg font-semibold">Join this Fellowship</h2>
+          <form onSubmit={joinFellowship} className="glass-panel mb-8 p-6">
+            <h2 className="mb-1 text-lg font-semibold text-white">Join this guild</h2>
             <p className="mb-4 text-sm text-[#9ca3af]">Pick your name. You&apos;ll get a token for the desktop app.</p>
             <div className="flex gap-3">
               <input
@@ -246,7 +252,7 @@ export function FellowshipDashboard({
             ["Sites blocked", stats.totalBlocks],
             ["Members", leaderboard.length],
           ].map(([label, val]) => (
-            <div key={label as string} className="glass-card p-5">
+            <div key={label as string} className="glass-panel p-5">
               <p className="text-xs font-medium uppercase tracking-wide text-[#9ca3af]">{label}</p>
               <p className="mt-2 text-2xl font-semibold text-[#f4f4f5]">{val}</p>
             </div>
@@ -259,7 +265,7 @@ export function FellowshipDashboard({
           </div>
         )}
 
-        <div className="glass-card mb-8 overflow-hidden p-0">
+        <div className="glass-panel mb-8 overflow-hidden p-0">
           <div className="relative h-40 w-full">
             <Image src={journeyImage} alt="" fill className="object-cover opacity-70" />
             <div className="hero-overlay absolute inset-0" />
@@ -304,13 +310,13 @@ export function FellowshipDashboard({
         </div>
 
         {myToken && (
-          <div className="glass-card mb-8 p-6">
+          <div className="glass-panel mb-8 p-6">
             <HabitTracker token={myToken} fellowshipCode={code} />
           </div>
         )}
 
         <div className="mb-8 grid gap-6 lg:grid-cols-2">
-          <div className="glass-card p-6">
+          <div className="glass-panel p-6">
             <h2 className="mb-1 text-lg font-semibold">Habit ladder</h2>
             <p className="mb-5 text-xs text-[#9ca3af]">Monthly ranking — stake score (auto = verified, manual = 80% weight)</p>
             {habitLeaderboard.length === 0 ? (
@@ -336,7 +342,7 @@ export function FellowshipDashboard({
           </div>
 
           {myToken && (
-            <div className="glass-card p-6">
+            <div className="glass-panel p-6">
               <StakesPanel token={myToken} fellowshipCode={code} memberNames={memberNames} />
             </div>
           )}
@@ -347,7 +353,7 @@ export function FellowshipDashboard({
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <div className="glass-card p-6">
+          <div className="glass-panel p-6">
             <h2 className="mb-1 text-lg font-semibold">Weekly ladder</h2>
             <p className="mb-5 text-xs text-[#9ca3af]">
               Ranked by net XP (earned − block penalties). Leagues: Mordor ≥500 · Gondor ≥300 · Rohan ≥150
@@ -388,7 +394,7 @@ export function FellowshipDashboard({
             )}
           </div>
 
-          <div className="glass-card p-6">
+          <div className="glass-panel p-6">
             <h2 className="mb-5 text-lg font-semibold">Activity feed</h2>
             {feed.length === 0 ? (
               <p className="text-[#9ca3af]">No activity yet. Start a focus session!</p>

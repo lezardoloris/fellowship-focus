@@ -80,7 +80,7 @@ export function BlockerModePill({ className = "" }: { className?: string }) {
       <span className="hidden text-xs font-medium tracking-wide text-white/85 sm:inline">
         Blocker Mode
       </span>
-      <span className="text-xs font-medium tracking-wide text-white/85 sm:hidden">Block</span>
+      <span className="text-xs font-medium tracking-wide text-white/85 sm:hidden">Shield</span>
       <span
         className={`h-2 w-2 shrink-0 rounded-full ${
           live ? "bg-emerald-400" : arming ? "animate-pulse bg-amber-400" : "bg-white/25"
