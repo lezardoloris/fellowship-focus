@@ -16,10 +16,10 @@ export type HabitPreset = {
 
 /** Presets extracted from PERSO.xlsx + Fellowship auto-tracking */
 export const HABIT_PRESETS: HabitPreset[] = [
-  { id: "wake-8am", label: "Wake up before 8am", emoji: "🌄", verification: "manual", defaultGoal: 26, category: "health" },
-  { id: "meditate", label: "10 min meditation", emoji: "⛩", verification: "manual", defaultGoal: 20, category: "health" },
+  { id: "wake-8am", label: "Wake up before 8am", emoji: "🌅", verification: "manual", defaultGoal: 26, category: "health" },
+  { id: "meditate", label: "10 min meditation", emoji: "⛩️", verification: "manual", defaultGoal: 20, category: "health" },
   { id: "read", label: "Read 1h or 10 pages", emoji: "📚", verification: "manual", defaultGoal: 15, category: "health" },
-  { id: "podcast", label: "Listen 1 podcast", emoji: "💡", verification: "manual", defaultGoal: 20, category: "work" },
+  { id: "podcast", label: "Listen 1 podcast", emoji: "🎧", verification: "manual", defaultGoal: 20, category: "work" },
   { id: "sport", label: "Sport", emoji: "💪", verification: "manual", defaultGoal: 20, category: "health" },
   { id: "10-products", label: "10 produits/j", emoji: "📦", verification: "manual", defaultGoal: 15, category: "work" },
   { id: "no-joint", label: "Pas de joint", emoji: "🚫", verification: "manual", defaultGoal: 25, category: "accountability" },
@@ -30,6 +30,34 @@ export const HABIT_PRESETS: HabitPreset[] = [
   { id: "focus-quest", label: "Focus quest ≥25 min", emoji: "⚔️", verification: "auto_focus", defaultGoal: 25, category: "focus" },
   { id: "clean-focus", label: "Zero distraction day", emoji: "🛡️", verification: "auto_clean", defaultGoal: 20, category: "focus" },
 ];
+
+/** Curated habit marks for the custom-activity picker (Heritage dark UI). */
+export const PREMIUM_HABIT_EMOJIS = [
+  "⚔️",
+  "🛡️",
+  "🔥",
+  "🕯️",
+  "⛰️",
+  "🌲",
+  "🌅",
+  "🌙",
+  "⛩️",
+  "🧘",
+  "💪",
+  "🏃",
+  "📚",
+  "✍️",
+  "🎧",
+  "💻",
+  "🎯",
+  "📈",
+  "📦",
+  "🪞",
+  "💎",
+  "👑",
+  "💍",
+  "✨",
+] as const;
 
 export const HABIT_XP = {
   PER_CHECKIN: 5,

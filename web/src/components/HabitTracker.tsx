@@ -1,7 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { HABIT_PRESETS, getMonthDays, verificationBadge } from "@/lib/habits";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  HABIT_PRESETS,
+  PREMIUM_HABIT_EMOJIS,
+  getMonthDays,
+  verificationBadge,
+} from "@/lib/habits";
 import {
   addSoloCustom,
   addSoloPreset,
@@ -45,9 +50,27 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [customLabel, setCustomLabel] = useState("");
-  const [customEmoji, setCustomEmoji] = useState("✨");
+  const [customEmoji, setCustomEmoji] = useState<string>("⚔️");
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [customGoal, setCustomGoal] = useState(20);
+  const emojiWrapRef = useRef<HTMLDivElement>(null);
   const solo = !token;
+
+  useEffect(() => {
+    if (!emojiOpen) return;
+    function onDoc(e: MouseEvent) {
+      if (!emojiWrapRef.current?.contains(e.target as Node)) setEmojiOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setEmojiOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [emojiOpen]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -139,6 +162,8 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
       addSoloCustom({ label: customLabel, emoji: customEmoji, goal: customGoal });
     }
     setCustomLabel("");
+    setCustomEmoji("⚔️");
+    setEmojiOpen(false);
     setAdding(false);
     await load();
   }
@@ -316,16 +341,57 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
       </div>
 
       <form onSubmit={addCustom} className="mt-5 flex flex-wrap items-end gap-2">
-        <div>
+        <div ref={emojiWrapRef} className="relative">
           <label className="mb-1 block text-[10px] uppercase tracking-wider text-stone-600">
             Emoji
           </label>
-          <input
-            value={customEmoji}
-            onChange={(e) => setCustomEmoji(e.target.value.slice(0, 4))}
-            className="input-premium w-14 py-2 text-center text-sm"
-            maxLength={4}
-          />
+          <button
+            type="button"
+            aria-expanded={emojiOpen}
+            aria-haspopup="listbox"
+            onClick={() => setEmojiOpen((o) => !o)}
+            className="flex h-[42px] w-14 items-center justify-center rounded-md border border-[#b8422e]/55 bg-gradient-to-b from-[#3a221c] to-[#1a1210] text-[1.35rem] leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-[#b8422e] hover:from-[#4a2a22]"
+            title="Choose a mark"
+          >
+            <span aria-hidden className="select-none">
+              {customEmoji}
+            </span>
+          </button>
+          {emojiOpen ? (
+            <div
+              role="listbox"
+              aria-label="Premium habit marks"
+              className="absolute bottom-[calc(100%+8px)] left-0 z-30 w-[220px] rounded-xl border border-white/12 bg-[#121416]/98 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.55)] backdrop-blur-sm"
+            >
+              <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+                Premium marks
+              </p>
+              <div className="grid grid-cols-6 gap-1">
+                {PREMIUM_HABIT_EMOJIS.map((em) => {
+                  const selected = em === customEmoji;
+                  return (
+                    <button
+                      key={em}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      onClick={() => {
+                        setCustomEmoji(em);
+                        setEmojiOpen(false);
+                      }}
+                      className={`flex h-8 w-8 items-center justify-center rounded-md text-base transition ${
+                        selected
+                          ? "bg-[#b8422e]/35 ring-1 ring-[#b8422e]"
+                          : "hover:bg-white/8"
+                      }`}
+                    >
+                      {em}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </div>
         <div className="min-w-[180px] flex-1">
           <label className="mb-1 block text-[10px] uppercase tracking-wider text-stone-600">

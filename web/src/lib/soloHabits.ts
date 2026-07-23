@@ -184,7 +184,7 @@ export function addSoloCustom(input: {
   const habit: SoloHabit = {
     id: uid("custom"),
     label,
-    emoji: (input.emoji || "✨").trim() || "✨",
+    emoji: (input.emoji || "⚔️").trim() || "⚔️",
     verification: "manual",
     goal: Math.max(1, Math.min(31, input.goal ?? 20)),
     checkins: {},
