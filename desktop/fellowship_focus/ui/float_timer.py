@@ -1,10 +1,11 @@
-"""Always-on-top mini focus timer — bottom-right of the screen.
+"""Always-on-top focus timer — bottom-right of the screen.
 
-Survives main-window hide/minimize. Driven by the web bridge, with an
-optional local tick so the countdown keeps moving if the WebView is throttled.
+Survives main-window hide/minimize. Driven by the web bridge, with an optional
+local tick so the countdown keeps moving if the WebView is throttled.
 
-Compact capsule by default; chevron expands a richer card (add time, session
-actions). Music controls are wired from MainWindow via signals.
+A premium capsule by default; a chevron expands a bigger card (add time, break,
+pause, music). The expanded panel only opens/closes on an explicit user action
+— the per-second time sync never touches it, so it no longer flickers shut.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import sys
 import time
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QCursor, QGuiApplication
+from PySide6.QtGui import QCursor, QFont, QGuiApplication
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -26,15 +27,14 @@ from PySide6.QtWidgets import (
 )
 
 from fellowship_focus.config import load_config, save_config
-from fellowship_focus.ui.theme import (
-    ACCENT,
-    BG,
-    BG_ELEVATED,
-    BORDER,
-    FG,
-    MUTED,
-    font_timer,
-)
+from fellowship_focus.ui.theme import ACCENT, FG, MUTED, font_timer
+
+# Local palette — deeper, more premium than the shared chrome.
+CARD_BG = "#17191c"
+CARD_BORDER = "#2c3034"
+BTN_BG = "#232629"
+BTN_BG_HOVER = "#2e3236"
+BREAK_BLUE = "#5b9bd5"
 
 
 class FloatTimerWindow(QWidget):
@@ -62,9 +62,7 @@ class FloatTimerWindow(QWidget):
         )
         super().__init__(parent, flags)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        # Translucent host so the capsule radius actually clips (no square chrome).
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setMinimumWidth(168)
 
         self._remaining = 0
         self._label = "FOCUS"
@@ -76,205 +74,199 @@ class FloatTimerWindow(QWidget):
         self._placed = False
         self._last_web_sync = 0.0
         self._session_active = False
-        self._dismissed = False  # × hid the pill; session still running
+        self._dismissed = False
         self._music_tracks: list[str] = []
         self._music_index = -1
         self._music_playing = False
         self._music_volume = 0.5
 
-        self.setStyleSheet(
-            f"""
-            QWidget#floatRoot {{
-                background: {BG};
-                border: 1px solid {BORDER};
-                border-radius: 20px;
-            }}
-            QLabel#timeLabel {{
-                color: {FG};
-                background: transparent;
-                padding: 0 2px;
-            }}
-            QLabel#statusDot {{
-                background: transparent;
-            }}
-            QLabel#hintLabel {{
-                color: {ACCENT};
-                background: transparent;
-                font-size: 10px;
-                letter-spacing: 1px;
-            }}
-            QPushButton#closeBtn, QPushButton#expandBtn {{
-                background: {BG_ELEVATED};
-                color: {MUTED};
-                border: none;
-                border-radius: 12px;
-                font-size: 13px;
-                padding: 0;
-            }}
-            QPushButton#closeBtn:hover, QPushButton#expandBtn:hover {{
-                color: {FG};
-                background: #3a3d40;
-            }}
-            QPushButton#actionBtn {{
-                background: {BG_ELEVATED};
-                color: {FG};
-                border: 1px solid {BORDER};
-                border-radius: 8px;
-                padding: 6px 8px;
-                font-size: 11px;
-            }}
-            QPushButton#actionBtn:hover {{
-                border-color: {ACCENT};
-            }}
-            QPushButton#primaryBtn {{
-                background: {ACCENT};
-                color: {FG};
-                border: none;
-                border-radius: 8px;
-                padding: 6px 8px;
-                font-size: 11px;
-                font-weight: 600;
-            }}
-            QComboBox {{
-                background: {BG_ELEVATED};
-                color: {FG};
-                border: 1px solid {BORDER};
-                border-radius: 8px;
-                padding: 4px 8px;
-                font-size: 11px;
-            }}
-            QSlider::groove:horizontal {{
-                height: 4px;
-                background: {BORDER};
-                border-radius: 2px;
-            }}
-            QSlider::handle:horizontal {{
-                width: 12px;
-                margin: -5px 0;
-                background: {ACCENT};
-                border-radius: 6px;
-            }}
-            """
-        )
+        self.setStyleSheet(self._qss())
 
         root = QWidget(self)
         root.setObjectName("floatRoot")
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(12, 12, 12, 12)  # room for the drop shadow
         outer.addWidget(root)
 
-        self._root_layout = QVBoxLayout(root)
-        self._root_layout.setContentsMargins(14, 6, 8, 6)
-        self._root_layout.setSpacing(8)
+        col = QVBoxLayout(root)
+        col.setContentsMargins(18, 12, 12, 14)
+        col.setSpacing(12)
 
-        row = QHBoxLayout()
-        row.setSpacing(8)
+        # ── Header row: dot · time · phase · expand · close ──
+        head = QHBoxLayout()
+        head.setSpacing(12)
 
         self._dot = QLabel("●")
         self._dot.setObjectName("statusDot")
-        self._dot.setStyleSheet(f"color: {ACCENT}; font-size: 10px;")
-        self._dot.setFixedWidth(12)
+        self._dot.setFixedWidth(14)
         self._dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        row.addWidget(self._dot)
+        head.addWidget(self._dot)
 
         self._time = QLabel("00:00")
         self._time.setObjectName("timeLabel")
-        self._time.setFont(font_timer(14))
-        self._time.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-        row.addWidget(self._time, 1)
+        self._time.setFont(font_timer(30))
+        head.addWidget(self._time)
 
-        self._hint = QLabel("")
-        self._hint.setObjectName("hintLabel")
-        self._hint.setVisible(False)
-        row.addWidget(self._hint)
+        self._phase = QLabel("FOCUS")
+        self._phase.setObjectName("phaseLabel")
+        head.addWidget(self._phase)
+        head.addStretch(1)
 
-        self._expand_btn = QPushButton("▾")
-        self._expand_btn.setObjectName("expandBtn")
-        self._expand_btn.setFixedSize(24, 24)
+        self._expand_btn = QPushButton("⌄")
+        self._expand_btn.setObjectName("iconBtn")
+        self._expand_btn.setFixedSize(34, 34)
         self._expand_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self._expand_btn.setToolTip("Expand")
+        self._expand_btn.setToolTip("More")
         self._expand_btn.clicked.connect(self._toggle_expand)
-        row.addWidget(self._expand_btn)
+        head.addWidget(self._expand_btn)
 
-        close = QPushButton("×")
-        close.setObjectName("closeBtn")
-        close.setFixedSize(24, 24)
+        close = QPushButton("✕")
+        close.setObjectName("iconBtn")
+        close.setFixedSize(34, 34)
         close.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        close.setToolTip("Hide timer (session keeps running)")
+        close.setToolTip("Hide (session keeps running)")
         close.clicked.connect(self._on_dismiss)
-        row.addWidget(close)
+        head.addWidget(close)
 
-        self._root_layout.addLayout(row)
+        col.addLayout(head)
 
+        # ── Expandable panel ──
         self._panel = QWidget()
-        panel_layout = QVBoxLayout(self._panel)
-        panel_layout.setContentsMargins(0, 2, 6, 6)
-        panel_layout.setSpacing(6)
+        pcol = QVBoxLayout(self._panel)
+        pcol.setContentsMargins(0, 0, 0, 0)
+        pcol.setSpacing(10)
 
+        # add-time row
+        add_row = QHBoxLayout()
+        add_row.setSpacing(10)
+        for mins in (5, 10):
+            b = QPushButton(f"+{mins} min")
+            b.setObjectName("chunkBtn")
+            b.setMinimumHeight(40)
+            b.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            b.clicked.connect(lambda _=False, m=mins: self.add_time_requested.emit(m))
+            add_row.addWidget(b)
+        pcol.addLayout(add_row)
+
+        # break / pause row
+        act_row = QHBoxLayout()
+        act_row.setSpacing(10)
+        self._break_btn = QPushButton("Break")
+        self._break_btn.setObjectName("primaryBtn")
+        self._break_btn.setMinimumHeight(40)
+        self._break_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._break_btn.clicked.connect(self.break_now_requested.emit)
+        self._snooze_btn = QPushButton("Remind 5m")
+        self._snooze_btn.setObjectName("chunkBtn")
+        self._snooze_btn.setMinimumHeight(40)
+        self._snooze_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._snooze_btn.clicked.connect(self.snooze_requested.emit)
+        self._pause_btn = QPushButton("Pause")
+        self._pause_btn.setObjectName("chunkBtn")
+        self._pause_btn.setMinimumHeight(40)
+        self._pause_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._pause_btn.clicked.connect(self._on_pause_resume)
+        act_row.addWidget(self._break_btn)
+        act_row.addWidget(self._snooze_btn)
+        act_row.addWidget(self._pause_btn)
+        pcol.addLayout(act_row)
+
+        # music row
         music_row = QHBoxLayout()
-        music_row.setSpacing(6)
+        music_row.setSpacing(10)
         self._track = QComboBox()
-        self._track.setMinimumWidth(120)
+        self._track.setMinimumHeight(38)
         self._track.currentIndexChanged.connect(self._on_track_changed)
         music_row.addWidget(self._track, 1)
         self._play_btn = QPushButton("Play")
-        self._play_btn.setObjectName("actionBtn")
+        self._play_btn.setObjectName("chunkBtn")
+        self._play_btn.setMinimumHeight(38)
+        self._play_btn.setFixedWidth(74)
+        self._play_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._play_btn.clicked.connect(self.music_toggle_requested.emit)
         music_row.addWidget(self._play_btn)
-        panel_layout.addLayout(music_row)
+        pcol.addLayout(music_row)
 
         vol_row = QHBoxLayout()
-        vol_lbl = QLabel("Vol")
-        vol_lbl.setStyleSheet(f"color: {MUTED}; font-size: 10px;")
-        vol_row.addWidget(vol_lbl)
+        vol_row.setSpacing(10)
+        vlbl = QLabel("Vol")
+        vlbl.setObjectName("volLabel")
+        vol_row.addWidget(vlbl)
         self._vol = QSlider(Qt.Orientation.Horizontal)
         self._vol.setRange(0, 100)
         self._vol.setValue(50)
         self._vol.valueChanged.connect(self._on_vol_changed)
         vol_row.addWidget(self._vol, 1)
-        panel_layout.addLayout(vol_row)
-
-        add_row = QHBoxLayout()
-        add_row.setSpacing(6)
-        for mins in (5, 10):
-            btn = QPushButton(f"+{mins} min")
-            btn.setObjectName("actionBtn")
-            btn.clicked.connect(lambda _=False, m=mins: self.add_time_requested.emit(m))
-            add_row.addWidget(btn)
-        panel_layout.addLayout(add_row)
-
-        self._action_row = QHBoxLayout()
-        self._action_row.setSpacing(6)
-        self._break_btn = QPushButton("Break now")
-        self._break_btn.setObjectName("primaryBtn")
-        self._break_btn.clicked.connect(self.break_now_requested.emit)
-        self._snooze_btn = QPushButton("Remind 5m")
-        self._snooze_btn.setObjectName("actionBtn")
-        self._snooze_btn.clicked.connect(self.snooze_requested.emit)
-        self._pause_btn = QPushButton("Pause")
-        self._pause_btn.setObjectName("actionBtn")
-        self._pause_btn.clicked.connect(self._on_pause_resume)
-        self._action_row.addWidget(self._break_btn)
-        self._action_row.addWidget(self._snooze_btn)
-        self._action_row.addWidget(self._pause_btn)
-        panel_layout.addLayout(self._action_row)
+        pcol.addLayout(vol_row)
 
         self._panel.setVisible(False)
-        self._root_layout.addWidget(self._panel)
+        col.addWidget(self._panel)
 
-        # Local tick — keeps counting while the main window is hidden.
         self._tick = QTimer(self)
         self._tick.setInterval(1000)
         self._tick.timeout.connect(self._on_tick)
 
-        # Re-assert topmost (Windows can bury Tool windows under fullscreen apps).
         self._topmost = QTimer(self)
         self._topmost.setInterval(2500)
         self._topmost.timeout.connect(self._assert_topmost)
 
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._context_menu)
-        self._apply_height()
+
+        self._render()
+
+    # ── Styling ──────────────────────────────────────────────
+
+    def _qss(self) -> str:
+        return f"""
+        QWidget#floatRoot {{
+            background: {CARD_BG};
+            border: 1px solid {CARD_BORDER};
+            border-radius: 18px;
+        }}
+        QLabel#timeLabel {{ color: {FG}; background: transparent; }}
+        QLabel#statusDot {{ background: transparent; font-size: 13px; }}
+        QLabel#phaseLabel {{
+            color: {MUTED}; background: transparent;
+            font-size: 11px; font-weight: 600; letter-spacing: 2px;
+        }}
+        QLabel#volLabel {{ color: {MUTED}; background: transparent; font-size: 11px; }}
+        QPushButton#iconBtn {{
+            background: {BTN_BG}; color: {MUTED};
+            border: none; border-radius: 17px; font-size: 15px;
+        }}
+        QPushButton#iconBtn:hover {{ background: {BTN_BG_HOVER}; color: {FG}; }}
+        QPushButton#chunkBtn {{
+            background: {BTN_BG}; color: {FG};
+            border: 1px solid {CARD_BORDER}; border-radius: 11px;
+            font-size: 13px; font-weight: 600; padding: 0 10px;
+        }}
+        QPushButton#chunkBtn:hover {{ background: {BTN_BG_HOVER}; border-color: {ACCENT}; }}
+        QPushButton#primaryBtn {{
+            background: {ACCENT}; color: #fff;
+            border: none; border-radius: 11px;
+            font-size: 13px; font-weight: 700; padding: 0 10px;
+        }}
+        QPushButton#primaryBtn:hover {{ background: #c46551; }}
+        QComboBox {{
+            background: {BTN_BG}; color: {FG};
+            border: 1px solid {CARD_BORDER}; border-radius: 11px;
+            padding: 4px 12px; font-size: 12px;
+        }}
+        QComboBox::drop-down {{ border: none; width: 22px; }}
+        QComboBox QAbstractItemView {{
+            background: {CARD_BG}; color: {FG};
+            selection-background-color: {ACCENT};
+        }}
+        QSlider::groove:horizontal {{ height: 5px; background: {CARD_BORDER}; border-radius: 3px; }}
+        QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 3px; }}
+        QSlider::handle:horizontal {{
+            width: 16px; height: 16px; margin: -6px 0;
+            background: #fff; border-radius: 8px;
+        }}
+        """
+
+    # ── Public API (called from MainWindow / web bridge) ─────
 
     def update_timer(
         self,
@@ -288,14 +280,17 @@ class FloatTimerWindow(QWidget):
         self._label = (label or "FOCUS").upper()[:8]
         self._paused = bool(paused)
         self._awaiting_break = bool(awaiting_break)
-        if expanded is not None:
+        # Only an explicit request or a break decision changes the panel — never
+        # the per-second sync, which is what used to snap it shut.
+        if expanded is not None and expanded != self._expanded:
             self._expanded = bool(expanded)
-        elif awaiting_break:
+            self._apply_expanded()
+        elif awaiting_break and not self._expanded:
             self._expanded = True
+            self._apply_expanded()
         self._last_web_sync = time.monotonic()
         self._session_active = True
         self._render()
-        # Freeze local countdown while paused / awaiting decision.
         if self._paused or self._awaiting_break:
             self._tick.stop()
         elif not self._tick.isActive():
@@ -341,7 +336,6 @@ class FloatTimerWindow(QWidget):
         self._vol.blockSignals(False)
 
     def hide_timer(self) -> None:
-        """End of session — clear state and hide (called by web / quit)."""
         self._tick.stop()
         self._topmost.stop()
         self._remaining = 0
@@ -356,7 +350,6 @@ class FloatTimerWindow(QWidget):
         self.remaining_changed.emit(0, "")
 
     def dismiss(self) -> None:
-        """Hide the pill only — focus session continues in the background."""
         if not self.isVisible() and self._dismissed:
             return
         self._dismissed = True
@@ -365,7 +358,6 @@ class FloatTimerWindow(QWidget):
         self.dismissed_by_user.emit()
 
     def reshow(self) -> None:
-        """Bring the pill back after a user dismiss (tray / menu)."""
         if not self._session_active:
             return
         self._dismissed = False
@@ -392,62 +384,55 @@ class FloatTimerWindow(QWidget):
     def phase_label(self) -> str:
         return self._label
 
-    def _apply_height(self) -> None:
-        self._panel.setVisible(self._expanded)
-        self._expand_btn.setText("▴" if self._expanded else "▾")
-        self._expand_btn.setToolTip("Collapse" if self._expanded else "Expand")
-        root = self.findChild(QWidget, "floatRoot")
-        if root is not None:
-            radius = 16 if self._expanded else 20
-            root.setStyleSheet(
-                f"background: {BG}; border: 1px solid {BORDER}; border-radius: {radius}px;"
-            )
-        self.adjustSize()
-
-    def _toggle_expand(self) -> None:
-        self._expanded = not self._expanded
-        self._apply_height()
-        if self._placed:
-            # Keep bottom edge stable-ish when expanding upward
-            geo = self.geometry()
-            self.adjustSize()
-            delta = self.height() - geo.height()
-            if delta:
-                self.move(self.x(), max(8, self.y() - delta))
+    # ── Rendering & layout ───────────────────────────────────
 
     def _render(self) -> None:
         m, s = divmod(max(0, self._remaining), 60)
         self._time.setText(f"{m:02d}:{s:02d}")
+
+        is_break = self._label == "BREAK"
         if self._awaiting_break:
-            self._hint.setText("REST?")
-            self._hint.setVisible(True)
-            self._time.setStyleSheet(f"color: {MUTED}; background: transparent; padding: 0 2px;")
-            self._dot.setStyleSheet(f"color: {ACCENT}; font-size: 10px;")
-            self._dot.setToolTip("Choose rest or continue")
+            self._phase.setText("REST?")
+            dot = ACCENT
+            time_color = MUTED
             self._break_btn.setVisible(True)
             self._snooze_btn.setVisible(True)
             self._pause_btn.setVisible(False)
         elif self._paused:
-            self._hint.setVisible(False)
-            self._time.setStyleSheet(f"color: {MUTED}; background: transparent; padding: 0 2px;")
-            self._dot.setStyleSheet(f"color: {MUTED}; font-size: 10px;")
-            self._dot.setToolTip("Paused")
-            self._break_btn.setVisible(self._label != "BREAK")
+            self._phase.setText("PAUSED")
+            dot = MUTED
+            time_color = MUTED
+            self._break_btn.setVisible(not is_break)
             self._snooze_btn.setVisible(False)
             self._pause_btn.setVisible(True)
             self._pause_btn.setText("Resume")
         else:
-            self._hint.setVisible(False)
-            self._time.setStyleSheet(f"color: {FG}; background: transparent; padding: 0 2px;")
-            self._dot.setStyleSheet(
-                f"color: {'#60a5fa' if self._label == 'BREAK' else ACCENT}; font-size: 10px;"
-            )
-            self._dot.setToolTip("")
-            self._break_btn.setVisible(self._label != "BREAK")
+            self._phase.setText("BREAK" if is_break else "FOCUS")
+            dot = BREAK_BLUE if is_break else ACCENT
+            time_color = FG
+            self._break_btn.setVisible(not is_break)
             self._snooze_btn.setVisible(False)
             self._pause_btn.setVisible(True)
             self._pause_btn.setText("Pause")
-        self._apply_height()
+
+        self._dot.setStyleSheet(f"color: {dot}; background: transparent; font-size: 13px;")
+        self._time.setStyleSheet(f"color: {time_color}; background: transparent;")
+
+    def _apply_expanded(self) -> None:
+        self._panel.setVisible(self._expanded)
+        self._expand_btn.setText("⌃" if self._expanded else "⌄")
+        self._expand_btn.setToolTip("Less" if self._expanded else "More")
+        # Grow upward so the header stays put.
+        before = self.geometry()
+        self.adjustSize()
+        if self._placed:
+            delta = self.height() - before.height()
+            if delta:
+                self.move(self.x(), max(8, self.y() - delta))
+
+    def _toggle_expand(self) -> None:
+        self._expanded = not self._expanded
+        self._apply_expanded()
 
     def _on_pause_resume(self) -> None:
         if self._paused:
@@ -464,8 +449,6 @@ class FloatTimerWindow(QWidget):
         self.music_volume_requested.emit(value / 100.0)
 
     def _on_tick(self) -> None:
-        # Web bridge usually drives the clock. If the main window is hidden and
-        # JS is throttled, take over locally after ~1.4s without a sync.
         if self._paused or self._awaiting_break:
             return
         if time.monotonic() - self._last_web_sync < 1.4:
@@ -483,38 +466,23 @@ class FloatTimerWindow(QWidget):
             try:
                 import ctypes
 
-                hwnd = int(self.winId())
-                HWND_TOPMOST = -1
-                SWP_NOMOVE = 0x0002
-                SWP_NOSIZE = 0x0001
-                SWP_NOACTIVATE = 0x0010
-                SWP_SHOWWINDOW = 0x0040
                 ctypes.windll.user32.SetWindowPos(
-                    hwnd,
-                    HWND_TOPMOST,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                    int(self.winId()), -1, 0, 0, 0, 0, 0x0002 | 0x0001 | 0x0010 | 0x0040
                 )
             except Exception:
                 pass
 
+    # ── Position ─────────────────────────────────────────────
+
     def _place_bottom_right(self) -> None:
-        screen = self.screen()
-        if screen is None:
-            screen = QGuiApplication.primaryScreen()
+        screen = self.screen() or QGuiApplication.primaryScreen()
         if screen is None:
             return
         geo = screen.availableGeometry()
         self.adjustSize()
-        x = geo.right() - self.width() - 16
-        y = geo.bottom() - self.height() - 16
-        self.move(x, y)
+        self.move(geo.right() - self.width() - 16, geo.bottom() - self.height() - 16)
 
     def _restore_or_default_position(self) -> None:
-        """Saved spot if it is still on a screen, bottom-right otherwise."""
         try:
             pos = load_config().get("float_timer_pos")
             x, y = int(pos[0]), int(pos[1])
@@ -535,25 +503,22 @@ class FloatTimerWindow(QWidget):
             cfg["float_timer_pos"] = [self.x(), self.y()]
             save_config(cfg)
         except Exception:
-            pass  # a failed save must never break the drag
+            pass
+
+    # ── Menu & mouse ─────────────────────────────────────────
 
     def _context_menu(self, pos) -> None:
         menu = QMenu(self)
-        open_a = menu.addAction("Open Fellowship Focus")
-        open_a.triggered.connect(self.open_app_requested.emit)
-        hide_a = menu.addAction("Hide timer")
-        hide_a.triggered.connect(self._on_dismiss)
+        menu.addAction("Open Fellowship Focus").triggered.connect(self.open_app_requested.emit)
+        menu.addAction("Hide timer").triggered.connect(self._on_dismiss)
         menu.addSeparator()
-        end_a = menu.addAction("End session")
-        end_a.triggered.connect(self._on_end_session)
+        menu.addAction("End session").triggered.connect(self._on_end_session)
         menu.exec(self.mapToGlobal(pos))
 
     def _on_dismiss(self) -> None:
-        """× / Hide — notification UI only; do not stop the Pomodoro session."""
         self.dismiss()
 
     def _on_end_session(self) -> None:
-        """Explicit end from context menu — tear down float + notify web to stop."""
         self.hide_timer()
         self.closed_by_user.emit()
 
