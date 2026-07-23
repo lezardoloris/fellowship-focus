@@ -949,21 +949,19 @@ async function notifyBlocked(domain) {
 
 let _notifyDebounce = null;
 
-// ── Dopamine "Block this site?" + adult "Back to work?" prompts ──
+// ── Soft "Back to work?" productivity nudges ──
 // During an active shield, visiting a known distractor / adult destination that
-// is NOT already blocked → Yes/No notification. Adult uses stronger copy.
-// When the desktop system proxy is up it owns this prompt (avoids double toast).
+// is NOT already blocked → discreet in-page toast (nudge.js) with notification
+// fallback. Adult takes priority (search/reddit heuristics). Desktop mitm owns
+// the prompt while the system shield is detected (avoids double toast).
 
 const DOPAMINE_PROMPT_PREFIX = "ff-dopamine-";
 const ADULT_PROMPT_PREFIX = "ff-adult-";
-const DOPAMINE_SNOOZE_MS = 30 * 60 * 1000;
-const ADULT_SNOOZE_MS = 5 * 60 * 1000; // short snooze — "Snooze 5m"
-const ADULT_KEEP_WORKING_MS = 30 * 60 * 1000; // dismiss / Keep working
+const FOCUS_SNOOZE_MS = 5 * 60 * 1000; // "Snooze 5m"
+const FOCUS_DISMISS_MS = 15 * 60 * 1000; // dismiss / keep browsing
 const DESKTOP_ADD_SITE_URL = "http://add.fellowshipfocus.internal/";
-/** @type {Map<string, { tabId?: number, at: number }>} */
-const _dopaminePending = new Map();
-/** @type {Map<string, { tabId?: number, at: number, kind: string }>} */
-const _adultPending = new Map();
+/** @type {Map<string, { tabId?: number, at: number, category: string, kind: string, via?: string }>} */
+const _focusNudgePending = new Map();
 
 function dopamineNotifId(domain) {
   return DOPAMINE_PROMPT_PREFIX + domain;
@@ -973,34 +971,34 @@ function adultNotifId(domain) {
   return ADULT_PROMPT_PREFIX + domain;
 }
 
-async function getDopamineSnooze() {
-  const { dopamineSnooze } = await chrome.storage.local.get("dopamineSnooze");
-  return dopamineSnooze && typeof dopamineSnooze === "object" ? dopamineSnooze : {};
+function focusNotifId(category, domain) {
+  return category === "adult" ? adultNotifId(domain) : dopamineNotifId(domain);
 }
 
-async function snoozeDopamine(domain, ms = DOPAMINE_SNOOZE_MS) {
-  const map = await getDopamineSnooze();
+function isSoftPromptSkipHost(host) {
+  const h = String(host || "").toLowerCase();
+  if (!h) return true;
+  if (h.includes("fellowship-focus")) return true;
+  if (h.endsWith(".fellowshipfocus.internal") || h === "fellowshipfocus.internal") return true;
+  return false;
+}
+
+async function getSoftSnoozeMap(category) {
+  const key = category === "adult" ? "adultSnooze" : "dopamineSnooze";
+  const bag = await chrome.storage.local.get(key);
+  const map = bag[key];
+  return map && typeof map === "object" ? map : {};
+}
+
+async function snoozeSoftPrompt(domain, category, ms = FOCUS_SNOOZE_MS) {
+  const key = category === "adult" ? "adultSnooze" : "dopamineSnooze";
+  const map = await getSoftSnoozeMap(category);
   const now = Date.now();
   for (const [k, until] of Object.entries(map)) {
     if (Number(until) <= now) delete map[k];
   }
-  map[domain] = now + Math.max(60_000, Number(ms) || DOPAMINE_SNOOZE_MS);
-  await chrome.storage.local.set({ dopamineSnooze: map });
-}
-
-async function getAdultSnooze() {
-  const { adultSnooze } = await chrome.storage.local.get("adultSnooze");
-  return adultSnooze && typeof adultSnooze === "object" ? adultSnooze : {};
-}
-
-async function snoozeAdult(domain, ms = ADULT_SNOOZE_MS) {
-  const map = await getAdultSnooze();
-  const now = Date.now();
-  for (const [k, until] of Object.entries(map)) {
-    if (Number(until) <= now) delete map[k];
-  }
-  map[domain] = now + Math.max(60_000, Number(ms) || ADULT_SNOOZE_MS);
-  await chrome.storage.local.set({ adultSnooze: map });
+  map[domain] = now + Math.max(60_000, Number(ms) || FOCUS_SNOOZE_MS);
+  await chrome.storage.local.set({ [key]: map });
 }
 
 /** Ask the desktop proxy (if up) to add a site to the system blocklist. */
@@ -1018,95 +1016,6 @@ async function syncAddToDesktop(domain) {
   }
 }
 
-async function acceptDopamineBlock(domain) {
-  _dopaminePending.delete(domain);
-  try {
-    chrome.notifications.clear(dopamineNotifId(domain));
-  } catch {
-    /* ignore */
-  }
-  await addSite(domain);
-  await syncAddToDesktop(domain);
-  notify("Blocked", `${domain} added to your blocklist`);
-}
-
-async function declineDopamineBlock(domain, ms = DOPAMINE_SNOOZE_MS) {
-  _dopaminePending.delete(domain);
-  try {
-    chrome.notifications.clear(dopamineNotifId(domain));
-  } catch {
-    /* ignore */
-  }
-  await snoozeDopamine(domain, ms);
-}
-
-async function showDopaminePrompt(domain, tabId) {
-  const id = dopamineNotifId(domain);
-  _dopaminePending.set(domain, { tabId, at: Date.now() });
-  const base = {
-    type: "basic",
-    iconUrl: "icons/icon128.png",
-    title: `Block ${domain}?`,
-    priority: 2,
-    requireInteraction: true,
-  };
-  try {
-    await chrome.notifications.create(id, {
-      ...base,
-      message: "Distracting site during focus",
-      buttons: [{ title: "Block" }, { title: "Not now" }],
-    });
-  } catch {
-    // Buttons unsupported on some platforms — click = block, dismiss = snooze.
-    try {
-      await chrome.notifications.create(id, {
-        ...base,
-        message: "Click to block · dismiss to allow for now",
-      });
-    } catch {
-      _dopaminePending.delete(domain);
-    }
-  }
-}
-
-/** If this URL is an unblocked dopamine site, offer to add it. */
-async function maybePromptDopamine(url, tabId, cfg) {
-  if (!url || !/^https?:/i.test(url)) return;
-  // Desktop mitm owns the prompt while the system shield is detected.
-  if (cfg.desktopShieldOn) return;
-
-  let host = "";
-  try {
-    host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-  } catch {
-    return;
-  }
-  if (!host || isAllowlisted(host, cfg.prefs.allowlist || [])) return;
-
-  const domain = matchDopamineDomain(host, DOMAIN_ALIASES);
-  if (!domain) return;
-
-  const temp = liveTempAllows(cfg);
-  if (temp[host] || temp[domain]) return;
-
-  // Already on the list (full-domain) — blockDecision should have caught it.
-  for (const site of cfg.sites || []) {
-    const base = normalizeSite(site);
-    if (!base) continue;
-    for (const d of expandDomains(base)) {
-      if (domain === d || host === d || host.endsWith("." + d)) return;
-    }
-  }
-
-  const snooze = await getDopamineSnooze();
-  if ((snooze[domain] || 0) > Date.now()) return;
-
-  const pending = _dopaminePending.get(domain);
-  if (pending && Date.now() - pending.at < 5 * 60 * 1000) return;
-
-  await showDopaminePrompt(domain, tabId);
-}
-
 function _siteAlreadyListed(domain, host, cfg) {
   for (const site of cfg.sites || []) {
     const base = normalizeSite(site);
@@ -1118,16 +1027,29 @@ function _siteAlreadyListed(domain, host, cfg) {
   return false;
 }
 
-async function acceptAdultAction(domain) {
-  const pending = _adultPending.get(domain);
-  _adultPending.delete(domain);
+async function clearFocusNudgeUi(domain, category) {
+  const pending = _focusNudgePending.get(domain);
+  _focusNudgePending.delete(domain);
   try {
-    chrome.notifications.clear(adultNotifId(domain));
+    chrome.notifications.clear(focusNotifId(category, domain));
   } catch {
     /* ignore */
   }
+  if (pending?.via === "page" && typeof pending.tabId === "number") {
+    try {
+      await chrome.tabs.sendMessage(pending.tabId, { type: "FF_FOCUS_NUDGE_HIDE" });
+    } catch {
+      /* tab gone / no receiver */
+    }
+  }
+}
+
+async function acceptFocusNudge(domain, category) {
+  const pending = _focusNudgePending.get(domain);
   const kind = pending?.kind || "site";
   const tabId = pending?.tabId;
+  const cat = category || pending?.category || "distract";
+  await clearFocusNudgeUi(domain, cat);
 
   // Search SERPs: don't block google — close the tab and return to focus.
   if (kind === "search") {
@@ -1135,7 +1057,11 @@ async function acceptAdultAction(domain) {
       try {
         await chrome.tabs.remove(tabId);
       } catch {
-        /* tab may already be gone */
+        try {
+          await chrome.tabs.goBack(tabId);
+        } catch {
+          /* ignore */
+        }
       }
     }
     notify("Back to work", "Tab closed — the quest continues");
@@ -1144,11 +1070,13 @@ async function acceptAdultAction(domain) {
 
   await addSite(domain);
   await syncAddToDesktop(domain);
-  // Keep Shield armed after focus ends so the new site stays enforced.
-  await setConfig({ manualShield: true });
-  await rebuildRules();
+  if (cat === "adult") {
+    // Keep Shield armed after focus ends so the new site stays enforced.
+    await setConfig({ manualShield: true });
+    await rebuildRules();
+  }
   notify("Blocked", `${domain} added to your blocklist`);
-  if (typeof tabId === "number") {
+  if (cat === "adult" && typeof tabId === "number") {
     try {
       await chrome.tabs.remove(tabId);
     } catch {
@@ -1157,36 +1085,44 @@ async function acceptAdultAction(domain) {
   }
 }
 
-async function declineAdultAction(domain, ms = ADULT_SNOOZE_MS) {
-  _adultPending.delete(domain);
-  try {
-    chrome.notifications.clear(adultNotifId(domain));
-  } catch {
-    /* ignore */
-  }
-  await snoozeAdult(domain, ms);
+async function declineFocusNudge(domain, category, ms = FOCUS_SNOOZE_MS) {
+  const pending = _focusNudgePending.get(domain);
+  const cat = category || pending?.category || "distract";
+  await clearFocusNudgeUi(domain, cat);
+  await snoozeSoftPrompt(domain, cat, ms);
 }
 
-async function showAdultPrompt(domain, tabId, kind) {
-  const id = adultNotifId(domain);
-  _adultPending.set(domain, { tabId, at: Date.now(), kind: kind || "site" });
+/** Prefer in-page toast; fall back to Chrome notification. */
+async function showFocusNudge({ domain, tabId, kind, category }) {
+  const cat = category === "adult" ? "adult" : "distract";
+  const k = kind || "site";
+  _focusNudgePending.set(domain, { tabId, at: Date.now(), category: cat, kind: k });
 
-  // Prefer the in-page toast (3 actions) — falls back to chrome.notifications.
   if (typeof tabId === "number") {
     try {
-      await chrome.tabs.sendMessage(tabId, {
+      const res = await chrome.tabs.sendMessage(tabId, {
         type: "FF_FOCUS_NUDGE",
         domain,
-        kind: kind || "site",
-        category: "adult",
+        kind: k,
+        category: cat,
       });
-      return;
+      if (res && res.ok) {
+        _focusNudgePending.set(domain, {
+          tabId,
+          at: Date.now(),
+          category: cat,
+          kind: k,
+          via: "page",
+        });
+        return;
+      }
     } catch {
-      /* no content script yet — notification fallback */
+      /* no content script — notification fallback */
     }
   }
 
-  const blockLabel = kind === "search" ? "Close tab" : "Block site";
+  const id = focusNotifId(cat, domain);
+  const blockLabel = k === "search" ? "Close tab" : "Block site";
   const base = {
     type: "basic",
     iconUrl: "icons/icon128.png",
@@ -1200,23 +1136,35 @@ async function showAdultPrompt(domain, tabId, kind) {
       message: "This won't help the quest.",
       buttons: [{ title: blockLabel }, { title: "Snooze 5m" }],
     });
+    _focusNudgePending.set(domain, {
+      tabId,
+      at: Date.now(),
+      category: cat,
+      kind: k,
+      via: "notif",
+    });
   } catch {
     try {
       await chrome.notifications.create(id, {
         ...base,
-        message: "This won't help the quest. Click to leave · dismiss to keep working",
+        message: "This won't help the quest. Click to leave · dismiss to keep browsing",
+      });
+      _focusNudgePending.set(domain, {
+        tabId,
+        at: Date.now(),
+        category: cat,
+        kind: k,
+        via: "notif",
       });
     } catch {
-      _adultPending.delete(domain);
+      _focusNudgePending.delete(domain);
     }
   }
 }
 
 /**
- * Adult / porn navigation during shield → calm "Back to work?" nudge.
- * Takes priority over the generic dopamine prompt. Soft: nudges even when the
- * site is not yet on the blocklist; Block adds + arms.
- * @returns {Promise<boolean>} true if an adult prompt was shown (or suppressed by snooze)
+ * Adult / porn navigation during shield → "Back to work?" nudge.
+ * @returns {Promise<boolean>} true if handled (shown or snoozed)
  */
 async function maybePromptAdult(url, tabId, cfg) {
   if (!url || !/^https?:/i.test(url)) return false;
@@ -1231,7 +1179,8 @@ async function maybePromptAdult(url, tabId, cfg) {
   } catch {
     return false;
   }
-  if (!host || isAllowlisted(host, cfg.prefs.allowlist || [])) return false;
+  if (!host || isSoftPromptSkipHost(host)) return false;
+  if (isAllowlisted(host, cfg.prefs.allowlist || [])) return false;
 
   const { domain, kind } = hit;
   const temp = liveTempAllows(cfg);
@@ -1240,17 +1189,48 @@ async function maybePromptAdult(url, tabId, cfg) {
   // Already listed adult apex — blockDecision should have handled (except search).
   if (kind === "site" && _siteAlreadyListed(domain, host, cfg)) return false;
 
-  const snooze = await getAdultSnooze();
+  const snooze = await getSoftSnoozeMap("adult");
   if ((snooze[domain] || 0) > Date.now()) return true;
 
-  const pending = _adultPending.get(domain);
+  const pending = _focusNudgePending.get(domain);
   if (pending && Date.now() - pending.at < 5 * 60 * 1000) return true;
 
-  await showAdultPrompt(domain, tabId, kind);
+  await showFocusNudge({ domain, tabId, kind, category: "adult" });
   return true;
 }
 
-/** Soft prompts after an unblocked navigation — adult first, then dopamine. */
+/** Unblocked curated distractor → same "Back to work?" nudge. */
+async function maybePromptDopamine(url, tabId, cfg) {
+  if (!url || !/^https?:/i.test(url)) return;
+  if (cfg.desktopShieldOn) return;
+
+  let host = "";
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return;
+  }
+  if (!host || isSoftPromptSkipHost(host)) return;
+  if (isAllowlisted(host, cfg.prefs.allowlist || [])) return;
+
+  const domain = matchDopamineDomain(host, DOMAIN_ALIASES);
+  if (!domain) return;
+
+  const temp = liveTempAllows(cfg);
+  if (temp[host] || temp[domain]) return;
+
+  if (_siteAlreadyListed(domain, host, cfg)) return;
+
+  const snooze = await getSoftSnoozeMap("distract");
+  if ((snooze[domain] || 0) > Date.now()) return;
+
+  const pending = _focusNudgePending.get(domain);
+  if (pending && Date.now() - pending.at < 5 * 60 * 1000) return;
+
+  await showFocusNudge({ domain, tabId, kind: "site", category: "distract" });
+}
+
+/** Soft prompts after an unblocked navigation — adult first, then distractors. */
 async function maybePromptSoft(url, tabId, cfg) {
   if (await maybePromptAdult(url, tabId, cfg)) return;
   await maybePromptDopamine(url, tabId, cfg);
@@ -1260,41 +1240,42 @@ if (chrome.notifications) {
   chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {
     if (id.startsWith(ADULT_PROMPT_PREFIX)) {
       const domain = id.slice(ADULT_PROMPT_PREFIX.length);
-      if (buttonIndex === 0) void acceptAdultAction(domain);
-      else void declineAdultAction(domain, ADULT_SNOOZE_MS);
+      if (buttonIndex === 0) void acceptFocusNudge(domain, "adult");
+      else void declineFocusNudge(domain, "adult", FOCUS_SNOOZE_MS);
       return;
     }
     if (!id.startsWith(DOPAMINE_PROMPT_PREFIX)) return;
     const domain = id.slice(DOPAMINE_PROMPT_PREFIX.length);
-    if (buttonIndex === 0) void acceptDopamineBlock(domain);
-    else void declineDopamineBlock(domain);
+    if (buttonIndex === 0) void acceptFocusNudge(domain, "distract");
+    else void declineFocusNudge(domain, "distract", FOCUS_SNOOZE_MS);
   });
   chrome.notifications.onClicked.addListener((id) => {
     if (id.startsWith(ADULT_PROMPT_PREFIX)) {
-      const domain = id.slice(ADULT_PROMPT_PREFIX.length);
-      void acceptAdultAction(domain);
+      void acceptFocusNudge(id.slice(ADULT_PROMPT_PREFIX.length), "adult");
       return;
     }
     if (!id.startsWith(DOPAMINE_PROMPT_PREFIX)) return;
-    const domain = id.slice(DOPAMINE_PROMPT_PREFIX.length);
-    void acceptDopamineBlock(domain);
+    void acceptFocusNudge(id.slice(DOPAMINE_PROMPT_PREFIX.length), "distract");
   });
   chrome.notifications.onClosed.addListener((id, byUser) => {
     if (id.startsWith(ADULT_PROMPT_PREFIX)) {
       const domain = id.slice(ADULT_PROMPT_PREFIX.length);
-      if (!_adultPending.has(domain)) return;
-      // Keep working (user dismiss) → longer snooze; auto-timeout → 5m.
-      void declineAdultAction(
+      if (!_focusNudgePending.has(domain)) return;
+      void declineFocusNudge(
         domain,
-        byUser ? ADULT_KEEP_WORKING_MS : ADULT_SNOOZE_MS,
+        "adult",
+        byUser ? FOCUS_DISMISS_MS : FOCUS_SNOOZE_MS,
       );
       return;
     }
     if (!id.startsWith(DOPAMINE_PROMPT_PREFIX)) return;
     const domain = id.slice(DOPAMINE_PROMPT_PREFIX.length);
-    if (!_dopaminePending.has(domain)) return;
-    // User dismissed or the toast timed out — short snooze to avoid spam.
-    void declineDopamineBlock(domain, byUser ? DOPAMINE_SNOOZE_MS : 5 * 60 * 1000);
+    if (!_focusNudgePending.has(domain)) return;
+    void declineFocusNudge(
+      domain,
+      "distract",
+      byUser ? FOCUS_DISMISS_MS : FOCUS_SNOOZE_MS,
+    );
   });
 }
 
@@ -1313,10 +1294,34 @@ async function checkActiveTab(tabId) {
 }
 
 // Instant kill the moment a navigation STARTS — before the page loads, as soon
-// as you hit enter in the address bar. No keystroke logging: this is the
-// browser's own navigation event. Also historyStateUpdated for SPA (YouTube).
+// as you hit enter in the address bar. Soft nudges wait for onCompleted so the
+// in-page toast content script is ready. historyStateUpdated covers SPA routes.
 async function onTopFrameNavigate(details) {
   if (details.frameId !== 0) return; // top frame only
+  try {
+    const cfg = await getConfig();
+    if (!effectiveShield(cfg)) return;
+    const hit = blockDecision(details.url, cfg);
+    if (hit) await enforceBlock(details.tabId, details.url, cfg, hit);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function onTopFrameCompleted(details) {
+  if (details.frameId !== 0) return;
+  try {
+    const cfg = await getConfig();
+    if (!effectiveShield(cfg)) return;
+    const hit = blockDecision(details.url, cfg);
+    if (!hit) await maybePromptSoft(details.url, details.tabId, cfg);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function onHistoryStateUpdated(details) {
+  if (details.frameId !== 0) return;
   try {
     const cfg = await getConfig();
     if (!effectiveShield(cfg)) return;
@@ -1329,7 +1334,8 @@ async function onTopFrameNavigate(details) {
 }
 
 chrome.webNavigation.onBeforeNavigate.addListener(onTopFrameNavigate);
-chrome.webNavigation.onHistoryStateUpdated.addListener(onTopFrameNavigate);
+chrome.webNavigation.onCompleted.addListener(onTopFrameCompleted);
+chrome.webNavigation.onHistoryStateUpdated.addListener(onHistoryStateUpdated);
 
 chrome.tabs.onActivated.addListener((info) => {
   probeDesktopShield();
@@ -1381,7 +1387,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
 });
 
-function handleMessage(msg, sendResponse) {
+function handleMessage(msg, sendResponse, sender) {
   (async () => {
     switch (msg?.type) {
       case "getState":
@@ -1514,6 +1520,41 @@ function handleMessage(msg, sendResponse) {
       case "getPrefs":
         sendResponse({ prefs: (await getConfig()).prefs });
         break;
+      case "focusNudgeAction": {
+        const domain = String(msg.domain || "").trim().toLowerCase();
+        const category = msg.category === "adult" ? "adult" : "distract";
+        const action = String(msg.action || "");
+        if (!domain) {
+          sendResponse({ error: "no_domain" });
+          break;
+        }
+        const pending = _focusNudgePending.get(domain);
+        if (msg.kind && pending) pending.kind = String(msg.kind);
+        if (!pending) {
+          // Stale toast after SW restart — still honor snooze so it doesn't re-spam.
+          if (action === "snooze") await snoozeSoftPrompt(domain, category, FOCUS_SNOOZE_MS);
+          else if (action === "dismiss") await snoozeSoftPrompt(domain, category, FOCUS_DISMISS_MS);
+          else if (action === "block") {
+            _focusNudgePending.set(domain, {
+              kind: msg.kind || "site",
+              category,
+              at: Date.now(),
+            });
+            await acceptFocusNudge(domain, category);
+          }
+          sendResponse({ ok: true });
+          break;
+        }
+        if (action === "block") await acceptFocusNudge(domain, category);
+        else if (action === "snooze") await declineFocusNudge(domain, category, FOCUS_SNOOZE_MS);
+        else if (action === "dismiss") await declineFocusNudge(domain, category, FOCUS_DISMISS_MS);
+        else {
+          sendResponse({ error: "unknown_action" });
+          break;
+        }
+        sendResponse({ ok: true });
+        break;
+      }
       default:
         sendResponse({ error: "unknown" });
     }
