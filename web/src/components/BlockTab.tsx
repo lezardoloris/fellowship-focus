@@ -18,6 +18,7 @@ import { useToast } from "@/components/Toasts";
 import { PremiumLoader } from "@/components/PremiumLoader";
 import { FocusMusicPanel } from "@/components/FocusMusicPanel";
 import { requestHardUnlock } from "@/components/BlockerControls";
+import { usePublishBlockerMode } from "@/components/BlockerMode";
 import {
   DEFAULT_BLOCKER_SETTINGS,
   mergeBlockerSettings,
@@ -124,6 +125,8 @@ export function BlockTab({
   const [dt, setDt] = useState<DesktopState | null>(null);
   const [shieldBusy, setShieldBusy] = useState(false);
   const isDesktop = Boolean(dt?.available);
+  // Inside the desktop webview a Chrome extension can never exist — prefer desktop UI.
+  const useDesktopUi = isDesktop || isDesktopShell();
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [remaining, setRemaining] = useState(0);
@@ -509,6 +512,9 @@ export function BlockTab({
     await toggleExtensionShield();
   }
 
+  const blockNowRef = useRef(blockNow);
+  blockNowRef.current = blockNow;
+
   async function connectChrome() {
     const state = await armExtension();
     if (state && isArmed(state)) {
@@ -861,19 +867,28 @@ export function BlockTab({
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
   const ss = String(remaining % 60).padStart(2, "0");
 
-  if (loading) return <PremiumLoader full />;
-
   const on = Boolean(dt?.shieldOn && dt?.active);
   const inSession = phase !== "idle";
   const extArmed = isArmed(extState);
-  // Inside the desktop webview a Chrome extension can never exist, so never
-  // fall back to the browser UI there — even if the Qt bridge is slow or broken.
-  const inShell = isDesktopShell();
-  const useDesktopUi = isDesktop || inShell;
   // Whichever engine is in play, this is "are sites actually blocked right now".
   const shieldLive = useDesktopUi ? on : extArmed;
   // Engine boot window: not blocking yet, but not OFF either — say so.
   const shieldArming = Boolean(useDesktopUi && dt?.arming && !on);
+  const shieldConnected = useDesktopUi || extReady;
+
+  const publishToggle = useCallback(() => {
+    void blockNowRef.current();
+  }, []);
+
+  usePublishBlockerMode({
+    live: shieldLive,
+    arming: shieldArming,
+    busy: shieldBusy || loading,
+    connected: shieldConnected,
+    toggle: publishToggle,
+  });
+
+  if (loading) return <PremiumLoader full />;
 
   return (
     <>
@@ -929,52 +944,7 @@ export function BlockTab({
           </div>
         )}
 
-        {/* Blocker Mode — one label + ON/OFF. Site count lives on the list. */}
-        <div className="flex justify-end">
-          <div className="inline-flex select-none items-center gap-3 rounded-full border border-white/15 bg-[#0c0e10]/90 py-1.5 pl-3.5 pr-1.5 shadow-lg">
-            <span className="text-xs font-medium tracking-wide text-white/85">
-              Blocker Mode
-            </span>
-            <span
-              className={`h-2 w-2 shrink-0 rounded-full ${
-                shieldLive
-                  ? "bg-emerald-400"
-                  : shieldArming
-                    ? "animate-pulse bg-amber-400"
-                    : "bg-white/25"
-              }`}
-              aria-hidden
-            />
-
-            {!useDesktopUi && !extReady && (
-              <a
-                href="/download"
-                className="rounded-full px-2.5 py-1.5 text-xs text-white/75 transition hover:text-white"
-              >
-                Get the app
-              </a>
-            )}
-            <button
-              type="button"
-              role="switch"
-              aria-checked={shieldLive}
-              aria-label={
-                shieldArming
-                  ? "Blocker Mode arming"
-                  : `Blocker Mode ${shieldLive ? "ON" : "OFF"}`
-              }
-              disabled={shieldBusy || shieldArming}
-              onClick={blockNow}
-              className={`min-w-[3.25rem] rounded-full px-3.5 py-1.5 text-xs font-bold tracking-wider transition disabled:opacity-50 ${
-                shieldLive || shieldArming
-                  ? "bg-[#b8422e] text-white hover:bg-[#c46551]"
-                  : "bg-white/12 text-white/75 hover:bg-white/18 hover:text-white"
-              }`}
-            >
-              {shieldBusy || shieldArming ? "…" : shieldLive ? "ON" : "OFF"}
-            </button>
-          </div>
-        </div>
+        {/* Blocker Mode lives in the sticky header on every tab (product moat). */}
 
         {/* One horizontal band: Timer | Block list | Music. Equal heights, no
             floating half-empty panel, stacks vertically under xl. */}

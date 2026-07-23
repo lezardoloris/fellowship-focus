@@ -10,6 +10,7 @@ import { GuildDirectory } from "@/components/GuildDirectory";
 import { ImmersiveScene } from "@/components/ImmersiveScene";
 import { SettingsPanel, useBackgroundPrefs } from "@/components/SettingsPanel";
 import { PremiumLoader } from "@/components/PremiumLoader";
+import { BlockerModePill, BlockerModeProvider } from "@/components/BlockerMode";
 import { type SceneId } from "@/lib/scenes";
 
 type Tab = "block" | "focus" | "guild";
@@ -247,9 +248,10 @@ export function FocusApp() {
   const joined = Boolean(code && token);
 
   return (
+    <BlockerModeProvider>
     <Shell scene={bgPrefs.scene}>
       <header className="sticky top-0 z-20">
-        <div className="mx-auto flex max-w-6xl items-center justify-center gap-3 px-4 py-4 md:px-8">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-2 px-4 py-4 md:gap-3 md:px-8">
           <nav className="flex items-center gap-1 rounded-full border border-white/20 bg-black/55 p-1">
             {TABS.map((t) => (
               <button
@@ -266,6 +268,7 @@ export function FocusApp() {
               </button>
             ))}
           </nav>
+          <BlockerModePill />
           {googleUser ? (
             <button
               type="button"
@@ -354,6 +357,7 @@ export function FocusApp() {
         name={name}
       />
     </Shell>
+    </BlockerModeProvider>
   );
 }
 
