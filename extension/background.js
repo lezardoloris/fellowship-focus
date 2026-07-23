@@ -676,6 +676,8 @@ async function connect(payload) {
 
 /** Replace the whole list — used on every web-app mutation so rules stay live. */
 async function setSites(list) {
+  // Replace list only — never clear Shield. Empty list still rebuilds (user cleared);
+  // callers must not pass [] when they meant "unchanged" (timer/music sync races).
   const sites = (Array.isArray(list) ? list : []).map(normalizeSite).filter(Boolean);
   await setConfig({ sites: [...new Set(sites)] });
   await rebuildRules();

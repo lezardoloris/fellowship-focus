@@ -1098,22 +1098,37 @@ class MainWindow(QMainWindow):
         return s.split("/", 1)[0].strip()
 
     def _web_set_prefs(self, patch: dict) -> dict:
-        """Push prefs edited in the web UI (mode, block style…) into the desktop
-        config the proxy actually reads, and re-arm if needed. Without this the
-        'Whole sites / Feeds only' toggle changed only the web copy while the
-        engine kept using config.json — so YouTube stayed reachable in soft mode
-        even though the UI showed Lockdown."""
+        """Push prefs edited in the web UI into the desktop config.
+
+        Field-scoped: only blocker_mode / block_style are accepted here.
+        Timer, alarm, and music must NEVER arrive on this path — and even if
+        they do, they must not restart mitm. Restarting releases the system
+        proxy (~15s gap) and looks like Shield randomly disarmed.
+        """
         if not isinstance(patch, dict):
             return self._web_blocker_state()
+        # Hot path guard: ignore non-blocker keys so a buggy full-blob write
+        # cannot disarm Shield via timer/music fields.
+        engine_dirty = False
+        config_dirty = False
         mode = patch.get("blocker_mode")
         if mode in ("soft", "hard") and mode != self.config.get("blocker_mode"):
             self.config["blocker_mode"] = mode
+            engine_dirty = True
+            config_dirty = True
             if hasattr(self, "preset_soft_btn"):
                 self._sync_preset_ui()
         if "block_style" in patch:
-            self.config["block_style"] = "notify" if patch["block_style"] == "notify" else "page"
-        save_config(self.config)
-        if self.blocker_active:
+            new_style = "notify" if patch["block_style"] == "notify" else "page"
+            if new_style != self.config.get("block_style", "page"):
+                self.config["block_style"] = new_style
+                config_dirty = True
+                # block_style is extension-facing; mitm does not need a restart.
+        if config_dirty:
+            save_config(self.config)
+        # Only reapply when mode actually changed — skip when sites/mode unchanged
+        # so we never open a proxy gap for a no-op prefs write.
+        if engine_dirty and self.blocker_active:
             self._release_blocker_infra()
             self._enable_blocker()
         return self._web_blocker_state()
@@ -1154,6 +1169,11 @@ class MainWindow(QMainWindow):
             editor.blockSignals(False)
 
     def _web_reapply_sites(self) -> None:
+        """Re-arm after a real site-list mutation only (callers already diff).
+
+        Restarting mitm releases the system proxy — never call this from
+        music/timer/prefs paths when blocked_sites are unchanged.
+        """
         save_config(self.config)
         self._sync_sites_editor()
         if self.blocker_active:

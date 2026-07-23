@@ -212,7 +212,11 @@ export function BlockTab({
 
   const applyDesktopState = useCallback((st: DesktopState) => {
     setDt(st);
-    setSites(st.sites.map((s) => ({ id: s, site: s, category: null })));
+    // Never clobber a good list with an empty poll (arming gap / race). Music
+    // and timer must not wipe sites via desktop state sync.
+    if (Array.isArray(st.sites) && st.sites.length > 0) {
+      setSites(st.sites.map((s) => ({ id: s, site: s, category: null })));
+    }
   }, []);
 
   const load = useCallback(async () => {
@@ -463,16 +467,21 @@ export function BlockTab({
   }
 
   async function savePrefs(next: Prefs) {
+    const prev = prefsRef.current;
     const merged = mergeBlockerSettings(next);
     setPrefs(merged);
-    // Inside the desktop app the proxy reads config.json, so mode/style edits
-    // must reach it — otherwise "Whole sites" changed only the web copy and
-    // the engine kept blocking in soft mode (YouTube stayed reachable).
-    if (isDesktopShell() || isDesktop) {
-      const st = await desktopBridge.setPrefs({
-        blocker_mode: merged.blocker_mode,
-        block_style: merged.block_style,
-      });
+    prefsRef.current = merged;
+    // Desktop setPrefs must stay field-scoped: timer/alarm/music writes must
+    // NEVER push blocker_mode/block_style. The desktop bridge restarts mitm
+    // (releases system proxy) when those fields change — a full-blob prefs
+    // write on every focus_min tweak was disarming Shield for ~15s.
+    const modeChanged = merged.blocker_mode !== prev.blocker_mode;
+    const styleChanged = merged.block_style !== prev.block_style;
+    if ((isDesktopShell() || isDesktop) && (modeChanged || styleChanged)) {
+      const patch: Record<string, unknown> = {};
+      if (modeChanged) patch.blocker_mode = merged.blocker_mode;
+      if (styleChanged) patch.block_style = merged.block_style;
+      const st = await desktopBridge.setPrefs(patch);
       if (st.available) setDt(st);
     }
     if (!token) {

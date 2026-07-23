@@ -36,6 +36,7 @@ export function FocusMusicPanel({ compact = false, className, style }: FocusMusi
     if (!inShell) return;
     // Older deployed web builds auto-sent play on mount / reload / focus restore.
     // Kill that race once per panel lifetime; Play still works via toggle.
+    // musicCmd is isolated from Shield — never call setPrefs / setShield here.
     void desktopBridge.musicCmd({ cmd: "stop" }).then((s) => s && setMusic(s));
     refreshMusic();
     const id = setInterval(refreshMusic, 2000);

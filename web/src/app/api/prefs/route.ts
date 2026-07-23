@@ -46,7 +46,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401, headers: corsHeaders });
     }
     const current = getBlockerSettings(member.id);
-    const merged = mergeBlockerSettings({ ...current, ...body });
+    // Field-scoped: never spread raw body (token, action, …) into settings.
+    const nested = body.settings;
+    const patch =
+      nested && typeof nested === "object"
+        ? (nested as Partial<typeof current>)
+        : (() => {
+            const { token: _t, action: _a, settings: _s, ...rest } = body as Record<
+              string,
+              unknown
+            >;
+            return rest as Partial<typeof current>;
+          })();
+    const merged = mergeBlockerSettings({ ...current, ...patch });
     setBlockerSettings(member.id, merged);
     setMemberPrefs(member.id, {
       focus_min: merged.focus_min,

@@ -190,7 +190,11 @@ export const desktopBridge = {
     });
   },
 
-  /** Push web-edited prefs (blocker_mode, block_style) into the desktop config. */
+  /**
+   * Push blocker-only prefs into the desktop config.
+   * Pass ONLY changed blocker_mode / block_style — never timer, alarm, or music.
+   * Desktop may restart mitm when mode changes; unrelated fields must not call this.
+   */
   setPrefs(patch: Record<string, unknown>): Promise<DesktopState> {
     const b = raw();
     if (!b?.setPrefs) return Promise.resolve(EMPTY);
