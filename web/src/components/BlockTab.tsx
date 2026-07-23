@@ -16,6 +16,7 @@ import {
 } from "@/lib/extensionBridge";
 import { useToast } from "@/components/Toasts";
 import { PremiumLoader } from "@/components/PremiumLoader";
+import { FocusMusicPanel } from "@/components/FocusMusicPanel";
 import { requestHardUnlock } from "@/components/BlockerControls";
 import { usePublishBlockerMode } from "@/components/BlockerMode";
 import {
@@ -935,7 +936,7 @@ export function BlockTab({
         {/* Blocker Mode lives in the sticky header on every tab (product moat). */}
 
         {/* Timer | Block list — music removed; keep the moat simple. */}
-        <div className="mx-auto grid w-full max-w-6xl items-stretch gap-4 lg:grid-cols-2">
+        <div className="mx-auto grid w-full max-w-6xl items-stretch gap-4 lg:grid-cols-2 xl:grid-cols-[1fr_1.15fr_0.85fr]">
           <div className="glass-panel flex h-full max-h-[min(70vh,34rem)] flex-col overflow-hidden">
             <div className="border-b border-white/10 px-5 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/55">
@@ -1198,6 +1199,8 @@ export function BlockTab({
               );
             })()}
           </div>
+
+          <FocusMusicPanel />
         </div>
 
     </div>
