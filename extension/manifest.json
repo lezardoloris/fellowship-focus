@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fellowship Focus — Blocker",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "Block distracting sites, schedules, friction mode, history suggestions, sync with Fellowship Focus.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvEfFXaofgwXAbKzcLVt2yzSzt1PsXqjzchYo+hnH6ZcWSYDKKqOq3gYmhTp8tPzA2vqGYMmPf4bS9Tqk7aNW9P8d40qWowTNgkM95qoJDBfqU6gPyxPsHOFieiHsDQJIQ125r/B/IQd7TE6myh4kQQAn5b6Mps2gbMPfALuM8IKjaXc8dmsgTDwLFKoa7eARLTyNE0DuQVy0eGVmpbKfWc/BMHnRbe6h8Y5CHW40NUra/aAJcI/i0IWjTcHqgpm7IN01NbmVwD4JOYr1MBZCyTtwU9aNcoWRQzS004wzBkUnPG2FOPPF2stFzGCrlRg2ntclZizuTYqQl5MfRZ3ygQIDAQAB",
   "permissions": ["declarativeNetRequest", "storage", "alarms", "notifications", "tabs", "browsingData", "webNavigation"],

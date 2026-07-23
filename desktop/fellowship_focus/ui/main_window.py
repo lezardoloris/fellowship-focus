@@ -2197,23 +2197,14 @@ class MainWindow(QMainWindow):
 
         self._block_prompt_domain = domain
         self._block_prompt_kind = "adult" if is_adult else "dopamine"
-        if is_adult:
-            accept_tip = "Close tab" if domain == "google-search" else "Block site"
-            self._block_prompt.show_nudge(
-                18000,
-                title="Back to work?",
-                subtitle="This won't help the quest.",
-                accept_tip=accept_tip,
-                decline_tip="Snooze 5m",
-            )
-        else:
-            self._block_prompt.show_nudge(
-                18000,
-                title=f"Block {domain}?",
-                subtitle="Distracting site during focus",
-                accept_tip="Add to blocklist",
-                decline_tip="Allow for now",
-            )
+        accept_tip = "Close tab" if domain == "google-search" else "Block this site"
+        self._block_prompt.show_nudge(
+            18000,
+            title="Back to work?",
+            subtitle="This won't help the quest.",
+            accept_tip=accept_tip,
+            decline_tip="Snooze 15m",
+        )
 
     def _on_block_prompt_accept(self) -> None:
         domain = self._block_prompt_domain
@@ -2236,16 +2227,14 @@ class MainWindow(QMainWindow):
         import time
 
         domain = self._block_prompt_domain
-        kind = getattr(self, "_block_prompt_kind", "dopamine")
         self._block_prompt_domain = None
         self._block_prompt_kind = "dopamine"
         if domain:
-            # Adult: short 5m snooze. Dopamine: 30m.
-            snooze_s = 300 if kind == "adult" else 1800
-            self._block_prompt_snooze[domain] = time.monotonic() + snooze_s
+            # 15m quiet window per host (matches extension FOCUS_DISMISS_MS).
+            self._block_prompt_snooze[domain] = time.monotonic() + 900
 
         # Snooze session nudge so a "not now" is respected.
-        self._nudge_snooze_until = time.monotonic() + 1800
+        self._nudge_snooze_until = time.monotonic() + 900
 
     def _show_from_tray(self) -> None:
         self._apply_default_window_size()

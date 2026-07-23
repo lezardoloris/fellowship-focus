@@ -5,8 +5,8 @@ MITMDUMP_CHECK_URL = "http://check.fellowshipfocus.internal/"
 # Extension → desktop: add a site to the system blocklist while the proxy is up.
 MITMDUMP_ADD_SITE_URL = "http://add.fellowshipfocus.internal/"
 
-# Social / video / news (+ history distractors). Kept in sync with
-# extension/history.js DOPAMINE_SITES for "Block this site?" prompts.
+# Social / video / news / games (+ cousins). Sync with extension/history.js
+# DOPAMINE_SITES for soft "Back to work?" prompts during an armed shield.
 DOPAMINE_SITES = frozenset(
     {
         "youtube.com",
@@ -29,8 +29,15 @@ DOPAMINE_SITES = frozenset(
         "web.whatsapp.com",
         "primevideo.com",
         "disneyplus.com",
+        "hulu.com",
+        "max.com",
+        "crunchyroll.com",
         "lemonde.fr",
         "threads.net",
+        "aliexpress.com",
+        "roblox.com",
+        "steampowered.com",
+        "epicgames.com",
     }
 )
 

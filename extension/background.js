@@ -1057,11 +1057,7 @@ async function acceptFocusNudge(domain, category) {
       try {
         await chrome.tabs.remove(tabId);
       } catch {
-        try {
-          await chrome.tabs.goBack(tabId);
-        } catch {
-          /* ignore */
-        }
+        /* tab may already be gone */
       }
     }
     notify("Back to work", "Tab closed — the quest continues");
@@ -1528,22 +1524,21 @@ function handleMessage(msg, sendResponse, sender) {
           sendResponse({ error: "no_domain" });
           break;
         }
-        const pending = _focusNudgePending.get(domain);
-        if (msg.kind && pending) pending.kind = String(msg.kind);
+        let pending = _focusNudgePending.get(domain);
         if (!pending) {
-          // Stale toast after SW restart — still honor snooze so it doesn't re-spam.
-          if (action === "snooze") await snoozeSoftPrompt(domain, category, FOCUS_SNOOZE_MS);
-          else if (action === "dismiss") await snoozeSoftPrompt(domain, category, FOCUS_DISMISS_MS);
-          else if (action === "block") {
-            _focusNudgePending.set(domain, {
-              kind: msg.kind || "site",
-              category,
-              at: Date.now(),
-            });
-            await acceptFocusNudge(domain, category);
+          pending = {
+            tabId: sender?.tab?.id,
+            kind: msg.kind || "site",
+            category,
+            at: Date.now(),
+            via: "page",
+          };
+          _focusNudgePending.set(domain, pending);
+        } else {
+          if (msg.kind) pending.kind = String(msg.kind);
+          if (typeof pending.tabId !== "number" && sender?.tab?.id) {
+            pending.tabId = sender.tab.id;
           }
-          sendResponse({ ok: true });
-          break;
         }
         if (action === "block") await acceptFocusNudge(domain, category);
         else if (action === "snooze") await declineFocusNudge(domain, category, FOCUS_SNOOZE_MS);
@@ -1563,8 +1558,8 @@ function handleMessage(msg, sendResponse, sender) {
 }
 
 // Internal messages (popup, block page, content script).
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) =>
-  handleMessage(msg, sendResponse)
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) =>
+  handleMessage(msg, sendResponse, sender)
 );
 
 // Direct messages from the web app (externally_connectable). More robust than
