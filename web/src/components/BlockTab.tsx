@@ -736,22 +736,17 @@ export function BlockTab({
   };
   const stop = useCallback(() => {
     void (async () => {
-      if (phase !== "idle") {
-        const ok = await requestHardUnlock(prefs, "Stop the timer");
-        if (!ok) {
-          toast.info("Unlock cancelled");
-          return;
-        }
-        if (token) {
-          fetch("/api/blocker/config", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token, action: "bypass", kind: "stop_timer" }),
-          }).catch(() => {});
-        }
-        await extensionCommand("stopFocus").catch(() => {});
-        getExtensionState().then(setExtState);
+      // Stopping the timer must be one click — no reconfirm. Hard-unlock stays
+      // for turning the shield OFF (accountability), not for ending a session.
+      if (phase !== "idle" && token) {
+        fetch("/api/blocker/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, action: "bypass", kind: "stop_timer" }),
+        }).catch(() => {});
       }
+      await extensionCommand("stopFocus").catch(() => {});
+      getExtensionState().then(setExtState);
       stopTimer();
       stopAlarm();
       setPhase("idle");
@@ -760,7 +755,7 @@ export function BlockTab({
       setExceeded(0);
       desktopBridge.hideFloatTimer();
     })();
-  }, [stopTimer, stopAlarm, prefs, phase, token, toast]);
+  }, [stopTimer, stopAlarm, phase, token]);
 
   useEffect(() => {
     const onClosed = () => {
