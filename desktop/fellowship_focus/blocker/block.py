@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -16,6 +17,9 @@ from mitmproxy import ctx, http
 
 from block_page import build_block_html
 from constants import (
+    ADULT_REDDIT_SUBS,
+    ADULT_SEARCH_TERMS,
+    ADULT_SITES,
     DOMAIN_ALIASES,
     DOPAMINE_SITES,
     MITMDUMP_CHECK_URL,
@@ -98,10 +102,22 @@ def _path_matches(path: str, rules: list, domain: str) -> str | None:
 
 
 def _category_for(site: str) -> str:
-    nsfw = ("pornhub", "xvideos", "xnxx", "redtube", "onlyfans", "chaturbate")
+    nsfw = (
+        "pornhub",
+        "xvideos",
+        "xhamster",
+        "xnxx",
+        "redtube",
+        "onlyfans",
+        "chaturbate",
+        "youporn",
+        "spankbang",
+        "nhentai",
+        "rule34",
+    )
     social = ("twitter", "x.com", "reddit", "instagram", "facebook", "tiktok", "threads")
     s = site.lower()
-    if any(n in s for n in nsfw):
+    if any(n in s for n in nsfw) or s.endswith(".xxx"):
         return "nsfw"
     if any(n in s for n in social):
         return "social"
@@ -133,6 +149,67 @@ def _match_dopamine(host: str) -> str | None:
     return None
 
 
+def _match_adult_domain(host: str) -> str | None:
+    h = _strip_www((host or "").lower())
+    if not h:
+        return None
+    if h == "xxx" or h.endswith(".xxx"):
+        return h if h.endswith(".xxx") else "xxx"
+    for d in ADULT_SITES:
+        if h == d or h.endswith("." + d):
+            return d
+    return None
+
+
+def _is_google_host(host: str) -> bool:
+    h = _strip_www((host or "").lower())
+    return h == "google.com" or h.startswith("google.") or ".google." in h
+
+
+def _adult_search_hit(url: str, host: str, path: str, query: str) -> str | None:
+    """Return snooze key for adult search SERPs, else None."""
+    h = _strip_www((host or "").lower())
+    path_l = (path or "/").lower()
+    qs = urllib.parse.parse_qs(query or "", keep_blank_values=False)
+    q = ""
+    if _is_google_host(h) and (path_l == "/search" or path_l.startswith("/search")):
+        q = (qs.get("q") or [""])[0]
+    elif (h == "bing.com" or h.endswith(".bing.com")) and path_l.startswith("/search"):
+        q = (qs.get("q") or [""])[0]
+    elif h == "duckduckgo.com":
+        q = (qs.get("q") or [""])[0]
+    else:
+        return None
+    tokens = [t for t in re.split(r"[^a-z0-9]+", (q or "").lower()) if t]
+    if not any(t in ADULT_SEARCH_TERMS for t in tokens):
+        return None
+    if _is_google_host(h):
+        return "google-search"
+    parts = h.split(".")
+    return ".".join(parts[-2:]) if len(parts) >= 2 else h
+
+
+def _adult_reddit_hit(host: str, path: str) -> bool:
+    h = _strip_www((host or "").lower())
+    if h != "reddit.com" and not h.endswith(".reddit.com") and h != "redd.it":
+        return False
+    m = re.match(r"^/r/([a-z0-9_]+)", (path or "").lower())
+    return bool(m and m.group(1) in ADULT_REDDIT_SUBS)
+
+
+def _match_adult(url: str, host: str, path: str, query: str) -> tuple[str, str] | None:
+    """Return (domain_key, kind) for adult nudge, or None."""
+    apex = _match_adult_domain(host)
+    if apex:
+        return apex, "site"
+    search_key = _adult_search_hit(url, host, path, query)
+    if search_key:
+        return search_key, "search"
+    if _adult_reddit_hit(host, path):
+        return "reddit.com", "reddit"
+    return None
+
+
 def _queue_pending_add(site: str) -> None:
     clean = _normalize_site(site)
     if not clean:
@@ -154,8 +231,8 @@ def _queue_pending_add(site: str) -> None:
         pass
 
 
-def _queue_dopamine_prompt(domain: str) -> None:
-    """Ask the Qt UI to offer 'Block {domain}?' — non-blocking side channel."""
+def _queue_dopamine_prompt(domain: str, *, kind: str = "dopamine") -> None:
+    """Ask the Qt UI to offer a block/nudge prompt — non-blocking side channel."""
     try:
         now = time.time()
         if _DOPAMINE_PROMPT.exists():
@@ -167,7 +244,7 @@ def _queue_dopamine_prompt(domain: str) -> None:
                 pass
         _FF_DIR.mkdir(parents=True, exist_ok=True)
         _DOPAMINE_PROMPT.write_text(
-            json.dumps({"domain": domain, "at": now}),
+            json.dumps({"domain": domain, "at": now, "kind": kind}),
             encoding="utf-8",
         )
     except Exception:
@@ -251,8 +328,13 @@ def request(flow) -> None:
         flow.response = http.Response.make(200, html.encode("utf-8"), {"Content-Type": "text/html; charset=utf-8"})
         return
 
-    # Unblocked dopamine site during an armed shield → queue a Yes/No prompt.
+    # Unblocked adult / dopamine navigation during an armed shield → queue prompt.
     if _is_document_navigation(flow):
+        adult = _match_adult(flow.request.pretty_url, url_domain, path, parsed.query)
+        if adult:
+            domain, _kind = adult
+            _queue_dopamine_prompt(domain, kind="adult")
+            return
         tip = _match_dopamine(url_domain)
         if tip and not any(_domain_matches(url_domain, a) for a in addresses):
-            _queue_dopamine_prompt(tip)
+            _queue_dopamine_prompt(tip, kind="dopamine")
