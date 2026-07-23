@@ -35,6 +35,7 @@ type RawBridge = {
   musicState?: (cb: (r: string) => void) => void;
   musicCmd?: (json: string, cb: (r: string) => void) => void;
   setPrefs?: (json: string, cb: (r: string) => void) => void;
+  sessionNotify?: (json: string, cb?: (r: string) => void) => void;
 } & Record<string, QtSlot>;
 
 export type MusicState = {
@@ -148,9 +149,6 @@ export const desktopBridge = {
       if (raw()) return resolve();
       if (typeof window === "undefined") return resolve();
       let done = false;
-      let poll: ReturnType<typeof setInterval>;
-      let timeout: ReturnType<typeof setTimeout>;
-      const onEvent = () => finish();
       const finish = () => {
         if (done) return;
         done = true;
@@ -159,14 +157,15 @@ export const desktopBridge = {
         clearTimeout(timeout);
         resolve();
       };
+      const onEvent = () => finish();
       window.addEventListener("ffdesktop-ready", onEvent);
-      poll = setInterval(() => {
+      const poll = setInterval(() => {
         if (raw()) finish();
       }, 150);
       // 500 ms was not enough: loading the remote dashboard and completing the
       // WebChannel handshake regularly lands later, which stranded the desktop
       // app in browser mode and made it demand the Chrome extension.
-      timeout = setTimeout(finish, 6000);
+      const timeout = setTimeout(finish, 6000);
     });
   },
 
@@ -312,6 +311,17 @@ export const desktopBridge = {
     if (!b || typeof b.hideFloatTimer !== "function") return;
     try {
       b.hideFloatTimer!();
+    } catch {
+      /* ignore */
+    }
+  },
+
+  /** OS / tray toast from the web timer (desktop shell only). */
+  sessionNotify(payload: { title: string; body?: string; kind?: string }): void {
+    const b = raw();
+    if (!b || typeof b.sessionNotify !== "function") return;
+    try {
+      b.sessionNotify!(JSON.stringify(payload));
     } catch {
       /* ignore */
     }

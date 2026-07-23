@@ -192,6 +192,7 @@ class MainWindow(QMainWindow):
                 "music_state": self._web_music_state,
                 "music_cmd": self._web_music_cmd,
                 "set_prefs": self._web_set_prefs,
+                "session_notify": self._web_session_notify,
             },
         )
         self.stack.addWidget(self.web_dashboard)
@@ -244,8 +245,8 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(
                 600,
                 lambda: self.toasts.show(
-                    "Shield armed",
-                    "Certificate ready — distraction sites blocked during focus.",
+                    "Certificate ready",
+                    "Distraction sites will be blocked when you arm the Shield.",
                     "success",
                     3500,
                 ),
@@ -659,7 +660,8 @@ class MainWindow(QMainWindow):
         if paused:
             self.task_tick.stop()
             self.proof_worker.stop()
-            self._disable_blocker()
+            # Keep the shield armed during pause — disarm is an explicit
+            # accountability action (Turn off shield), not a free mid-focus bypass.
             self.music_player.on_pause()
         elif self.pomodoro.is_work_phase:
             self.task_tick.start(1000)
@@ -743,7 +745,9 @@ class MainWindow(QMainWindow):
 
         if phase == PomodoroEngine.PHASE_WORK and self.config.get("enable_website_blocker", True):
             self._enable_blocker()
-        else:
+        # Break / idle: keep shield if already armed. Only Stop / explicit disarm
+        # releases it — matches web BlockTab "shield stays until you stop".
+        elif phase == PomodoroEngine.PHASE_IDLE:
             self._disable_blocker()
 
     def _show_focus_end_nudge(self) -> None:
@@ -1145,15 +1149,14 @@ class MainWindow(QMainWindow):
     def _web_set_prefs(self, patch: dict) -> dict:
         """Push prefs edited in the web UI into the desktop config.
 
-        Field-scoped: only blocker_mode / block_style / allowlist are accepted here.
-        Timer, alarm, and music must NEVER arrive on this path — and even if
-        they do, they must not restart mitm. Restarting releases the system
-        proxy (~15s gap) and looks like Shield randomly disarmed.
+        Field-scoped: blocker_mode / block_style / allowlist restart mitm when
+        needed. Timer fields (focus_min / break_min / cycles) sync into native
+        pomodoro spins WITHOUT touching the proxy.
         """
         if not isinstance(patch, dict):
             return self._web_blocker_state()
-        # Hot path guard: ignore non-blocker keys so a buggy full-blob write
-        # cannot disarm Shield via timer/music fields.
+        # Hot path guard: ignore unrelated keys so a buggy full-blob write
+        # cannot disarm Shield via music fields.
         engine_dirty = False
         config_dirty = False
         mode = patch.get("blocker_mode")
@@ -1184,14 +1187,68 @@ class MainWindow(QMainWindow):
                 self.config["allowed_sites"] = cleaned
                 engine_dirty = True
                 config_dirty = True
+        # Timer prefs → native Focus page (no mitm restart).
+        try:
+            if "focus_min" in patch:
+                fm = int(patch["focus_min"])
+                if 1 <= fm <= 180 and fm != int(self.config.get("work_duration", 45)):
+                    self.config["work_duration"] = fm
+                    config_dirty = True
+            if "break_min" in patch:
+                bm = int(patch["break_min"])
+                if 0 <= bm <= 60 and bm != int(self.config.get("break_duration", 10)):
+                    self.config["break_duration"] = max(1, bm) if bm > 0 else 1
+                    config_dirty = True
+            if "cycles" in patch:
+                cy = int(patch["cycles"])
+                if 1 <= cy <= 12 and cy != int(self.config.get("work_intervals", 2)):
+                    self.config["work_intervals"] = cy
+                    config_dirty = True
+        except (TypeError, ValueError):
+            pass
         if config_dirty:
             save_config(self.config)
+            try:
+                self._sync_settings_from_config()
+            except Exception:
+                pass
         # Only reapply when mode/allowlist actually changed — skip when unchanged
         # so we never open a proxy gap for a no-op prefs write.
         if engine_dirty and self.blocker_active:
             self._release_blocker_infra()
             self._enable_blocker()
         return self._web_blocker_state()
+
+    def _web_session_notify(self, payload: dict) -> dict:
+        """OS/tray toast for web-timer events (focus end, break, complete)."""
+        from fellowship_focus.notifications import NotifyKind, notify
+
+        title = str(payload.get("title") or "Fellowship Focus")
+        body = str(payload.get("body") or "")
+        kind_raw = str(payload.get("kind") or "info").lower()
+        kind_map = {
+            "info": NotifyKind.INFO,
+            "success": NotifyKind.SUCCESS,
+            "warning": NotifyKind.WARNING,
+            "focus": NotifyKind.FOCUS,
+            "break": NotifyKind.BREAK,
+            "xp": NotifyKind.XP,
+        }
+        kind = kind_map.get(kind_raw, NotifyKind.INFO)
+        try:
+            notify(title, body, getattr(self, "tray", None), kind=kind)
+        except Exception:
+            pass
+        # Also surface REST? on the float if the main window is hidden.
+        if kind_raw == "break" and hasattr(self, "_float_timer"):
+            try:
+                if self._float_timer.is_dismissed() or not self._float_timer.isVisible():
+                    self._float_timer.update_timer(
+                        0, "REST?", paused=True, awaiting_break=True, expanded=True
+                    )
+            except Exception:
+                pass
+        return {"ok": True}
 
     def _web_music_state(self) -> dict:
         return self.music_player.bridge_state()

@@ -84,6 +84,7 @@ def default_config() -> dict:
             "docs.google.com",
             "stackoverflow.com",
             "notion.so",
+            "up.railway.app",
         ],
         "blocked_path_rules": DEFAULT_PATH_RULES.copy(),
         "block_redirects": DEFAULT_REDIRECTS.copy(),

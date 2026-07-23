@@ -46,7 +46,7 @@ type Props = {
   fellowshipCode?: string | null;
 };
 
-export function HabitTracker({ token, fellowshipCode }: Props) {
+export function HabitTracker({ token }: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);

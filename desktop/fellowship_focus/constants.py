@@ -82,6 +82,9 @@ DOMAIN_ALIASES = {
     "instagram.com": ["ig.me"],
     "reddit.com": ["redd.it"],
     "tiktok.com": ["vm.tiktok.com"],
+    "web.whatsapp.com": ["whatsapp.com", "whatsapp.net"],
+    "whatsapp.com": ["web.whatsapp.com", "whatsapp.net"],
+    "whatsapp.net": ["web.whatsapp.com", "whatsapp.com"],
 }
 
 # Social / video / news / games (+ cousins). Sync with extension/history.js

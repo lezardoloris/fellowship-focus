@@ -296,6 +296,9 @@ class FloatTimerWindow(QWidget):
         elif not self._tick.isActive():
             self._tick.start()
         self.remaining_changed.emit(self._remaining, self._label)
+        # REST? must surface even if the user dismissed the float mid-session.
+        if self._dismissed and awaiting_break:
+            self._dismissed = False
         if self._dismissed:
             return
         if not self._placed:

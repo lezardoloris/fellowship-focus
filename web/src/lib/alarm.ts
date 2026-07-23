@@ -38,7 +38,7 @@ function strikeBell(
 
 /**
  * Play the focus-end chime.
- * @param durationSec how long to keep repeating soft strikes (−1 = ~40s of gentle repeats)
+ * @param durationSec how long to keep repeating soft strikes (−1 = until stopped)
  * @param volume 0–1 (0 = mute)
  * @returns stop function
  */
@@ -62,8 +62,10 @@ export function playAlarm(durationSec: number, volume = 0.5): () => void {
   filter.connect(ctx.destination);
 
   let stopped = false;
-  const endAt =
-    durationSec < 0 ? ctx.currentTime + 40 : ctx.currentTime + Math.max(0.8, durationSec);
+  const infinite = durationSec < 0;
+  const endAt = infinite
+    ? Number.POSITIVE_INFINITY
+    : ctx.currentTime + Math.max(0.8, durationSec);
 
   // Ember / monastic partials (Hz) — C3-ish fundamental with warm overtones
   const bowl = [130.81, 196.0, 261.63, 392.0];
@@ -83,20 +85,31 @@ export function playAlarm(durationSec: number, volume = 0.5): () => void {
   chime(start + 0.55, 1);
 
   const interval = 3.2;
-  const count =
-    durationSec < 0
-      ? 12
-      : Math.max(0, Math.ceil((Math.max(0, durationSec) - 1.2) / interval));
-  for (let i = 0; i < count; i++) {
-    const t = start + 1.4 + i * interval;
-    if (t > endAt) break;
-    chime(t, (i % 2 === 0 ? 0 : 1) as 0 | 1);
+  let loopId: ReturnType<typeof setInterval> | null = null;
+  if (infinite) {
+    let n = 0;
+    loopId = setInterval(() => {
+      if (stopped) {
+        if (loopId != null) clearInterval(loopId);
+        return;
+      }
+      chime(ctx.currentTime + 0.02, (n % 2 === 0 ? 0 : 1) as 0 | 1);
+      n += 1;
+    }, interval * 1000);
+  } else {
+    const count = Math.max(0, Math.ceil((Math.max(0, durationSec) - 1.2) / interval));
+    for (let i = 0; i < count; i++) {
+      const t = start + 1.4 + i * interval;
+      if (t > endAt) break;
+      chime(t, (i % 2 === 0 ? 0 : 1) as 0 | 1);
+    }
   }
 
   void ctx.resume();
 
   return () => {
     stopped = true;
+    if (loopId != null) clearInterval(loopId);
     try {
       master.gain.cancelScheduledValues(ctx.currentTime);
       master.gain.setValueAtTime(master.gain.value, ctx.currentTime);

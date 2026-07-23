@@ -86,6 +86,7 @@ export const DEFAULT_BLOCKER_SETTINGS: BlockerSettings = {
     "docs.google.com",
     "stackoverflow.com",
     "notion.so",
+    "up.railway.app",
   ],
   schedules: [],
   quick_lock_until: null,

@@ -5,7 +5,6 @@ import { desktopBridge, isDesktopShell, isDesktopShieldLive, type DesktopState }
 import { playAlarm } from "@/lib/alarm";
 import { logSoloSession } from "@/lib/soloStats";
 import {
-  analyzeHistoryViaExtension,
   connectExtension,
   extensionCommand,
   getExtensionState,
@@ -56,7 +55,7 @@ const ARM_POLL_MS = 500;
 const ARM_WAIT_ATTEMPTS = 60;
 
 const CATEGORIES: Array<{ id: string; label: string; sites: string[] }> = [
-  { id: "social", label: "Social", sites: ["x.com", "twitter.com", "facebook.com", "instagram.com", "reddit.com", "tiktok.com", "linkedin.com"] },
+  { id: "social", label: "Social", sites: ["x.com", "twitter.com", "facebook.com", "instagram.com", "reddit.com", "tiktok.com", "linkedin.com", "web.whatsapp.com", "whatsapp.com", "whatsapp.net"] },
   { id: "video", label: "Video", sites: ["youtube.com", "netflix.com", "twitch.tv", "primevideo.com", "disneyplus.com"] },
   { id: "news", label: "News", sites: ["news.google.com", "cnn.com", "bbc.com", "lemonde.fr"] },
   { id: "shopping", label: "Shopping", sites: ["amazon.com", "ebay.com", "aliexpress.com"] },
@@ -185,7 +184,7 @@ export function BlockTab({
   const [remaining, setRemaining] = useState(0);
   const [cycle, setCycle] = useState(0);
   const [paused, setPaused] = useState(false);
-  const [exceeded, setExceeded] = useState(0);
+  const [, setExceeded] = useState(0);
   const [extReady, setExtReady] = useState(false);
   const [extState, setExtState] = useState<ExtensionState | null>(null);
   // Arming failed once: offer an explicit unprotected start rather than
@@ -196,9 +195,8 @@ export function BlockTab({
   const [floatExpanded, setFloatExpanded] = useState(false);
   const [awaitingBreak, setAwaitingBreak] = useState(false);
   const [siteQuery, setSiteQuery] = useState("");
-  const [suggestions, setSuggestions] = useState<HistorySuggestion[]>([]);
-  const [scanBusy, setScanBusy] = useState(false);
-  const [devices, setDevices] = useState<
+  const [, setSuggestions] = useState<HistorySuggestion[]>([]);
+  const [, setDevices] = useState<
     Array<{ id: string; kind: string; label: string; last_seen: string; shield_on: number }>
   >([]);
   const [blockLayout, setBlockLayout] = useState<BlockLayoutPrefs>(DEFAULT_BLOCK_LAYOUT);
@@ -216,6 +214,9 @@ export function BlockTab({
   const stopAlarmRef = useRef<(() => void) | null>(null);
   const endsAtRef = useRef<number>(0);
   const firedRef = useRef(false);
+  /** Wall-clock start of the current focus segment (for elapsed XP, not full focus_min). */
+  const segmentStartRef = useRef<number>(0);
+  const segmentLoggedRef = useRef(false);
   // Always read the freshest list when talking to the extension: a stale closure
   // silently pushed a list missing the site the user had just added.
   const sitesRef = useRef<BlocklistEntry[]>([]);
@@ -526,11 +527,23 @@ export function BlockTab({
     const styleChanged = merged.block_style !== prev.block_style;
     const allowChanged =
       JSON.stringify(merged.allowlist) !== JSON.stringify(prev.allowlist);
-    if ((isDesktopShell() || isDesktop) && (modeChanged || styleChanged || allowChanged)) {
+    const timerChanged =
+      merged.focus_min !== prev.focus_min ||
+      merged.break_min !== prev.break_min ||
+      merged.cycles !== prev.cycles;
+    if (
+      (isDesktopShell() || isDesktop) &&
+      (modeChanged || styleChanged || allowChanged || timerChanged)
+    ) {
       const patch: Record<string, unknown> = {};
       if (modeChanged) patch.blocker_mode = merged.blocker_mode;
       if (styleChanged) patch.block_style = merged.block_style;
       if (allowChanged) patch.allowlist = merged.allowlist;
+      if (timerChanged) {
+        patch.focus_min = merged.focus_min;
+        patch.break_min = merged.break_min;
+        patch.cycles = merged.cycles;
+      }
       const st = await desktopBridge.setPrefs(patch);
       if (st.available) setDt(st);
     }
@@ -654,7 +667,9 @@ export function BlockTab({
   }
 
   const blockNowRef = useRef(blockNow);
-  blockNowRef.current = blockNow;
+  useEffect(() => {
+    blockNowRef.current = blockNow;
+  });
 
   async function connectChrome() {
     const state = await armExtension();
@@ -712,16 +727,43 @@ export function BlockTab({
     timerRef.current = null;
   }, []);
 
-  const logSession = useCallback(() => {
-    const mins = Math.max(1, Math.round(focusTotalSec / 60));
+  const logFocusSegment = useCallback(() => {
+    if (segmentLoggedRef.current) return 0;
+    const started = segmentStartRef.current || Date.now();
+    const elapsedSec = Math.max(1, Math.round((Date.now() - started) / 1000));
+    const mins = Math.max(1, Math.round(elapsedSec / 60));
+    segmentLoggedRef.current = true;
     logSoloSession(mins);
-    if (!token) return;
-    fetch(`/api/sessions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, minutes: mins, completed: true }),
-    }).catch(() => {});
-  }, [token, focusTotalSec]);
+    if (token) {
+      fetch(`/api/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, minutes: mins, completed: true }),
+      }).catch(() => {});
+    }
+    return mins;
+  }, [token]);
+
+  const syncExtensionPhase = useCallback(
+    (p: Phase, cyc: number, secs: number) => {
+      if (isDesktopShell()) return;
+      if (p === "idle") {
+        void extensionCommand("stopFocus").catch(() => {});
+        return;
+      }
+      void extensionCommand("startFocus", {
+        remainingMs: Math.max(1, secs) * 1000,
+        cycle: cyc,
+        phase: p,
+        webOwnsLog: true,
+      }).catch(() => {});
+    },
+    []
+  );
+
+  const notifyDesktop = useCallback((title: string, body: string, kind = "info") => {
+    desktopBridge.sessionNotify({ title, body, kind });
+  }, []);
 
   const startPhase = useCallback(
     (p: Phase, cyc: number, resumeSecs?: number, opts?: { keepAlarm?: boolean }) => {
@@ -737,6 +779,10 @@ export function BlockTab({
       setRemaining(secs);
       firedRef.current = false;
       endsAtRef.current = Date.now() + secs * 1000;
+      if (p === "focus") {
+        segmentStartRef.current = Date.now() - (full - secs) * 1000;
+        segmentLoggedRef.current = false;
+      }
       if (p !== "idle") {
         try {
           localStorage.setItem(
@@ -820,8 +866,6 @@ export function BlockTab({
         }
         return;
       }
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- rehydrating a
-      // persisted paused session from localStorage is a mount-time sync.
       stopAlarm();
       setExceeded(0);
       setPhase(s.phase);
@@ -856,42 +900,43 @@ export function BlockTab({
       }
       return;
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- rehydrating a
-    // persisted session from localStorage is exactly a mount-time sync.
     startPhase(s.phase, s.cycle, left);
     void (async () => {
       if (isDesktopShell()) return;
       await extensionCommand("startFocus", {
         remainingMs: left * 1000,
         cycle: s.cycle,
+        phase: s.phase,
         webOwnsLog: true,
       }).catch(() => {});
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
 
-  const floatLabel = (left: number) => {
+  const floatLabel = () => {
     if (awaitingBreak) return "REST?";
     if (paused) return "PAUSED";
     return phase === "focus" ? "FOCUS" : "BREAK";
   };
 
   const pushFloat = useCallback(
-    (left: number) => {
-      desktopBridge.showFloatTimer({
+    (left: number, opts?: { expanded?: boolean }) => {
+      const payload: Parameters<typeof desktopBridge.showFloatTimer>[0] = {
         remaining: left,
         phase,
         cycle,
         cycles: prefs.cycles,
-        label: floatLabel(left),
+        label: floatLabel(),
         paused: paused || awaitingBreak,
         awaitingBreak,
-        expanded: floatExpanded,
-      });
+      };
+      // Never send expanded:false on the 1s tick — that snaps the Qt float shut.
+      if (opts?.expanded === true || awaitingBreak) payload.expanded = true;
+      desktopBridge.showFloatTimer(payload);
     },
     // floatLabel closes over awaitingBreak/paused/phase
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [phase, cycle, prefs.cycles, paused, awaitingBreak, floatExpanded]
+    [phase, cycle, prefs.cycles, paused, awaitingBreak]
   );
 
   useEffect(() => {
@@ -902,7 +947,7 @@ export function BlockTab({
     }
     if (awaitingBreak || paused) {
       stopTimer();
-      pushFloat(remaining);
+      pushFloat(remaining, awaitingBreak ? { expanded: true } : undefined);
       return;
     }
 
@@ -919,12 +964,22 @@ export function BlockTab({
       firedRef.current = true;
       fireAlarm();
       if (phase === "focus") {
-        logSession();
+        const credited = logFocusSegment();
         if (cycle >= prefs.cycles) {
+          void extensionCommand("stopFocus").catch(() => {});
           setPhase("idle");
           setAwaitingBreak(false);
+          setFloatExpanded(false);
           clearSession();
           desktopBridge.hideFloatTimer();
+          notifyDesktop(
+            "Focus complete",
+            credited
+              ? `${prefs.cycles} cycles done · +${credited} min credited.`
+              : `${prefs.cycles} cycles done. Well fought.`,
+            "success"
+          );
+          toast.ok("Focus complete", `${prefs.cycles} cycles done`);
           return;
         }
         // Do NOT auto-start break — ask first (prompt + expandable float).
@@ -938,19 +993,17 @@ export function BlockTab({
           remaining: 0,
           awaitingBreak: true,
         });
-        desktopBridge.showFloatTimer({
-          remaining: 0,
-          phase: "focus",
-          cycle,
-          cycles: prefs.cycles,
-          label: "REST?",
-          paused: true,
-          awaitingBreak: true,
-          expanded: true,
-        });
+        pushFloat(0, { expanded: true });
+        notifyDesktop("The hour ends", "Rest, or continue the quest?", "break");
         return;
       }
-      startPhase("focus", cycle + 1);
+      // Break ended → next focus (re-sync extension clock).
+      const nextCycle = cycle + 1;
+      startPhase("focus", nextCycle);
+      const focusSecs = Math.max(1, focusTotalSec);
+      syncExtensionPhase("focus", nextCycle, focusSecs);
+      fireAlarm();
+      notifyDesktop("Back to focus", `Cycle ${nextCycle}/${prefs.cycles}`, "focus");
     }, 1000);
     pushFloat(remaining);
     return stopTimer;
@@ -963,25 +1016,39 @@ export function BlockTab({
     prefs.cycles,
     startPhase,
     stopTimer,
-    logSession,
+    logFocusSegment,
     fireAlarm,
     clearSession,
     persistSession,
     pushFloat,
+    syncExtensionPhase,
+    notifyDesktop,
+    focusTotalSec,
+    toast,
   ]);
 
   const takeBreakNow = useCallback(() => {
     if (phase !== "focus") return;
+    const wasAwaiting = awaitingBreak;
+    if (!wasAwaiting) logFocusSegment();
     setAwaitingBreak(false);
-    // Fresh chime when choosing break after deferral; keep ringing if already playing.
-    fireAlarm();
+    // Don't re-fire the chime if REST? already started it.
+    if (!wasAwaiting) fireAlarm();
     startPhase("break", cycle, undefined, { keepAlarm: true });
-    void extensionCommand("startFocus", {
-      remainingMs: Math.max(1, prefs.break_min) * 60 * 1000,
-      cycle,
-      webOwnsLog: true,
-    }).catch(() => {});
-  }, [phase, cycle, prefs.break_min, fireAlarm, startPhase]);
+    const breakSecs = Math.max(1, prefs.break_min) * 60;
+    syncExtensionPhase("break", cycle, breakSecs);
+    notifyDesktop("Break", `${prefs.break_min || 1} min rest — shield stays armed.`, "break");
+  }, [
+    phase,
+    cycle,
+    awaitingBreak,
+    prefs.break_min,
+    fireAlarm,
+    startPhase,
+    logFocusSegment,
+    syncExtensionPhase,
+    notifyDesktop,
+  ]);
 
   const extendFocusBy = useCallback(
     (minutes: number) => {
@@ -992,12 +1059,19 @@ export function BlockTab({
           ? 0
           : Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000));
       const secs = base + add;
+      const fromRest = awaitingBreak || remaining <= 0;
       setAwaitingBreak(false);
       setPaused(false);
       stopAlarm();
       setRemaining(secs);
       firedRef.current = false;
       endsAtRef.current = Date.now() + secs * 1000;
+      // After REST? the prior segment was already credited — start a fresh
+      // segment so only the extension minutes are logged at the next zero.
+      if (fromRest && phase === "focus") {
+        segmentStartRef.current = Date.now();
+        segmentLoggedRef.current = false;
+      }
       persistSession({
         phase: phase as Exclude<Phase, "idle">,
         cycle,
@@ -1006,13 +1080,9 @@ export function BlockTab({
         paused: false,
         awaitingBreak: false,
       });
-      void extensionCommand("startFocus", {
-        remainingMs: secs * 1000,
-        cycle,
-        webOwnsLog: true,
-      }).catch(() => {});
+      syncExtensionPhase(phase, cycle, secs);
     },
-    [phase, remaining, awaitingBreak, cycle, stopAlarm, persistSession]
+    [phase, remaining, awaitingBreak, cycle, stopAlarm, persistSession, syncExtensionPhase]
   );
 
   const snoozeBreak = useCallback(() => {
@@ -1056,7 +1126,6 @@ export function BlockTab({
       label: "PAUSED",
       paused: true,
       awaitingBreak: false,
-      expanded: floatExpanded,
     });
   }, [
     phase,
@@ -1068,7 +1137,6 @@ export function BlockTab({
     stopTimer,
     stopAlarm,
     persistSession,
-    floatExpanded,
   ]);
 
   const resume = useCallback(() => {
@@ -1098,18 +1166,24 @@ export function BlockTab({
       /* ignore */
     }
     startPhase("focus", 1);
-    void extensionCommand("startFocus", {
-      remainingMs: Math.max(1, focusTotalSec) * 1000,
-      cycle: 1,
-      webOwnsLog: true,
-    }).catch(() => {});
-  }, [startPhase, focusTotalSec]);
+    syncExtensionPhase("focus", 1, Math.max(1, focusTotalSec));
+    notifyDesktop(
+      "Focus quest started",
+      `${Math.max(1, Math.round(focusTotalSec / 60))} min deep work.`,
+      "focus"
+    );
+  }, [startPhase, focusTotalSec, syncExtensionPhase, notifyDesktop]);
 
   const start = () => {
-    // Start is JUST the focus timer. The shield is a separate, always-available
-    // control (the "Block N sites" button / toggle) — starting a session must
-    // never flip the blocker on or off. They are independent by design.
-    beginFocusSession();
+    // Require a live shield, or an explicit unprotected confirm (plan W0-B4).
+    const live = useDesktopUi
+      ? isDesktopShieldLive(dt)
+      : isArmed(extState);
+    if (live) {
+      beginFocusSession();
+      return;
+    }
+    setUnprotectedPrompt(true);
   };
   const stop = useCallback(() => {
     void (async () => {
@@ -1220,43 +1294,6 @@ export function BlockTab({
       })
       .catch(() => {});
   }, [token]);
-
-  async function scanHistory() {
-    setScanBusy(true);
-    try {
-      const list = await analyzeHistoryViaExtension(30);
-      setSuggestions(list);
-      setExtReady(true);
-      if (token && list.length) {
-        await fetch("/api/blocker/suggestions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            domains: list.map((d) => ({
-              domain: d.domain,
-              visits: d.visits,
-              lastVisit: d.lastVisit,
-            })),
-          }),
-        }).catch(() => {});
-      }
-      toast.ok(
-        list.length ? `${list.length} distractors found` : "No distractors found",
-        "From your Chrome history (local only)."
-      );
-    } catch (e) {
-      setExtReady(false);
-      toast.error(
-        "Couldn’t scan history",
-        e instanceof Error ? e.message : "Install / reload the Fellowship Focus extension."
-      );
-    } finally {
-      setScanBusy(false);
-    }
-  }
 
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
   const ss = String(remaining % 60).padStart(2, "0");
@@ -1433,6 +1470,13 @@ export function BlockTab({
                 Extend +10 min
               </button>
             </div>
+            <button
+              type="button"
+              className="w-full py-2 text-sm text-white/50 underline-offset-2 hover:text-white/80 hover:underline"
+              onClick={stop}
+            >
+              End session
+            </button>
           </div>
           <p className="text-center text-[11px] text-white/40">
             Shield stays armed until you stop the session

@@ -52,10 +52,10 @@ export async function POST(request: Request) {
       nested && typeof nested === "object"
         ? (nested as Partial<typeof current>)
         : (() => {
-            const { token: _t, action: _a, settings: _s, ...rest } = body as Record<
-              string,
-              unknown
-            >;
+            const rest = { ...(body as Record<string, unknown>) };
+            delete rest.token;
+            delete rest.action;
+            delete rest.settings;
             return rest as Partial<typeof current>;
           })();
     const merged = mergeBlockerSettings({ ...current, ...patch });

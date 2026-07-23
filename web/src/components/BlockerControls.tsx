@@ -63,7 +63,7 @@ export function BlockerControls({
 
   function addWorkdaySchedule() {
     const rule: ScheduleRule = {
-      id: `sch-${Date.now()}`,
+      id: `sch-${Math.random().toString(36).slice(2, 10)}`,
       label: "Work",
       days: [1, 2, 3, 4, 5],
       start: "09:00",
@@ -74,8 +74,11 @@ export function BlockerControls({
   }
 
   function quickLock(hours: number) {
+    // Date.now is intentional — quick-lock end time is wall-clock based.
+    // eslint-disable-next-line react-hooks/purity -- event handler, not render
+    const until = Date.now() + hours * 3600 * 1000;
     patch(
-      { quick_lock_until: new Date(Date.now() + hours * 3600 * 1000).toISOString() },
+      { quick_lock_until: new Date(until).toISOString() },
       `Locked ${hours < 1 ? "30m" : `${hours}h`}`
     );
   }

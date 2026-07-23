@@ -44,6 +44,43 @@ RUN_PROXY_FLAG = "--run-proxy"
 # (FellowshipFocus.exe --run-proxy) or python.exe, NOT as mitmdump.exe, so we
 # cannot kill it by process name without also killing the GUI. Track it instead.
 _SPAWNED_PIDS: set[int] = set()
+_QUIC_FAIL_LOGGED = False
+
+
+def _mitm_ignore_hosts(*, dashboard_url: str = "", api_url: str = "") -> str:
+    """Regex for mitmproxy ignore_hosts — skip TLS interception (passthrough).
+
+    Without this, clients that do not trust the local mitm CA (Qt WebEngine,
+    some Electron embeds) fail with 'unknown ca' against our own Railway app
+    and break sync while the shield is armed.
+    """
+    parts = [
+        r"^(.+\.)?up\.railway\.app$",
+        r"^localhost$",
+        r"^127\.0\.0\.1$",
+        r"^fellowshipfocus\.internal$",
+        r"^.+\.fellowshipfocus\.internal$",
+    ]
+    for raw in (dashboard_url, api_url):
+        host = _host_from_url(raw)
+        if host and host not in ("localhost", "127.0.0.1"):
+            escaped = host.replace(".", r"\.")
+            parts.append(rf"^{escaped}$")
+    # mitmproxy joins with | when given a single pattern string
+    return "|".join(parts)
+
+
+def _host_from_url(raw: str) -> str:
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    try:
+        from urllib.parse import urlparse
+
+        p = urlparse(raw if "://" in raw else f"https://{raw}")
+        return (p.hostname or "").lower()
+    except Exception:
+        return ""
 
 
 def find_mitmdump() -> str | None:
@@ -161,6 +198,9 @@ def start_mitmdump(
     redirects_b64 = base64.b64encode(json.dumps(redirects or {}).encode()).decode("ascii")
     allow = allowlist or ["github.com", "githubusercontent.com", "docs.google.com", "stackoverflow.com", "notion.so"]
     allow_joined = ",".join(a.strip() for a in allow if a and a.strip())
+    # TLS passthrough for our own dashboard/API — Qt WebEngine and some
+    # clients reject the mitm CA ("unknown ca") and break guild sync while armed.
+    ignore_hosts = _mitm_ignore_hosts(dashboard_url=dashboard_url, api_url=api_url)
 
     args = [
         *prefix,
@@ -171,6 +211,8 @@ def start_mitmdump(
         "--showhost",
         "-s",
         str(block_script),
+        "--set",
+        f"ignore_hosts={ignore_hosts}",
         "--set",
         f"addresses_str={joined}",
         "--set",
@@ -214,9 +256,11 @@ def disable_browser_quic() -> bool:
     """Best-effort: disable Chromium QUIC so HTTPS goes through the system proxy.
 
     QUIC/HTTP3 can bypass WinINET proxy and silently miss the mitm shield.
-    Writes HKCU policy DisableQuic=1 for Chrome and Edge (no admin). Browsers
-    may need a restart to pick up the policy. Returns True if any write landed.
+    Tries HKCU policy first, then a non-policy ExperimentalSettings fallback
+    when Policies is ACL-locked (common WinError 5). Returns True if any write
+    landed. Browsers may need a restart to pick up the policy.
     """
+    global _QUIC_FAIL_LOGGED
     if os.name != "nt":
         return False
     try:
@@ -224,22 +268,33 @@ def disable_browser_quic() -> bool:
     except ImportError:
         return False
 
-    paths = (
-        (winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome"),
-        (winreg.HKEY_CURRENT_USER, r"Software\Policies\Microsoft\Edge"),
+    # (root, path, value_name)
+    targets = (
+        (winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome", "DisableQuic"),
+        (winreg.HKEY_CURRENT_USER, r"Software\Policies\Microsoft\Edge", "DisableQuic"),
+        # Fallback when Policies hive is locked by MDM/GPO (WinError 5).
+        (winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\ExperimentalSettings", "DisableQuic"),
+        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Edge\ExperimentalSettings", "DisableQuic"),
     )
     wrote = False
-    for root, path in paths:
+    fails: list[str] = []
+    for root, path, name in targets:
         try:
             key = winreg.CreateKeyEx(root, path, 0, winreg.KEY_SET_VALUE)
             try:
-                winreg.SetValueEx(key, "DisableQuic", 0, winreg.REG_DWORD, 1)
+                winreg.SetValueEx(key, name, 0, winreg.REG_DWORD, 1)
                 wrote = True
-                blocker_log(f"QUIC disabled via policy: {path}")
+                blocker_log(f"QUIC disabled via registry: {path}\\{name}")
             finally:
                 winreg.CloseKey(key)
         except OSError as e:
-            blocker_log(f"QUIC policy write failed ({path}): {e}")
+            fails.append(f"{path}: {e}")
+    if not wrote and fails and not _QUIC_FAIL_LOGGED:
+        _QUIC_FAIL_LOGGED = True
+        blocker_log(
+            "QUIC policy write failed (will rely on firewall layer if elevated): "
+            + "; ".join(fails[:2])
+        )
     return wrote
 
 

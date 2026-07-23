@@ -145,6 +145,16 @@ class DesktopBridge(QObject):
             payload = {}
         return self._call("music_cmd", payload)
 
+    @Slot(str, result=str)
+    def sessionNotify(self, payload_json: str) -> str:
+        try:
+            payload = json.loads(payload_json)
+        except (TypeError, json.JSONDecodeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        return self._call("session_notify", payload)
+
 
 class WebDashboardPage(QWidget):
     def __init__(self, get_config, on_open_external, on_config_updated, blocker_api=None) -> None:

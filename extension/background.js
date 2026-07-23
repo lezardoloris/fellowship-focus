@@ -143,6 +143,9 @@ const DOMAIN_ALIASES = {
   "instagram.com": ["ig.me"],
   "reddit.com": ["redd.it"],
   "tiktok.com": ["vm.tiktok.com"],
+  "web.whatsapp.com": ["whatsapp.com", "whatsapp.net"],
+  "whatsapp.com": ["web.whatsapp.com", "whatsapp.net"],
+  "whatsapp.net": ["web.whatsapp.com", "whatsapp.com"],
 };
 
 /** Expand a site into every domain that must be blocked with it. */
@@ -574,9 +577,10 @@ async function startFocus(opts = {}) {
       : cfg.prefs.focus_min * 60000;
   const endsAt = Date.now() + remainingMs;
   const webOwnsLog = opts.webOwnsLog !== false; // web timer is primary logger by default
+  const phase = opts.phase === "break" ? "break" : "focus";
   await setConfig({
     focus: {
-      phase: "focus",
+      phase,
       cycle: opts.cycle || 1,
       endsAt,
       paused: false,
@@ -1416,6 +1420,7 @@ function handleMessage(msg, sendResponse, sender) {
         await startFocus({
           remainingMs: msg.remainingMs,
           cycle: msg.cycle,
+          phase: msg.phase,
           webOwnsLog: msg.webOwnsLog !== false,
         });
         sendResponse({ config: publicConfig(await getConfig()), status: await getStatus(), ok: true });

@@ -51,7 +51,7 @@ export function normalizeBlockLayout(
   raw: Partial<BlockLayoutPrefs> | null | undefined
 ): BlockLayoutPrefs {
   const layoutId = isLayoutId(raw?.layoutId) ? raw.layoutId : DEFAULT_BLOCK_LAYOUT.layoutId;
-  let areas = raw?.areas;
+  const areas = raw?.areas;
   if (
     !areas ||
     !isPanelId(areas.a) ||
