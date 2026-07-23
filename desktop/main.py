@@ -41,6 +41,13 @@ if len(sys.argv) > 1 and sys.argv[1] == "--run-proxy":
         print("=== proxy CRASHED ===", file=_log)
         sys.exit(1)
 
+# Elevated blocker layers (hosts + firewall). The frozen exe re-runs itself with
+# this flag under UAC; it must stay ahead of the Qt import too.
+if len(sys.argv) > 1 and sys.argv[1] == "--elevate-blocker":
+    from fellowship_focus.blocker.elevate import _main as _elevate_main
+
+    sys.exit(_elevate_main(sys.argv[2:]))
+
 import atexit
 
 from fellowship_focus.blocker.manager import force_release_blocker

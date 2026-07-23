@@ -32,6 +32,10 @@ hiddenimports = [
     "fellowship_focus.blocker.manager",
     "fellowship_focus.blocker.block",
     "fellowship_focus.blocker.block_page",
+    "fellowship_focus.blocker.elevate",
+    "fellowship_focus.blocker.layers",
+    "fellowship_focus.ui.action_nudge",
+    "fellowship_focus.ui.session_nudge",
 ]
 
 datas = [

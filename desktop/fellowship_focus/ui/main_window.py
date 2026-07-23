@@ -78,6 +78,7 @@ from fellowship_focus.ui.float_timer import FloatTimerWindow
 from fellowship_focus.ui.theme import ASSETS_DIR, app_stylesheet, font_sans, load_fonts, resolve_app_icon_path
 from fellowship_focus.ui.toast import ToastManager
 from fellowship_focus.ui.usage_page import UsagePage
+from fellowship_focus.ui.action_nudge import ActionNudge
 from fellowship_focus.ui.session_nudge import SessionNudge
 from fellowship_focus.ui.web_dashboard import WebDashboardPage
 from fellowship_focus.usage_tracker import UsageTracker, focus_score
@@ -261,6 +262,8 @@ class MainWindow(QMainWindow):
         self._nudge = SessionNudge()
         self._nudge.accepted.connect(self._on_nudge_accept)
         self._nudge.dismissed.connect(self._on_nudge_dismiss)
+        self._action_nudge = ActionNudge()
+        self._action_nudge.chosen.connect(self._on_action_nudge)
         self._nudge_snooze_until = 0.0
         self._nudge_active_streak = 0
         self._nudge_timer = QTimer(self)
@@ -726,11 +729,14 @@ class MainWindow(QMainWindow):
             self.toasts.show("Quest interval done", msg, "success", 6000)
             notify_break(msg, getattr(self, "tray", None))
             self.music_player.on_break()
+            # Bottom-right choice: keep momentum without opening the app.
+            self._show_focus_end_nudge()
         elif prev in (PomodoroEngine.PHASE_BREAK, PomodoroEngine.PHASE_LONG_BREAK) and phase == PomodoroEngine.PHASE_WORK:
             msg = "Break over — distractions blocked again."
             self.toasts.show("Back to focus", msg, "info", 5000)
             notify_back_to_focus(getattr(self, "tray", None))
             self.music_player.on_focus_start()
+            self._show_break_end_nudge()
         elif phase == PomodoroEngine.PHASE_WORK and prev == PomodoroEngine.PHASE_IDLE:
             mins = self.config.get("work_duration", 45)
             notify_focus_started(mins, getattr(self, "tray", None), self._dashboard_url())
@@ -739,6 +745,39 @@ class MainWindow(QMainWindow):
             self._enable_blocker()
         else:
             self._disable_blocker()
+
+    def _show_focus_end_nudge(self) -> None:
+        if not self.isVisible() or self.isMinimized():
+            self._action_nudge.show_actions(
+                "Focus interval done",
+                "Keep the momentum going",
+                [
+                    ("break", "Take break", True),
+                    ("extend", "+10 min", False),
+                    ("stop", "Stop", False),
+                ],
+            )
+
+    def _show_break_end_nudge(self) -> None:
+        if not self.isVisible() or self.isMinimized():
+            self._action_nudge.show_actions(
+                "Break over",
+                "Back to deep work",
+                [("focus", "Focus now", True), ("stop", "Stop", False)],
+            )
+
+    def _on_action_nudge(self, key: str) -> None:
+        if key == "stop":
+            self._stop_pomodoro()
+        elif key == "extend":
+            # Jump straight back into a 10-minute focus block.
+            self.pomodoro.phase = PomodoroEngine.PHASE_WORK
+            self.pomodoro.remaining = 10 * 60
+            self.pomodoro.tick.emit(self.pomodoro.remaining, "Focus")
+            if self.config.get("enable_website_blocker", True):
+                self._enable_blocker()
+            self.music_player.on_focus_start()
+        # "break" and "focus" keep the engine's own flow — nothing to force.
 
     def _on_pomo_finished(self, completed: bool, work_minutes: int) -> None:
         self.proof_worker.stop()
@@ -1527,6 +1566,9 @@ class MainWindow(QMainWindow):
             # QUIC/HTTP3 can bypass the system proxy — best-effort HKCU policy.
             if disable_browser_quic():
                 blocker_log("QUIC disabled for Chrome/Edge (restart browsers if needed)")
+            # Defense-in-depth: hosts + firewall QUIC block close the QUIC gap
+            # for browsers already running and for non-Chromium apps. Admin.
+            self._apply_blocker_layers()
             # Stay arming until verified canary — never toast ON on proxy-up alone.
             self._verify_filtering(gate_on=True)
             return
@@ -1691,11 +1733,39 @@ class MainWindow(QMainWindow):
                     api.bypass_blocker(self._active_session_id)
         self._release_blocker_infra()
 
+    def _apply_blocker_layers(self) -> None:
+        """Apply the admin layers (hosts + QUIC firewall) off the UI thread.
+
+        First arm may raise one UAC prompt; do it on a worker so the GUI never
+        freezes. Failure/refusal is fine — proxy + extension still run.
+        """
+        import threading
+
+        from fellowship_focus.blocker.layers import apply_layers
+
+        sites, _ = self._effective_block_lists()
+        if not sites:
+            return
+
+        def worker() -> None:
+            res = apply_layers(list(sites))
+            self._layers_status = res
+
+        threading.Thread(target=worker, daemon=True, name="blocker-layers").start()
+
+    def _clear_blocker_layers(self) -> None:
+        import threading
+
+        from fellowship_focus.blocker.layers import clear_layers
+
+        threading.Thread(target=clear_layers, daemon=True, name="blocker-layers-clear").start()
+
     def _release_blocker_infra(self) -> None:
         self._blocker_arming = False
         self._filter_ok = None
         self._blocker_watchdog.stop()
         self._health_timer.stop()
+        self._clear_blocker_layers()
         force_release_blocker()
         self.mitm_process = None
         self.blocker_active = False
@@ -2374,6 +2444,8 @@ class MainWindow(QMainWindow):
             self._float_timer.hide_timer()
         if hasattr(self, "_nudge"):
             self._nudge.hide()
+        if hasattr(self, "_action_nudge"):
+            self._action_nudge.hide()
         if hasattr(self, "_block_prompt"):
             self._block_prompt.hide()
         self._release_blocker_infra()
