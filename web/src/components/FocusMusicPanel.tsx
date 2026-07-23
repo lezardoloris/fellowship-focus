@@ -219,8 +219,9 @@ function Shell({
   children?: ReactNode;
 }) {
   const rootClass = [
-    "glass-panel flex h-full min-h-0 flex-col",
-    compact ? "p-3.5" : "p-5",
+    "glass-panel flex h-full min-h-0 w-full min-w-0 flex-col",
+    /* Match Block timer padding so side-rail / session-top edges align. */
+    compact ? "p-4 sm:p-5" : "p-5",
     className,
   ]
     .filter(Boolean)
@@ -300,7 +301,7 @@ function Shell({
             <span className="ml-0.5 text-lg">▶</span>
           )}
         </button>
-        <p className="mt-4 line-clamp-2 max-w-[16rem] text-sm font-medium leading-snug text-white/90">
+        <p className="mt-4 w-full line-clamp-2 text-sm font-medium leading-snug text-white/90">
           {title}
         </p>
         {playing && (

@@ -151,22 +151,33 @@ html {
 }
 
 .ff-block-layout--session-top {
-  grid-template-columns: 1fr 1fr;
+  /* Equal timer | music columns so swap keeps shared edges. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
     "a b"
     "c c";
 }
 
 .ff-block-layout--session-side {
-  grid-template-columns: minmax(0, 1.45fr) minmax(14rem, 0.85fr);
+  /* One rail track for stacked timer + music (same left/right edges). */
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.85fr);
   grid-template-areas:
     "c a"
     "c b";
 }
 
 .ff-block-layout--classic-3 {
-  grid-template-columns: 1fr 1.4fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
   grid-template-areas: "a b c";
+}
+
+.ff-block-area-a,
+.ff-block-area-b,
+.ff-block-area-c {
+  width: 100%;
+  min-width: 0;
+  justify-self: stretch;
+  align-self: stretch;
 }
 
 .ff-block-area-a {
