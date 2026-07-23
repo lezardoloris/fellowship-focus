@@ -1347,44 +1347,81 @@ export function BlockTab({
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4">
         <div className="glass-panel max-w-md space-y-4 p-6" role="dialog" aria-labelledby="ff-unprotected-title">
           <h2 id="ff-unprotected-title" className="font-display text-xl text-white">
-            Shield not connected
+            {useDesktopUi ? "Shield is OFF" : "Shield not connected"}
           </h2>
           <p className="text-sm text-white/70">
-            Start without blocking, or connect a Shield first. Unprotected sessions do not enforce your block list.
+            {useDesktopUi
+              ? "You’re already in Fellowship Focus. Arm the Shield first, or start an unprotected timer."
+              : "Start without blocking, or connect a Shield first. Unprotected sessions do not enforce your block list."}
           </p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <a href="/download" className="btn-primary flex-1 text-center">
-              Connect Windows app
-            </a>
-            <button
-              type="button"
-              className="btn-secondary flex-1"
-              onClick={() => {
-                setUnprotectedPrompt(false);
-                void connectChrome();
-              }}
-            >
-              Connect Chrome extension
-            </button>
-          </div>
-          <button
-            type="button"
-            className="w-full text-sm text-white/50 underline-offset-2 hover:text-white/80 hover:underline"
-            onClick={() => {
-              setUnprotectedPrompt(false);
-              toast.info("Timer started — unprotected");
-              beginFocusSession();
-            }}
-          >
-            Start without blocking
-          </button>
-          <button
-            type="button"
-            className="w-full text-xs text-white/40"
-            onClick={() => setUnprotectedPrompt(false)}
-          >
-            Cancel
-          </button>
+          {useDesktopUi ? (
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                className="btn-primary w-full"
+                onClick={() => {
+                  setUnprotectedPrompt(false);
+                  void toggleShield();
+                }}
+              >
+                Turn Shield ON
+              </button>
+              <button
+                type="button"
+                className="btn-secondary w-full"
+                onClick={() => {
+                  setUnprotectedPrompt(false);
+                  toast.info("Timer started — unprotected");
+                  beginFocusSession();
+                }}
+              >
+                Start without blocking
+              </button>
+              <button
+                type="button"
+                className="w-full text-xs text-white/40"
+                onClick={() => setUnprotectedPrompt(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <a href="/download" className="btn-primary flex-1 text-center">
+                  Get Windows app
+                </a>
+                <button
+                  type="button"
+                  className="btn-secondary flex-1"
+                  onClick={() => {
+                    setUnprotectedPrompt(false);
+                    void connectChrome();
+                  }}
+                >
+                  Connect Chrome extension
+                </button>
+              </div>
+              <button
+                type="button"
+                className="w-full text-sm text-white/50 underline-offset-2 hover:text-white/80 hover:underline"
+                onClick={() => {
+                  setUnprotectedPrompt(false);
+                  toast.info("Timer started — unprotected");
+                  beginFocusSession();
+                }}
+              >
+                Start without blocking
+              </button>
+              <button
+                type="button"
+                className="w-full text-xs text-white/40"
+                onClick={() => setUnprotectedPrompt(false)}
+              >
+                Cancel
+              </button>
+            </>
+          )}
         </div>
       </div>
     )}
@@ -1488,25 +1525,61 @@ export function BlockTab({
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4">
         <div className="glass-panel max-w-sm space-y-4 p-6" role="dialog" aria-labelledby="ff-connect-title">
           <h2 id="ff-connect-title" className="font-display text-xl text-white">
-            Connect Shield
+            {useDesktopUi ? "Arm Shield" : "Connect Shield"}
           </h2>
-          <p className="text-sm text-white/70">Pick how you want to block distracting sites.</p>
-          <a href="/download" className="btn-primary block text-center" onClick={() => setConnectChooser(false)}>
-            Windows app
-          </a>
-          <button
-            type="button"
-            className="btn-secondary w-full"
-            onClick={() => {
-              setConnectChooser(false);
-              void connectChrome();
-            }}
-          >
-            Chrome extension
-          </button>
-          <button type="button" className="w-full text-xs text-white/40" onClick={() => setConnectChooser(false)}>
-            Cancel
-          </button>
+          <p className="text-sm text-white/70">
+            {useDesktopUi
+              ? "You’re in the desktop app. Turn Shield ON to block distraction sites."
+              : "Pick how you want to block distracting sites."}
+          </p>
+          {useDesktopUi ? (
+            <>
+              <button
+                type="button"
+                className="btn-primary w-full"
+                onClick={() => {
+                  setConnectChooser(false);
+                  void toggleShield();
+                }}
+              >
+                Turn Shield ON
+              </button>
+              <button
+                type="button"
+                className="w-full text-xs text-white/40"
+                onClick={() => setConnectChooser(false)}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <a
+                href="/download"
+                className="btn-primary block text-center"
+                onClick={() => setConnectChooser(false)}
+              >
+                Get Windows app
+              </a>
+              <button
+                type="button"
+                className="btn-secondary w-full"
+                onClick={() => {
+                  setConnectChooser(false);
+                  void connectChrome();
+                }}
+              >
+                Chrome extension
+              </button>
+              <button
+                type="button"
+                className="w-full text-xs text-white/40"
+                onClick={() => setConnectChooser(false)}
+              >
+                Cancel
+              </button>
+            </>
+          )}
         </div>
       </div>
     )}

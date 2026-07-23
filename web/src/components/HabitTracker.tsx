@@ -347,11 +347,11 @@ export function HabitTracker({ token }: Props) {
           No habits yet. Add a preset below or create your own activity.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-[#3a3d40] bg-[#1a1c1e]/60">
-          <table className="w-full min-w-[640px] border-collapse text-xs">
+        <div className="overflow-hidden rounded-xl border border-[#3a3d40] bg-[#1a1c1e]/60">
+          <table className="w-full table-fixed border-collapse text-xs">
             <thead>
               <tr className="border-b border-white/10 text-stone-500">
-                <th className="sticky left-0 bg-[#242628] py-2 pr-3 pl-3 text-left font-normal">
+                <th className="w-[28%] py-2 pr-2 pl-3 text-left font-normal sm:w-[22%]">
                   Habit
                 </th>
                 {Array.from({ length: daysInMonth }, (_, i) => {
@@ -361,7 +361,7 @@ export function HabitTracker({ token }: Props) {
                     <th
                       key={i}
                       aria-current={isTodayCol ? "date" : undefined}
-                      className={`w-6 px-0.5 py-2 font-normal ${
+                      className={`px-0 py-2 font-normal ${
                         isTodayCol
                           ? "habit-col-today habit-col-today-header"
                           : isViewingCurrentMonth
@@ -372,18 +372,18 @@ export function HabitTracker({ token }: Props) {
                       {isTodayCol ? (
                         <span className="habit-today-head">
                           <span className="habit-today-num">{dayNum}</span>
-                          <span className="habit-today-label">Today</span>
+                          <span className="habit-today-label hidden sm:inline">Today</span>
                         </span>
                       ) : (
-                        dayNum
+                        <span className="tabular-nums">{dayNum}</span>
                       )}
                     </th>
                   );
                 })}
-                <th className="px-2 py-2 font-normal">Goal</th>
-                <th className="px-2 py-2 font-normal">Done</th>
-                <th className="px-2 py-2 font-normal">%</th>
-                <th className="px-2 py-2 font-normal" />
+                <th className="w-8 px-1 py-2 font-normal sm:w-10">Goal</th>
+                <th className="w-8 px-1 py-2 font-normal sm:w-10">Done</th>
+                <th className="w-8 px-1 py-2 font-normal sm:w-10">%</th>
+                <th className="w-6 px-0 py-2 font-normal" />
               </tr>
             </thead>
             <tbody ref={tbodyRef}>
@@ -409,8 +409,8 @@ export function HabitTracker({ token }: Props) {
                       showDropAfter ? "habit-row-drop-after" : ""
                     }`}
                   >
-                    <td className="sticky left-0 bg-[#242628] py-2 pr-3 pl-2">
-                      <div className="flex items-start gap-1.5">
+                    <td className="truncate py-2 pr-2 pl-2">
+                      <div className="flex min-w-0 items-start gap-1.5">
                         <button
                           type="button"
                           aria-label={`Reorder ${habit.label}`}
@@ -436,7 +436,7 @@ export function HabitTracker({ token }: Props) {
                             <circle cx="7.5" cy="11.5" r="1.2" />
                           </svg>
                         </button>
-                        <span className="min-w-0">
+                        <span className="min-w-0 truncate">
                           <HabitMark mark={habit.emoji} className="mr-1.5 text-[1.05rem]" />
                           <span className="text-stone-300">{habit.label}</span>
                           <span className={`ml-1 ${badge.color}`}>({badge.label})</span>

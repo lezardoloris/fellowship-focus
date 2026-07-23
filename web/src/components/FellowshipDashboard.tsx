@@ -10,6 +10,7 @@ import { PremiumLoader } from "@/components/PremiumLoader";
 import { GuildJourney } from "@/components/GuildJourney";
 import { LevelUpModal } from "@/components/LevelUpModal";
 import { useToast } from "@/components/Toasts";
+import { isDesktopShell } from "@/lib/desktop";
 import {
   currentTitle,
   leagueAccent,
@@ -290,9 +291,11 @@ export function FellowshipDashboard({
             )}
           </div>
           <div className="flex flex-wrap gap-2 md:justify-end">
-            <Link href="/download" className="btn-primary text-sm">
-              Desktop app
-            </Link>
+            {!isDesktopShell() && (
+              <Link href="/download" className="btn-secondary text-sm">
+                Get desktop app
+              </Link>
+            )}
             <button type="button" onClick={copyLink} className="btn-secondary text-sm">
               {copied ? "✓ Copied" : "Invite"}
             </button>
