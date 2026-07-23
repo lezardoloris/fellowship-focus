@@ -22,28 +22,29 @@ DESKTOP_MUSIC = ROOT / "desktop" / "assets" / "music"
 CATALOG_JSON = Path(__file__).with_name("focus_music_catalog.json")
 
 # Keep in sync with web/src/lib/focusMusic.ts (title, youtubeId, trimStart, trimEnd).
+# Preferred defaults first — write_manifest preserves this catalog order.
 FALLBACK = [
-    {"title": "CEO Penthouse", "youtubeId": "OWz7HiR6H-0", "trimStart": 14, "trimEnd": 18},
     {"title": "Hyperfocus Café", "youtubeId": "hpAD6SGi3j8", "trimStart": 12, "trimEnd": 16},
-    {"title": "When the Stakes Are High", "youtubeId": "TIqsKXQHvFI", "trimStart": 10, "trimEnd": 14},
-    {"title": "Force", "youtubeId": "WMdhPtS5vio", "trimStart": 8, "trimEnd": 12},
-    {"title": "Spice Meditation", "youtubeId": "R75oWuI4te4", "trimStart": 12, "trimEnd": 16},
-    {"title": "Dwarf Mountain Journey", "youtubeId": "4WIMyqBG9gs", "trimStart": 10, "trimEnd": 14},
     {"title": "Immortal", "youtubeId": "Ykem_yAFh2A", "trimStart": 10, "trimEnd": 14},
     {"title": "Inquisitor", "youtubeId": "hmQWkH12CD4", "trimStart": 10, "trimEnd": 14},
+    {"title": "Lock In", "youtubeId": "EN0A5derVo0", "trimStart": 12, "trimEnd": 16},
     {"title": "Mechanicus", "youtubeId": "6Pxlq32dGtQ", "trimStart": 8, "trimEnd": 12},
-    {"title": "Dark Monastery", "youtubeId": "VWGr_89_xdU", "trimStart": 10, "trimEnd": 14},
+    {"title": "Peak Performance", "youtubeId": "5_4KRUx2iKY", "trimStart": 14, "trimEnd": 20},
+    {"title": "Serious Grind", "youtubeId": "MYW0TgV67RE", "trimStart": 12, "trimEnd": 16},
+    {"title": "Spice Meditation", "youtubeId": "R75oWuI4te4", "trimStart": 12, "trimEnd": 16},
     {"title": "Still Loyal", "youtubeId": "k_YK5V2WxIA", "trimStart": 10, "trimEnd": 14},
+    {"title": "Super Focus Alpha", "youtubeId": "p2_zDvtPQ-g", "trimStart": 15, "trimEnd": 18},
+    {"title": "Trap Beats for Work", "youtubeId": "7VAUDImpqGQ", "trimStart": 12, "trimEnd": 16},
+    {"title": "When the Stakes Are High", "youtubeId": "TIqsKXQHvFI", "trimStart": 10, "trimEnd": 14},
+    {"title": "CEO Penthouse", "youtubeId": "OWz7HiR6H-0", "trimStart": 14, "trimEnd": 18},
+    {"title": "Force", "youtubeId": "WMdhPtS5vio", "trimStart": 8, "trimEnd": 12},
+    {"title": "Dwarf Mountain Journey", "youtubeId": "4WIMyqBG9gs", "trimStart": 10, "trimEnd": 14},
+    {"title": "Dark Monastery", "youtubeId": "VWGr_89_xdU", "trimStart": 10, "trimEnd": 14},
     {"title": "Chaos Ritual", "youtubeId": "MDy0IrSJrlM", "trimStart": 8, "trimEnd": 12},
     {"title": "Holy Terra", "youtubeId": "k5xDyG72wHE", "trimStart": 10, "trimEnd": 14},
-    {"title": "Trap Beats for Work", "youtubeId": "7VAUDImpqGQ", "trimStart": 12, "trimEnd": 16},
-    {"title": "Serious Grind", "youtubeId": "MYW0TgV67RE", "trimStart": 12, "trimEnd": 16},
-    {"title": "Lock In", "youtubeId": "EN0A5derVo0", "trimStart": 12, "trimEnd": 16},
-    {"title": "Peak Performance", "youtubeId": "5_4KRUx2iKY", "trimStart": 14, "trimEnd": 20},
     {"title": "Hyper Focus Mode", "youtubeId": "eo1gKGt6h9M", "trimStart": 14, "trimEnd": 18},
     {"title": "CEO Zero Distraction", "youtubeId": "ahawPLh4epk", "trimStart": 12, "trimEnd": 16},
     {"title": "Brain Performance", "youtubeId": "GaTy0vRmT9E", "trimStart": 14, "trimEnd": 18},
-    {"title": "Super Focus Alpha", "youtubeId": "p2_zDvtPQ-g", "trimStart": 15, "trimEnd": 18},
     {"title": "Flow State Chillstep", "youtubeId": "am1VJP0RnmQ", "trimStart": 10, "trimEnd": 14},
     {"title": "Deep Future Garage", "youtubeId": "T2QZpy07j4s", "trimStart": 12, "trimEnd": 16},
     {"title": "Dreamlight 30m", "youtubeId": "UpPmnnJcy6A", "trimStart": 6, "trimEnd": 8},
@@ -162,13 +163,13 @@ def trim_one(
 
 
 def write_manifest(catalog: list[dict], audio_dir: Path) -> None:
+    # Preserve catalog order (preferred defaults first); do not A–Z sort.
     entries = []
     for track in catalog:
         yt = track["youtubeId"]
         name = f"focus-{yt}.mp3"
         if (audio_dir / name).exists():
             entries.append({"title": track["title"], "src": f"/audio/{name}", "youtubeId": yt})
-    entries.sort(key=lambda e: e["title"].lower())
     audio_dir.mkdir(parents=True, exist_ok=True)
     (audio_dir / "manifest.json").write_text(
         json.dumps(entries, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

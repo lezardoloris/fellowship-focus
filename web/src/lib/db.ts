@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
 import { calcBlockPenalty, calcSessionXp, getLeague, POINTS } from "./points";
-import { HABIT_PRESETS, HABIT_XP, calcStakeScore, monthKey, todayDate } from "./habits";
+import { HABIT_MARKS, HABIT_PRESETS, HABIT_XP, calcStakeScore, monthKey, resolveHabitMarkId, todayDate } from "./habits";
 import type { VerificationType } from "./habits";
 import {
   type FocusProof,
@@ -1125,11 +1125,12 @@ export function toggleHabitCheckin(
     .run(nanoid(), habitId, memberId, date, xp);
   database.prepare("UPDATE members SET total_xp = total_xp + ? WHERE id = ?").run(xp, memberId);
 
+  const markLabel = HABIT_MARKS[resolveHabitMarkId(habit.emoji)]?.label || "Habit";
   addFeedEvent(
     fellowshipId,
     "habit",
     member.name,
-    `${member.name} checked in: ${habit.emoji} ${habit.label} (+${xp} XP).`
+    `${member.name} checked in: ${markLabel} · ${habit.label} (+${xp} XP).`
   );
 
   return { completed: true, xpAwarded: xp };

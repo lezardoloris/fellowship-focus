@@ -1,6 +1,6 @@
 "use client";
 
-import type { SVGProps } from "react";
+import type { ReactNode, SVGProps } from "react";
 import {
   DEFAULT_HABIT_MARK,
   HABIT_MARKS,
@@ -34,7 +34,7 @@ export function HabitMark({ mark, className = "", title }: Props) {
 
 type IconProps = SVGProps<SVGSVGElement>;
 
-function base(props: IconProps, children: React.ReactNode) {
+function base(props: IconProps, children: ReactNode) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -51,7 +51,7 @@ function base(props: IconProps, children: React.ReactNode) {
   );
 }
 
-const ICONS: Record<HabitMarkId, (p: IconProps) => React.ReactNode> = {
+const ICONS: Record<HabitMarkId, (p: IconProps) => ReactNode> = {
   sword: (p) =>
     base(
       p,

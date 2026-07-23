@@ -4,8 +4,10 @@ import base64
 import json
 import os
 import sys
+import time
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -13,7 +15,16 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from mitmproxy import ctx, http
 
 from block_page import build_block_html
-from constants import MITMDUMP_CHECK_URL, MITMDUMP_SHUTDOWN_URL
+from constants import (
+    DOMAIN_ALIASES,
+    DOPAMINE_SITES,
+    MITMDUMP_CHECK_URL,
+    MITMDUMP_SHUTDOWN_URL,
+)
+
+_FF_DIR = Path.home() / ".fellowship-focus"
+_PENDING_ADDS = _FF_DIR / "pending_block_adds.json"
+_DOPAMINE_PROMPT = _FF_DIR / "dopamine_prompt.json"
 
 
 def load(loader) -> None:
@@ -97,6 +108,83 @@ def _category_for(site: str) -> str:
     return "default"
 
 
+def _normalize_site(raw: str) -> str:
+    s = (raw or "").strip().lower()
+    if "://" in s:
+        s = s.split("://", 1)[1]
+    if s.startswith("www."):
+        s = s[4:]
+    return s.split("/", 1)[0].strip()[:120]
+
+
+def _match_dopamine(host: str) -> str | None:
+    h = _strip_www((host or "").lower())
+    if not h:
+        return None
+    for d in DOPAMINE_SITES:
+        if h == d or h.endswith("." + d):
+            return d
+    for base, aliases in DOMAIN_ALIASES.items():
+        if base not in DOPAMINE_SITES:
+            continue
+        for a in aliases:
+            if h == a or h.endswith("." + a):
+                return base
+    return None
+
+
+def _queue_pending_add(site: str) -> None:
+    clean = _normalize_site(site)
+    if not clean:
+        return
+    try:
+        _FF_DIR.mkdir(parents=True, exist_ok=True)
+        data: list = []
+        if _PENDING_ADDS.exists():
+            try:
+                raw = json.loads(_PENDING_ADDS.read_text(encoding="utf-8") or "[]")
+                if isinstance(raw, list):
+                    data = [str(x) for x in raw]
+            except Exception:
+                data = []
+        if clean not in data:
+            data.append(clean)
+        _PENDING_ADDS.write_text(json.dumps(data), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _queue_dopamine_prompt(domain: str) -> None:
+    """Ask the Qt UI to offer 'Block {domain}?' — non-blocking side channel."""
+    try:
+        now = time.time()
+        if _DOPAMINE_PROMPT.exists():
+            try:
+                old = json.loads(_DOPAMINE_PROMPT.read_text(encoding="utf-8") or "{}")
+                if old.get("domain") == domain and now - float(old.get("at") or 0) < 60:
+                    return
+            except Exception:
+                pass
+        _FF_DIR.mkdir(parents=True, exist_ok=True)
+        _DOPAMINE_PROMPT.write_text(
+            json.dumps({"domain": domain, "at": now}),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def _is_document_navigation(flow) -> bool:
+    """Only top-level HTML navigations — skip images/XHR/subresources."""
+    dest = (flow.request.headers.get("Sec-Fetch-Dest") or "").lower()
+    if dest and dest != "document":
+        return False
+    accept = (flow.request.headers.get("Accept") or "").lower()
+    if accept and "text/html" not in accept and "*/*" not in accept:
+        return False
+    return True
+
+
 def request(flow) -> None:
     if flow.request.pretty_url == MITMDUMP_SHUTDOWN_URL:
         flow.response = http.Response.make(200, b"Shutting down mitmproxy...\n", {"Content-Type": "text/plain"})
@@ -105,6 +193,19 @@ def request(flow) -> None:
 
     if flow.request.pretty_url == MITMDUMP_CHECK_URL:
         flow.response = http.Response.make(200, b"Mitmdump is running.\n", {"Content-Type": "text/plain"})
+        return
+
+    # Extension (or anything) can queue a blocklist add while the proxy is up.
+    parsed_ctrl = urllib.parse.urlparse(flow.request.pretty_url)
+    if parsed_ctrl.hostname == "add.fellowshipfocus.internal":
+        qs = urllib.parse.parse_qs(parsed_ctrl.query)
+        site = (qs.get("site") or [""])[0]
+        _queue_pending_add(site)
+        flow.response = http.Response.make(
+            200,
+            b'{"ok":true}\n',
+            {"Content-Type": "application/json"},
+        )
         return
 
     addresses = {_strip_www(a.strip()) for a in ctx.options.addresses_str.split(",") if a.strip()}
@@ -148,3 +249,10 @@ def request(flow) -> None:
             dashboard_url=ctx.options.dashboard_url.strip(),
         )
         flow.response = http.Response.make(200, html.encode("utf-8"), {"Content-Type": "text/html; charset=utf-8"})
+        return
+
+    # Unblocked dopamine site during an armed shield → queue a Yes/No prompt.
+    if _is_document_navigation(flow):
+        tip = _match_dopamine(url_domain)
+        if tip and not any(_domain_matches(url_domain, a) for a in addresses):
+            _queue_dopamine_prompt(tip)

@@ -67,15 +67,15 @@ class SessionNudge(QWidget):
 
         text_col = QVBoxLayout()
         text_col.setSpacing(1)
-        title = QLabel("Start a focus session?")
-        title.setObjectName("nudgeText")
+        self._title = QLabel("Start a focus session?")
+        self._title.setObjectName("nudgeText")
         f = QFont()
         f.setWeight(QFont.Weight.DemiBold)
-        title.setFont(f)
-        sub = QLabel("Track this deep-work stretch")
-        sub.setObjectName("nudgeSub")
-        text_col.addWidget(title)
-        text_col.addWidget(sub)
+        self._title.setFont(f)
+        self._sub = QLabel("Track this deep-work stretch")
+        self._sub.setObjectName("nudgeSub")
+        text_col.addWidget(self._title)
+        text_col.addWidget(self._sub)
         row.addLayout(text_col, 1)
 
         decline = QPushButton("✕")  # ✕
@@ -83,6 +83,7 @@ class SessionNudge(QWidget):
         decline.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         decline.setToolTip("Not now")
         decline.clicked.connect(self._on_decline)
+        self._decline_btn = decline
         row.addWidget(decline)
 
         accept = QPushButton("✓")  # ✓
@@ -90,6 +91,7 @@ class SessionNudge(QWidget):
         accept.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         accept.setToolTip("Start focus")
         accept.clicked.connect(self._on_accept)
+        self._accept_btn = accept
         row.addWidget(accept)
 
         # Self-dismiss if ignored — a nudge that lingers becomes nagging.
@@ -97,7 +99,23 @@ class SessionNudge(QWidget):
         self._auto.setSingleShot(True)
         self._auto.timeout.connect(self._on_decline)
 
-    def show_nudge(self, timeout_ms: int = 15000) -> None:
+    def show_nudge(
+        self,
+        timeout_ms: int = 15000,
+        *,
+        title: str | None = None,
+        subtitle: str | None = None,
+        accept_tip: str | None = None,
+        decline_tip: str | None = None,
+    ) -> None:
+        if title is not None:
+            self._title.setText(title)
+        if subtitle is not None:
+            self._sub.setText(subtitle)
+        if accept_tip is not None:
+            self._accept_btn.setToolTip(accept_tip)
+        if decline_tip is not None:
+            self._decline_btn.setToolTip(decline_tip)
         self.adjustSize()
         self._place_bottom_right()
         self.show()

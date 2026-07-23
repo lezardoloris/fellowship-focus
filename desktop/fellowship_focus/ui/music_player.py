@@ -44,33 +44,51 @@ _YT_IN_NAME = re.compile(r"\[([A-Za-z0-9_-]{6,})\]|^focus-([A-Za-z0-9_-]{6,})$",
 
 # Short labels keyed by YouTube id (kept in sync with web/src/lib/focusMusic.ts).
 FOCUS_TITLES: dict[str, str] = {
-    "OWz7HiR6H-0": "CEO Penthouse",
     "hpAD6SGi3j8": "Hyperfocus Café",
-    "TIqsKXQHvFI": "When the Stakes Are High",
-    "WMdhPtS5vio": "Force",
-    "R75oWuI4te4": "Spice Meditation",
-    "4WIMyqBG9gs": "Dwarf Mountain Journey",
-    "7VAUDImpqGQ": "Trap Beats for Work",
-    "MYW0TgV67RE": "Serious Grind",
+    "Ykem_yAFh2A": "Immortal",
+    "hmQWkH12CD4": "Inquisitor",
     "EN0A5derVo0": "Lock In",
+    "6Pxlq32dGtQ": "Mechanicus",
     "5_4KRUx2iKY": "Peak Performance",
+    "MYW0TgV67RE": "Serious Grind",
+    "R75oWuI4te4": "Spice Meditation",
+    "k_YK5V2WxIA": "Still Loyal",
+    "p2_zDvtPQ-g": "Super Focus Alpha",
+    "7VAUDImpqGQ": "Trap Beats for Work",
+    "TIqsKXQHvFI": "When the Stakes Are High",
+    "OWz7HiR6H-0": "CEO Penthouse",
+    "WMdhPtS5vio": "Force",
+    "4WIMyqBG9gs": "Dwarf Mountain Journey",
+    "VWGr_89_xdU": "Dark Monastery",
+    "MDy0IrSJrlM": "Chaos Ritual",
+    "k5xDyG72wHE": "Holy Terra",
     "eo1gKGt6h9M": "Hyper Focus Mode",
     "ahawPLh4epk": "CEO Zero Distraction",
     "GaTy0vRmT9E": "Brain Performance",
-    "p2_zDvtPQ-g": "Super Focus Alpha",
     "am1VJP0RnmQ": "Flow State Chillstep",
     "T2QZpy07j4s": "Deep Future Garage",
     "UpPmnnJcy6A": "Dreamlight 30m",
     "-sZqtdT-GVw": "Chill Deep Focus",
     "mdJU5ogrPMY": "Classical Study",
-    "Ykem_yAFh2A": "Immortal",
-    "hmQWkH12CD4": "Inquisitor",
-    "6Pxlq32dGtQ": "Mechanicus",
-    "VWGr_89_xdU": "Dark Monastery",
-    "k_YK5V2WxIA": "Still Loyal",
-    "MDy0IrSJrlM": "Chaos Ritual",
-    "k5xDyG72wHE": "Holy Terra",
 }
+
+# Preferred default playlist (youtube ids). Index 0 is the default when nothing is saved.
+DEFAULT_PLAYLIST_ORDER: list[str] = [
+    "hpAD6SGi3j8",  # Hyperfocus Café
+    "Ykem_yAFh2A",  # Immortal
+    "hmQWkH12CD4",  # Inquisitor
+    "EN0A5derVo0",  # Lock In
+    "6Pxlq32dGtQ",  # Mechanicus
+    "5_4KRUx2iKY",  # Peak Performance
+    "MYW0TgV67RE",  # Serious Grind
+    "R75oWuI4te4",  # Spice Meditation
+    "k_YK5V2WxIA",  # Still Loyal
+    "p2_zDvtPQ-g",  # Super Focus Alpha
+    "7VAUDImpqGQ",  # Trap Beats for Work
+    "TIqsKXQHvFI",  # When the Stakes Are High
+]
+
+_DEFAULT_RANK = {yt: i for i, yt in enumerate(DEFAULT_PLAYLIST_ORDER)}
 
 
 def _bundled_music_dir() -> Path:
@@ -116,7 +134,13 @@ def discover_tracks() -> list[Path]:
                     by_key[key] = path
         except Exception:
             continue
-    return sorted(by_key.values(), key=lambda p: display_title(p).lower())
+    def _sort_key(path: Path) -> tuple:
+        yt = _youtube_id(path.stem)
+        if yt and yt in _DEFAULT_RANK:
+            return (0, _DEFAULT_RANK[yt])
+        return (1, display_title(path).lower())
+
+    return sorted(by_key.values(), key=_sort_key)
 
 
 class FocusMusicPlayer(GlassCard):

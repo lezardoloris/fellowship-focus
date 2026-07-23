@@ -60,10 +60,10 @@ export const SOFT_PATH_RULES: Array<{ host: string; paths: string[] }> = [
 export const SOFT_PATH_HOSTS = SOFT_PATH_RULES.map((r) => r.host);
 
 export const DEFAULT_BLOCKER_SETTINGS: BlockerSettings = {
-  focus_min: 45,
+  focus_min: 50,
   focus_sec: 0,
-  break_min: 5,
-  cycles: 4,
+  break_min: 10,
+  cycles: 3,
   alarm_secs: 10,
   alarm_vol: 0.6,
   anti_oops: true,

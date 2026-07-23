@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FOCUS_MUSIC_KEY, matchLocalTrack } from "@/lib/focusMusic";
+import { FOCUS_MUSIC_KEY, FOCUS_TRACKS, matchLocalTrack } from "@/lib/focusMusic";
 import { desktopBridge, isDesktopShell, type MusicState } from "@/lib/desktop";
 
 type ManifestEntry = { title: string; src: string; id?: string; youtubeId?: string };
@@ -99,11 +99,19 @@ export function FocusMusicPanel() {
   }
 
   // ── Render: browser ──
-  const options = manifest.map((m) => ({
-    src: m.src,
-    label: matchLocalTrack(m.src)?.title || matchLocalTrack(m.youtubeId || "")?.title || m.title,
-  }));
+  const options = [...manifest]
+    .map((m) => {
+      const track = matchLocalTrack(m.src) || matchLocalTrack(m.youtubeId || "");
+      const rank = track ? FOCUS_TRACKS.findIndex((t) => t.id === track.id) : -1;
+      return {
+        src: m.src,
+        label: track?.title || m.title,
+        rank: rank === -1 ? Number.MAX_SAFE_INTEGER : rank,
+      };
+    })
+    .sort((a, b) => a.rank - b.rank);
   const hasLocal = options.length > 0;
+  // Prefer saved track; otherwise first in preferred playlist (FOCUS_TRACKS order).
   const current = options.find((o) => o.src === trackSrc) || options[0];
 
   const play = (src: string) => {

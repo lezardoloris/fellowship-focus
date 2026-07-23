@@ -6,6 +6,7 @@ APPLICATION_NAME = "Fellowship Focus"
 
 MITMDUMP_SHUTDOWN_URL = "http://shutdown.fellowshipfocus.internal/"
 MITMDUMP_CHECK_URL = "http://check.fellowshipfocus.internal/"
+MITMDUMP_ADD_SITE_URL = "http://add.fellowshipfocus.internal/"
 
 
 def _resource_root() -> Path:
@@ -82,6 +83,35 @@ DOMAIN_ALIASES = {
     "reddit.com": ["redd.it"],
     "tiktok.com": ["vm.tiktok.com"],
 }
+
+# Social / video / news (+ history distractors). Kept in sync with
+# extension/history.js DOPAMINE_SITES for "Block this site?" prompts.
+DOPAMINE_SITES = frozenset(
+    {
+        "youtube.com",
+        "x.com",
+        "twitter.com",
+        "reddit.com",
+        "instagram.com",
+        "tiktok.com",
+        "facebook.com",
+        "netflix.com",
+        "twitch.tv",
+        "linkedin.com",
+        "news.google.com",
+        "cnn.com",
+        "bbc.com",
+        "amazon.com",
+        "ebay.com",
+        "pinterest.com",
+        "discord.com",
+        "web.whatsapp.com",
+        "primevideo.com",
+        "disneyplus.com",
+        "lemonde.fr",
+        "threads.net",
+    }
+)
 
 # Legacy / variant forms folded to a single canonical host so the block list,
 # the web categories and the matcher all speak one vocabulary.

@@ -1,3 +1,4 @@
+import json
 import sys
 import webbrowser
 from pathlib import Path
@@ -253,6 +254,17 @@ class MainWindow(QMainWindow):
         self._nudge_timer.timeout.connect(self._maybe_nudge_session)
         if bool(self.config.get("session_nudge_enabled", True)):
             self._nudge_timer.start(30000)
+
+        # During an armed shield: mitm queues dopamine-site visits → Yes/No
+        # "Block youtube.com?" card. Also drains extension-requested adds.
+        self._block_prompt = SessionNudge()
+        self._block_prompt.accepted.connect(self._on_block_prompt_accept)
+        self._block_prompt.dismissed.connect(self._on_block_prompt_dismiss)
+        self._block_prompt_domain: str | None = None
+        self._block_prompt_snooze: dict[str, float] = {}
+        self._proxy_sidechannel_timer = QTimer(self)
+        self._proxy_sidechannel_timer.timeout.connect(self._poll_proxy_sidechannel)
+        self._proxy_sidechannel_timer.start(2500)
 
         self._usage_sync_timer = QTimer(self)
         self._usage_sync_timer.timeout.connect(self._sync_usage)
@@ -1941,6 +1953,8 @@ class MainWindow(QMainWindow):
             return
         if self._nudge.isVisible():
             return
+        if hasattr(self, "_block_prompt") and self._block_prompt.isVisible():
+            return
         if time.monotonic() < self._nudge_snooze_until:
             return
 
@@ -1962,6 +1976,93 @@ class MainWindow(QMainWindow):
             self._start_pomodoro()
 
     def _on_nudge_dismiss(self) -> None:
+        import time
+
+        self._nudge_snooze_until = time.monotonic() + 1800
+
+    def _poll_proxy_sidechannel(self) -> None:
+        """Drain mitm side-channel files: pending blocklist adds + dopamine prompts."""
+        from pathlib import Path
+
+        ff = Path.home() / ".fellowship-focus"
+        adds_path = ff / "pending_block_adds.json"
+        prompt_path = ff / "dopamine_prompt.json"
+
+        if adds_path.exists():
+            try:
+                raw = json.loads(adds_path.read_text(encoding="utf-8") or "[]")
+                adds_path.unlink(missing_ok=True)
+                if isinstance(raw, list) and raw:
+                    self._web_add_sites([str(x) for x in raw])
+                    if hasattr(self, "toasts"):
+                        self.toasts.show(
+                            "Blocked",
+                            f"Added {', '.join(str(x) for x in raw[:3])} to your list.",
+                            "success",
+                            2200,
+                        )
+            except Exception:
+                try:
+                    adds_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+        if not getattr(self, "blocker_active", False):
+            return
+        if not prompt_path.exists():
+            return
+        if self._block_prompt.isVisible() or self._nudge.isVisible():
+            return
+
+        import time
+
+        try:
+            data = json.loads(prompt_path.read_text(encoding="utf-8") or "{}")
+            prompt_path.unlink(missing_ok=True)
+        except Exception:
+            try:
+                prompt_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+            return
+
+        domain = self._normalize_host(str(data.get("domain") or ""))
+        if not domain:
+            return
+        blocked = {self._normalize_host(s) for s in self.config.get("blocked_sites") or []}
+        if domain in blocked or any(
+            domain == b or domain.endswith("." + b) for b in blocked if b
+        ):
+            return
+        until = self._block_prompt_snooze.get(domain, 0.0)
+        if time.monotonic() < until:
+            return
+
+        self._block_prompt_domain = domain
+        self._block_prompt.show_nudge(
+            18000,
+            title=f"Block {domain}?",
+            subtitle="Distracting site during focus",
+            accept_tip="Add to blocklist",
+            decline_tip="Allow for now",
+        )
+
+    def _on_block_prompt_accept(self) -> None:
+        domain = self._block_prompt_domain
+        self._block_prompt_domain = None
+        if not domain:
+            return
+        self._web_add_sites([domain])
+        if hasattr(self, "toasts"):
+            self.toasts.show("Blocked", f"{domain} added to your blocklist.", "success", 2000)
+
+    def _on_block_prompt_dismiss(self) -> None:
+        import time
+
+        domain = self._block_prompt_domain
+        self._block_prompt_domain = None
+        if domain:
+            self._block_prompt_snooze[domain] = time.monotonic() + 1800
         import time
 
         # Snooze 30 min so a "not now" is respected.
@@ -2105,6 +2206,8 @@ class MainWindow(QMainWindow):
             self._float_timer.hide_timer()
         if hasattr(self, "_nudge"):
             self._nudge.hide()
+        if hasattr(self, "_block_prompt"):
+            self._block_prompt.hide()
         self._release_blocker_infra()
         self.tray.hide()
         QApplication.quit()

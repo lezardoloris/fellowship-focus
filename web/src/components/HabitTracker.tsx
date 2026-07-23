@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  DEFAULT_HABIT_MARK,
   HABIT_PRESETS,
-  PREMIUM_HABIT_EMOJIS,
+  PREMIUM_HABIT_MARKS,
   getMonthDays,
   verificationBadge,
 } from "@/lib/habits";
@@ -16,6 +17,7 @@ import {
   soloPresetIdsInUse,
   toggleSoloCheckin,
 } from "@/lib/soloHabits";
+import { HabitMark } from "@/components/HabitMark";
 import { PremiumLoader } from "@/components/PremiumLoader";
 
 type HabitRow = {
@@ -50,7 +52,7 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [customLabel, setCustomLabel] = useState("");
-  const [customEmoji, setCustomEmoji] = useState<string>("⚔️");
+  const [customEmoji, setCustomEmoji] = useState<string>(DEFAULT_HABIT_MARK);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [customGoal, setCustomGoal] = useState(20);
   const emojiWrapRef = useRef<HTMLDivElement>(null);
@@ -162,7 +164,7 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
       addSoloCustom({ label: customLabel, emoji: customEmoji, goal: customGoal });
     }
     setCustomLabel("");
-    setCustomEmoji("⚔️");
+    setCustomEmoji(DEFAULT_HABIT_MARK);
     setEmojiOpen(false);
     setAdding(false);
     await load();
@@ -264,7 +266,7 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
                 return (
                   <tr key={habit.id} className="border-b border-white/5">
                     <td className="sticky left-0 bg-[#242628] py-2 pr-3 pl-3">
-                      <span className="mr-1">{habit.emoji}</span>
+                      <HabitMark mark={habit.emoji} className="mr-1.5 text-[1.05rem]" />
                       <span className="text-stone-300">{habit.label}</span>
                       <span className={`ml-1 ${badge.color}`}>({badge.label})</span>
                     </td>
@@ -331,9 +333,10 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
               type="button"
               disabled={adding}
               onClick={() => addPreset(p.id)}
-              className="rounded-full border border-[#3a3d40] bg-[#2e3134]/50 px-3 py-1.5 text-xs text-[#9ca3af] hover:border-[#b8422e] hover:text-[#f4f4f5]"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#3a3d40] bg-[#2e3134]/50 px-3 py-1.5 text-xs text-[#9ca3af] hover:border-[#b8422e] hover:text-[#f4f4f5]"
             >
-              {p.emoji} {p.label}
+              <HabitMark mark={p.emoji} className="text-[0.95rem]" />
+              {p.label}
             </button>
           ))}
         </div>
@@ -342,49 +345,47 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
       <form onSubmit={addCustom} className="mt-5 flex flex-wrap items-end gap-2">
         <div ref={emojiWrapRef} className="relative">
           <label className="mb-1 block text-[10px] uppercase tracking-wider text-stone-600">
-            Emoji
+            Mark
           </label>
           <button
             type="button"
             aria-expanded={emojiOpen}
             aria-haspopup="listbox"
             onClick={() => setEmojiOpen((o) => !o)}
-            className="flex h-[42px] w-14 items-center justify-center rounded-md border border-[#b8422e]/55 bg-gradient-to-b from-[#3a221c] to-[#1a1210] text-[1.35rem] leading-none shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-[#b8422e] hover:from-[#4a2a22]"
+            className="flex h-[42px] w-14 items-center justify-center rounded-md border border-[#b8422e]/55 bg-gradient-to-b from-[#3a221c] to-[#1a1210] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-[#b8422e] hover:from-[#4a2a22]"
             title="Choose a mark"
           >
-            <span aria-hidden className="select-none">
-              {customEmoji}
-            </span>
+            <HabitMark mark={customEmoji} className="text-[1.35rem]" />
           </button>
           {emojiOpen ? (
             <div
               role="listbox"
               aria-label="Premium habit marks"
-              className="absolute bottom-[calc(100%+8px)] left-0 z-30 w-[220px] rounded-xl border border-white/12 bg-[#121416]/98 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.55)] backdrop-blur-sm"
+              className="absolute bottom-[calc(100%+8px)] left-0 z-30 w-[232px] rounded-xl border border-white/12 bg-[#121416]/98 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
             >
               <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
                 Premium marks
               </p>
               <div className="grid grid-cols-6 gap-1">
-                {PREMIUM_HABIT_EMOJIS.map((em) => {
-                  const selected = em === customEmoji;
+                {PREMIUM_HABIT_MARKS.map((id) => {
+                  const selected = id === customEmoji;
                   return (
                     <button
-                      key={em}
+                      key={id}
                       type="button"
                       role="option"
                       aria-selected={selected}
                       onClick={() => {
-                        setCustomEmoji(em);
+                        setCustomEmoji(id);
                         setEmojiOpen(false);
                       }}
-                      className={`flex h-8 w-8 items-center justify-center rounded-md text-base transition ${
+                      className={`flex h-8 w-8 items-center justify-center rounded-md transition ${
                         selected
                           ? "bg-[#b8422e]/35 ring-1 ring-[#b8422e]"
                           : "hover:bg-white/8"
                       }`}
                     >
-                      {em}
+                      <HabitMark mark={id} className="text-[1.05rem]" />
                     </button>
                   );
                 })}

@@ -54,7 +54,7 @@ const PRESETS: Array<{ id: string; label: string; desc: string; cats: string[] }
   { id: "calm", label: "No Doomscroll", desc: "Social · news", cats: ["social", "news"] },
 ];
 
-/** Focus / break / cycle presets grounded in common productivity research (not medical advice). */
+/** Compact 80/20 timer presets — default first (50/10). */
 const TIMER_PRESETS: Array<{
   id: string;
   label: string;
@@ -63,13 +63,10 @@ const TIMER_PRESETS: Array<{
   cycles: number;
   basis: string;
 }> = [
-  { id: "pomodoro", label: "25 / 5", focus: 25, break: 5, cycles: 4, basis: "Pomodoro (Cirillo)" },
-  { id: "desk52", label: "52 / 17", focus: 52, break: 17, cycles: 3, basis: "DeskTime peak-productivity split" },
-  { id: "ultradian", label: "90 / 20", focus: 90, break: 20, cycles: 2, basis: "Ultradian rhythm (~90 min)" },
-  { id: "deep45", label: "45 / 5", focus: 45, break: 5, cycles: 4, basis: "Deep-work block" },
-  { id: "flow50", label: "50 / 10", focus: 50, break: 10, cycles: 3, basis: "50-minute class / lecture rhythm" },
-  { id: "hour", label: "60 / 10", focus: 60, break: 10, cycles: 3, basis: "Hour block" },
-  { id: "sprint20", label: "20 / 5", focus: 20, break: 5, cycles: 6, basis: "Short focus sprint" },
+  { id: "flow50", label: "50 / 10", focus: 50, break: 10, cycles: 3, basis: "Default · lecture rhythm" },
+  { id: "pomodoro", label: "25 / 5", focus: 25, break: 5, cycles: 4, basis: "Pomodoro" },
+  { id: "desk52", label: "52 / 17", focus: 52, break: 17, cycles: 3, basis: "DeskTime" },
+  { id: "ultradian", label: "90 / 20", focus: 90, break: 20, cycles: 2, basis: "Ultradian" },
 ];
 
 function presetSites(cats: string[]): string[] {
@@ -976,6 +973,15 @@ export function BlockTab({
 
   const on = Boolean(dt?.shieldOn && dt?.active);
   const inSession = phase !== "idle";
+  /** Idle or paused: show focus/break/cycles + presets. Hide while countdown runs. */
+  const canEditTimer = phase === "idle" || paused;
+  const activePresetId =
+    TIMER_PRESETS.find(
+      (tp) =>
+        tp.focus === prefs.focus_min &&
+        tp.break === prefs.break_min &&
+        tp.cycles === prefs.cycles
+    )?.id ?? null;
   const extArmed = isArmed(extState);
   // Whichever engine is in play, this is "are sites actually blocked right now".
   const shieldLive = useDesktopUi ? on : extArmed;
@@ -1082,38 +1088,36 @@ export function BlockTab({
               )}
             </div>
 
-            {!inSession && (
+            {canEditTimer && (
               <div className="mt-5 space-y-3">
-                <select
-                  value={
-                    TIMER_PRESETS.find(
-                      (tp) =>
-                        tp.focus === prefs.focus_min &&
-                        tp.break === prefs.break_min &&
-                        tp.cycles === prefs.cycles
-                    )?.id ?? "custom"
-                  }
-                  onChange={(e) => {
-                    const tp = TIMER_PRESETS.find((p) => p.id === e.target.value);
-                    if (!tp) return;
-                    savePrefs({
-                      ...prefs,
-                      focus_min: tp.focus,
-                      break_min: tp.break,
-                      cycles: tp.cycles,
-                      focus_sec: 0,
-                    });
-                  }}
-                  className="input-premium w-full py-2 text-sm"
-                  aria-label="Timer preset"
-                >
-                  <option value="custom">Custom</option>
-                  {TIMER_PRESETS.map((tp) => (
-                    <option key={tp.id} value={tp.id} title={tp.basis}>
-                      {tp.label} — {tp.basis}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Timer presets">
+                  {TIMER_PRESETS.map((tp) => {
+                    const active = tp.id === activePresetId;
+                    return (
+                      <button
+                        key={tp.id}
+                        type="button"
+                        title={tp.basis}
+                        onClick={() =>
+                          savePrefs({
+                            ...prefs,
+                            focus_min: tp.focus,
+                            break_min: tp.break,
+                            cycles: tp.cycles,
+                            focus_sec: 0,
+                          })
+                        }
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                          active
+                            ? "border-[#b8422e] bg-[#b8422e]/25 text-white"
+                            : "border-white/12 bg-white/[0.03] text-white/75 hover:border-white/25 hover:text-white"
+                        }`}
+                      >
+                        {tp.label}
+                      </button>
+                    );
+                  })}
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   <Stepper
                     label="Focus"
@@ -1122,7 +1126,6 @@ export function BlockTab({
                     max={180}
                     suffix="m"
                     compact
-                    disabled={inSession}
                     onChange={(v) => savePrefs({ ...prefs, focus_min: v })}
                   />
                   <Stepper
@@ -1132,7 +1135,6 @@ export function BlockTab({
                     max={60}
                     suffix="m"
                     compact
-                    disabled={inSession}
                     onChange={(v) => savePrefs({ ...prefs, break_min: v })}
                   />
                   <Stepper
@@ -1141,10 +1143,14 @@ export function BlockTab({
                     min={1}
                     max={12}
                     compact
-                    disabled={inSession}
                     onChange={(v) => savePrefs({ ...prefs, cycles: v })}
                   />
                 </div>
+                {paused ? (
+                  <p className="text-center text-[10px] text-white/40">
+                    Next phase uses these · Resume keeps remaining time
+                  </p>
+                ) : null}
               </div>
             )}
 

@@ -22,6 +22,40 @@ const DISTRACTORS = {
   "web.whatsapp.com": 18,
 };
 
+/** Social / video / news (and close cousins) — used for "Block this site?" prompts
+ * during an active shield. Mirrors BlockTab CATEGORIES + DISTRACTORS. */
+const DOPAMINE_SITES = new Set([
+  ...Object.keys(DISTRACTORS),
+  "primevideo.com",
+  "disneyplus.com",
+  "lemonde.fr",
+  "threads.net",
+]);
+
+/**
+ * Map a hostname to a canonical dopamine apex, or null.
+ * @param {string} host
+ * @param {Record<string, string[]>} [aliases] domain → alias list (from background)
+ */
+function matchDopamineDomain(host, aliases) {
+  const h = String(host || "")
+    .replace(/^www\./, "")
+    .toLowerCase();
+  if (!h) return null;
+  for (const d of DOPAMINE_SITES) {
+    if (h === d || h.endsWith("." + d)) return d;
+  }
+  if (aliases && typeof aliases === "object") {
+    for (const [base, list] of Object.entries(aliases)) {
+      if (!DOPAMINE_SITES.has(base)) continue;
+      for (const a of list || []) {
+        if (h === a || h.endsWith("." + a)) return base;
+      }
+    }
+  }
+  return null;
+}
+
 const WORK = new Set([
   "github.com",
   "gitlab.com",

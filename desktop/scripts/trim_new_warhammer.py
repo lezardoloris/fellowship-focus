@@ -105,7 +105,7 @@ def main() -> None:
             if not m.exists() or m.stat().st_size != src.stat().st_size:
                 shutil.copy2(src, m)
         entries.append({"title": t["title"], "src": f"/audio/{name}", "youtubeId": t["youtubeId"]})
-    entries.sort(key=lambda e: e["title"].lower())
+    # Preserve catalog order (preferred defaults first); do not A–Z sort.
     (WEB / "manifest.json").write_text(
         json.dumps(entries, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )

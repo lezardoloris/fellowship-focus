@@ -21,9 +21,9 @@ const DEFAULTS = {
   desktopShieldOn: false,
   sites: DEFAULT_SITES.slice(),
   prefs: {
-    focus_min: 45,
-    break_min: 5,
-    cycles: 4,
+    focus_min: 50,
+    break_min: 10,
+    cycles: 3,
     hard_mode: "confirm",
     hard_delay_secs: 30,
     hard_phrase: "i will focus",
@@ -737,6 +737,161 @@ async function notifyBlocked(domain) {
   }
 }
 
+// ── Dopamine "Block this site?" prompt ───────────────────
+// During an active shield, visiting a known distractor that is NOT already
+// blocked → Yes/No notification. Block adds to the list; Not now snoozes.
+// When the desktop system proxy is up it owns this prompt (avoids double toast).
+
+const DOPAMINE_PROMPT_PREFIX = "ff-dopamine-";
+const DOPAMINE_SNOOZE_MS = 30 * 60 * 1000;
+const DESKTOP_ADD_SITE_URL = "http://add.fellowshipfocus.internal/";
+/** @type {Map<string, { tabId?: number, at: number }>} */
+const _dopaminePending = new Map();
+
+function dopamineNotifId(domain) {
+  return DOPAMINE_PROMPT_PREFIX + domain;
+}
+
+async function getDopamineSnooze() {
+  const { dopamineSnooze } = await chrome.storage.local.get("dopamineSnooze");
+  return dopamineSnooze && typeof dopamineSnooze === "object" ? dopamineSnooze : {};
+}
+
+async function snoozeDopamine(domain, ms = DOPAMINE_SNOOZE_MS) {
+  const map = await getDopamineSnooze();
+  const now = Date.now();
+  for (const [k, until] of Object.entries(map)) {
+    if (Number(until) <= now) delete map[k];
+  }
+  map[domain] = now + Math.max(60_000, Number(ms) || DOPAMINE_SNOOZE_MS);
+  await chrome.storage.local.set({ dopamineSnooze: map });
+}
+
+/** Ask the desktop proxy (if up) to add a site to the system blocklist. */
+async function syncAddToDesktop(domain) {
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 1500);
+    await fetch(`${DESKTOP_ADD_SITE_URL}?site=${encodeURIComponent(domain)}`, {
+      signal: ctl.signal,
+      cache: "no-store",
+    });
+    clearTimeout(timer);
+  } catch {
+    /* desktop not proxying — extension-local add is enough */
+  }
+}
+
+async function acceptDopamineBlock(domain) {
+  _dopaminePending.delete(domain);
+  try {
+    chrome.notifications.clear(dopamineNotifId(domain));
+  } catch {
+    /* ignore */
+  }
+  await addSite(domain);
+  await syncAddToDesktop(domain);
+  notify("Blocked", `${domain} added to your blocklist`);
+}
+
+async function declineDopamineBlock(domain, ms = DOPAMINE_SNOOZE_MS) {
+  _dopaminePending.delete(domain);
+  try {
+    chrome.notifications.clear(dopamineNotifId(domain));
+  } catch {
+    /* ignore */
+  }
+  await snoozeDopamine(domain, ms);
+}
+
+async function showDopaminePrompt(domain, tabId) {
+  const id = dopamineNotifId(domain);
+  _dopaminePending.set(domain, { tabId, at: Date.now() });
+  const base = {
+    type: "basic",
+    iconUrl: "icons/icon128.png",
+    title: `Block ${domain}?`,
+    priority: 2,
+    requireInteraction: true,
+  };
+  try {
+    await chrome.notifications.create(id, {
+      ...base,
+      message: "Distracting site during focus",
+      buttons: [{ title: "Block" }, { title: "Not now" }],
+    });
+  } catch {
+    // Buttons unsupported on some platforms — click = block, dismiss = snooze.
+    try {
+      await chrome.notifications.create(id, {
+        ...base,
+        message: "Click to block · dismiss to allow for now",
+      });
+    } catch {
+      _dopaminePending.delete(domain);
+    }
+  }
+}
+
+/** If this URL is an unblocked dopamine site, offer to add it. */
+async function maybePromptDopamine(url, tabId, cfg) {
+  if (!url || !/^https?:/i.test(url)) return;
+  // Desktop mitm owns the prompt while the system shield is detected.
+  if (cfg.desktopShieldOn) return;
+
+  let host = "";
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return;
+  }
+  if (!host || isAllowlisted(host, cfg.prefs.allowlist || [])) return;
+
+  const domain = matchDopamineDomain(host, DOMAIN_ALIASES);
+  if (!domain) return;
+
+  const temp = liveTempAllows(cfg);
+  if (temp[host] || temp[domain]) return;
+
+  // Already on the list (full-domain) — blockDecision should have caught it.
+  for (const site of cfg.sites || []) {
+    const base = normalizeSite(site);
+    if (!base) continue;
+    for (const d of expandDomains(base)) {
+      if (domain === d || host === d || host.endsWith("." + d)) return;
+    }
+  }
+
+  const snooze = await getDopamineSnooze();
+  if ((snooze[domain] || 0) > Date.now()) return;
+
+  const pending = _dopaminePending.get(domain);
+  if (pending && Date.now() - pending.at < 5 * 60 * 1000) return;
+
+  await showDopaminePrompt(domain, tabId);
+}
+
+if (chrome.notifications) {
+  chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {
+    if (!id.startsWith(DOPAMINE_PROMPT_PREFIX)) return;
+    const domain = id.slice(DOPAMINE_PROMPT_PREFIX.length);
+    if (buttonIndex === 0) void acceptDopamineBlock(domain);
+    else void declineDopamineBlock(domain);
+  });
+  chrome.notifications.onClicked.addListener((id) => {
+    if (!id.startsWith(DOPAMINE_PROMPT_PREFIX)) return;
+    const domain = id.slice(DOPAMINE_PROMPT_PREFIX.length);
+    void acceptDopamineBlock(domain);
+  });
+  chrome.notifications.onClosed.addListener((id, byUser) => {
+    if (!id.startsWith(DOPAMINE_PROMPT_PREFIX)) return;
+    const domain = id.slice(DOPAMINE_PROMPT_PREFIX.length);
+    if (!_dopaminePending.has(domain)) return;
+    // User dismissed or the toast timed out — short snooze to avoid spam.
+    void declineDopamineBlock(domain, byUser ? DOPAMINE_SNOOZE_MS : 5 * 60 * 1000);
+  });
+}
+
 async function checkActiveTab(tabId) {
   try {
     const cfg = await getConfig();
@@ -744,8 +899,8 @@ async function checkActiveTab(tabId) {
     const tab = await chrome.tabs.get(tabId);
     if (!tab || !tab.url) return;
     const hit = blockDecision(tab.url, cfg);
-    if (!hit) return;
-    await enforceBlock(tabId, tab.url, cfg, hit);
+    if (hit) await enforceBlock(tabId, tab.url, cfg, hit);
+    else await maybePromptDopamine(tab.url, tabId, cfg);
   } catch {
     /* tab gone — nothing to do */
   }
@@ -761,6 +916,7 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
     if (!effectiveShield(cfg)) return;
     const hit = blockDecision(details.url, cfg);
     if (hit) await enforceBlock(details.tabId, details.url, cfg, hit);
+    else await maybePromptDopamine(details.url, details.tabId, cfg);
   } catch {
     /* ignore */
   }
