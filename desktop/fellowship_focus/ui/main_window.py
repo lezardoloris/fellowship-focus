@@ -201,6 +201,14 @@ class MainWindow(QMainWindow):
         self._float_timer.dismissed_by_user.connect(self._refresh_tray_menu)
         self._float_timer.open_app_requested.connect(self._show_from_tray)
         self._float_timer.remaining_changed.connect(self._on_float_remaining)
+        self._float_timer.add_time_requested.connect(self._on_float_add_time)
+        self._float_timer.break_now_requested.connect(self._on_float_break_now)
+        self._float_timer.snooze_requested.connect(self._on_float_snooze)
+        self._float_timer.pause_requested.connect(self._on_float_pause)
+        self._float_timer.resume_requested.connect(self._on_float_resume)
+        self._float_timer.music_toggle_requested.connect(self._on_float_music_toggle)
+        self._float_timer.music_select_requested.connect(self._on_float_music_select)
+        self._float_timer.music_volume_requested.connect(self._on_float_music_volume)
 
         self.usage_tracker = UsageTracker(lambda: self.config)
         self.usage_page = UsagePage(self.usage_tracker, self.config, save_config)
@@ -1315,26 +1323,104 @@ class MainWindow(QMainWindow):
             remaining = 0
         label = str(payload.get("label") or payload.get("phase") or "FOCUS")
         paused = bool(payload.get("paused"))
-        self._float_timer.update_timer(remaining, label, paused=paused)
+        awaiting_break = bool(payload.get("awaitingBreak") or payload.get("awaiting_break"))
+        expanded = payload.get("expanded")
+        expanded_flag = None if expanded is None else bool(expanded)
+        self._float_timer.update_timer(
+            remaining,
+            label,
+            paused=paused,
+            awaiting_break=awaiting_break,
+            expanded=expanded_flag,
+        )
+        try:
+            st = self.music_player.bridge_state()
+            self._float_timer.set_music_state(
+                tracks=st.get("tracks") or [],
+                index=int(st.get("index", -1)),
+                playing=bool(st.get("playing")),
+                volume=float(st.get("volume", 0.5)),
+            )
+        except Exception:
+            pass
         self._refresh_tray_menu()
-        return {"ok": True, "remaining": remaining, "paused": paused}
+        return {
+            "ok": True,
+            "remaining": remaining,
+            "paused": paused,
+            "awaitingBreak": awaiting_break,
+        }
 
     def _web_hide_float_timer(self) -> dict:
         self._float_timer.hide_timer()
         self._refresh_tray_menu()
         return {"ok": True}
 
-    def _on_float_timer_closed(self) -> None:
-        """User chose End session (context menu / tray) — ask the web app to stop."""
-        self._refresh_tray_menu()
+    def _dispatch_float_js(self, event_name: str, detail: str = "{}") -> None:
         try:
             view = getattr(self.web_dashboard, "_view", None)
             if view is not None:
                 view.page().runJavaScript(
-                    "window.dispatchEvent(new CustomEvent('ff-float-closed'));"
+                    f"window.dispatchEvent(new CustomEvent('{event_name}', {{ detail: {detail} }}));"
                 )
         except Exception:
             pass
+
+    def _on_float_add_time(self, minutes: int) -> None:
+        self._dispatch_float_js("ff-float-add-time", f"{{ minutes: {int(minutes)} }}")
+
+    def _on_float_break_now(self) -> None:
+        self._dispatch_float_js("ff-float-break-now")
+
+    def _on_float_snooze(self) -> None:
+        self._dispatch_float_js("ff-float-snooze")
+
+    def _on_float_pause(self) -> None:
+        self._dispatch_float_js("ff-float-pause")
+
+    def _on_float_resume(self) -> None:
+        self._dispatch_float_js("ff-float-resume")
+
+    def _on_float_music_toggle(self) -> None:
+        try:
+            st = self.music_player.bridge_cmd({"cmd": "toggle"})
+            self._float_timer.set_music_state(
+                tracks=st.get("tracks") or [],
+                index=int(st.get("index", -1)),
+                playing=bool(st.get("playing")),
+                volume=float(st.get("volume", 0.5)),
+            )
+        except Exception:
+            pass
+
+    def _on_float_music_select(self, index: int) -> None:
+        try:
+            st = self.music_player.bridge_cmd({"cmd": "select", "value": int(index)})
+            self._float_timer.set_music_state(
+                tracks=st.get("tracks") or [],
+                index=int(st.get("index", -1)),
+                playing=bool(st.get("playing")),
+                volume=float(st.get("volume", 0.5)),
+            )
+        except Exception:
+            pass
+
+    def _on_float_music_volume(self, volume: float) -> None:
+        try:
+            st = self.music_player.bridge_cmd({"cmd": "volume", "value": float(volume)})
+            self._float_timer.set_music_state(
+                tracks=st.get("tracks") or [],
+                index=int(st.get("index", -1)),
+                playing=bool(st.get("playing")),
+                volume=float(st.get("volume", 0.5)),
+            )
+        except Exception:
+            pass
+
+    def _on_float_timer_closed(self) -> None:
+        """User chose End session (context menu / tray) — ask the web app to stop."""
+        self._refresh_tray_menu()
+        self._dispatch_float_js("ff-float-closed")
 
     def _on_float_remaining(self, remaining: int, label: str) -> None:
         self._update_tray_tooltip(remaining, label)

@@ -43,6 +43,10 @@ export type FloatTimerPayload = {
   label: string;
   /** When true, desktop float must freeze (no local tick-down). */
   paused?: boolean;
+  /** Focus hit 0 — waiting for break / snooze / extend (web owns the prompt). */
+  awaitingBreak?: boolean;
+  /** Prefer expanded card (desktop may still toggle locally). */
+  expanded?: boolean;
 };
 
 export type WeeklyStatsDay = {

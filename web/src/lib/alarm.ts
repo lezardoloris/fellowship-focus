@@ -1,53 +1,111 @@
-/** Short alarm beep — used when a focus/break timer ends. */
+/**
+ * Premium end-of-focus chime — warm monastic bell stack (Web Audio).
+ * Heritage / ember tone: low fundamental + soft overtones, not a UI beep.
+ */
 
-export function playAlarm(durationSec: number, volume = 0.5): () => void {
-  if (typeof window === "undefined") return () => {};
-  const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-  const ctx = new Ctx();
-  const master = ctx.createGain();
-  master.gain.value = Math.max(0, Math.min(1, volume));
-  master.connect(ctx.destination);
+function clampVol(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
 
-  let stopped = false;
-  const beeps: OscillatorNode[] = [];
-  const endAt = durationSec < 0 ? Number.POSITIVE_INFINITY : ctx.currentTime + durationSec;
-
-  function beep(at: number) {
-    if (stopped || at > endAt) return;
+/** One resonant “bell” strike: decaying partials at golden-ish ratios. */
+function strikeBell(
+  ctx: AudioContext,
+  master: GainNode,
+  at: number,
+  freqs: number[],
+  peak: number,
+  decaySec: number
+) {
+  for (let i = 0; i < freqs.length; i++) {
     const osc = ctx.createOscillator();
     const g = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 880;
+    osc.type = i === 0 ? "sine" : "triangle";
+    osc.frequency.setValueAtTime(freqs[i], at);
+    // Slight downward glide — like a struck bowl settling
+    osc.frequency.exponentialRampToValueAtTime(freqs[i] * 0.985, at + decaySec * 0.85);
+
+    const amp = peak * (i === 0 ? 1 : 0.28 / i);
     g.gain.setValueAtTime(0.0001, at);
-    g.gain.exponentialRampToValueAtTime(0.5, at + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.35);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, amp), at + 0.018);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + decaySec);
+
     osc.connect(g);
     g.connect(master);
     osc.start(at);
-    osc.stop(at + 0.4);
-    beeps.push(osc);
+    osc.stop(at + decaySec + 0.05);
+  }
+}
+
+/**
+ * Play the focus-end chime.
+ * @param durationSec how long to keep repeating soft strikes (−1 = ~40s of gentle repeats)
+ * @param volume 0–1 (0 = mute)
+ * @returns stop function
+ */
+export function playAlarm(durationSec: number, volume = 0.5): () => void {
+  if (typeof window === "undefined") return () => {};
+  const vol = clampVol(volume);
+  if (vol <= 0.001) return () => {};
+
+  const Ctx =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  const ctx = new Ctx();
+  const master = ctx.createGain();
+  master.gain.value = vol * 0.85;
+  // Soft low-pass so it feels like a hall, not a phone
+  const filter = ctx.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.value = 2400;
+  filter.Q.value = 0.7;
+  master.connect(filter);
+  filter.connect(ctx.destination);
+
+  let stopped = false;
+  const endAt =
+    durationSec < 0 ? ctx.currentTime + 40 : ctx.currentTime + Math.max(0.8, durationSec);
+
+  // Ember / monastic partials (Hz) — C3-ish fundamental with warm overtones
+  const bowl = [130.81, 196.0, 261.63, 392.0];
+  const higher = [164.81, 246.94, 329.63];
+
+  function chime(at: number, variant: 0 | 1) {
+    if (stopped || at > endAt) return;
+    const freqs = variant === 0 ? bowl : higher;
+    const peak = variant === 0 ? 0.42 : 0.28;
+    const decay = variant === 0 ? 2.4 : 1.8;
+    strikeBell(ctx, master, at, freqs, peak, decay);
   }
 
-  // Pattern: beep every 0.7s
-  const start = ctx.currentTime + 0.01;
-  const count = durationSec < 0 ? 40 : Math.max(1, Math.ceil(durationSec / 0.7));
+  const start = ctx.currentTime + 0.02;
+  // Opening double-strike (call + answer), then spaced echoes
+  chime(start, 0);
+  chime(start + 0.55, 1);
+
+  const interval = 3.2;
+  const count =
+    durationSec < 0
+      ? 12
+      : Math.max(0, Math.ceil((Math.max(0, durationSec) - 1.2) / interval));
   for (let i = 0; i < count; i++) {
-    const t = start + i * 0.7;
-    if (durationSec >= 0 && t > endAt) break;
-    beep(t);
+    const t = start + 1.4 + i * interval;
+    if (t > endAt) break;
+    chime(t, (i % 2 === 0 ? 0 : 1) as 0 | 1);
   }
 
   void ctx.resume();
 
   return () => {
     stopped = true;
-    for (const o of beeps) {
-      try {
-        o.stop();
-      } catch {
-        /* ignore */
-      }
+    try {
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.setValueAtTime(master.gain.value, ctx.currentTime);
+      master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
+    } catch {
+      /* ignore */
     }
-    void ctx.close();
+    window.setTimeout(() => {
+      void ctx.close();
+    }, 180);
   };
 }

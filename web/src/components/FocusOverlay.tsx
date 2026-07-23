@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ambientPlayer, AMBIENT_PRESETS, type AmbientId } from "@/lib/ambient";
 import { desktopBridge } from "@/lib/desktop";
+import { FocusMusicPanel } from "@/components/FocusMusicPanel";
 
 type Phase = "idle" | "focus" | "break";
 
@@ -14,10 +15,14 @@ type Props = {
   cycle: number;
   cycles: number;
   paused?: boolean;
+  awaitingBreak?: boolean;
   onStop: () => void;
   onPause?: () => void;
   onResume?: () => void;
   onMinimize?: () => void;
+  onExtend?: (minutes: number) => void;
+  onTakeBreak?: () => void;
+  onSnooze?: () => void;
 };
 
 const AMBIENT_KEY = "ff-ambient-preset";
@@ -41,15 +46,20 @@ export function FocusOverlay({
   cycle,
   cycles,
   paused = false,
+  awaitingBreak = false,
   onStop,
   onPause,
   onResume,
   onMinimize,
+  onExtend,
+  onTakeBreak,
+  onSnooze,
 }: Props) {
   const [immersive, setImmersive] = useState(true);
   const [ambient, setAmbient] = useState<AmbientId>("off");
   const [volume, setVolume] = useState(0.35);
   const [playerOpen, setPlayerOpen] = useState(true);
+  const [floatExpanded, setFloatExpanded] = useState(false);
   const [mounted, setMounted] = useState(false);
   const enteredFs = useRef(false);
 
@@ -64,6 +74,10 @@ export function FocusOverlay({
   }, [open, phase !== "idle"]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (awaitingBreak) setFloatExpanded(true);
+  }, [awaitingBreak]);
+
+  useEffect(() => {
     if (!open || phase === "idle") {
       desktopBridge.hideFloatTimer();
       return;
@@ -73,10 +87,12 @@ export function FocusOverlay({
       phase,
       cycle,
       cycles,
-      label: paused ? "PAUSED" : phase === "focus" ? "FOCUS" : "BREAK",
-      paused,
+      label: awaitingBreak ? "REST?" : paused ? "PAUSED" : phase === "focus" ? "FOCUS" : "BREAK",
+      paused: paused || awaitingBreak,
+      awaitingBreak,
+      expanded: floatExpanded,
     });
-  }, [open, phase, remaining, cycle, cycles, paused]);
+  }, [open, phase, remaining, cycle, cycles, paused, awaitingBreak, floatExpanded]);
 
   useEffect(() => {
     if (!open || phase === "idle") {
@@ -120,12 +136,14 @@ export function FocusOverlay({
 
   if (!open || phase === "idle" || !mounted) return null;
 
-  const label = paused ? "PAUSED" : phase === "focus" ? "FOCUS" : "BREAK";
-  const sub = paused
-    ? `Cycle ${cycle}/${cycles} · paused`
-    : phase === "focus"
-      ? `Cycle ${cycle}/${cycles} · deep work`
-      : `Cycle ${cycle}/${cycles} · break`;
+  const label = awaitingBreak ? "REST?" : paused ? "PAUSED" : phase === "focus" ? "FOCUS" : "BREAK";
+  const sub = awaitingBreak
+    ? `Cycle ${cycle}/${cycles} · the hour ends`
+    : paused
+      ? `Cycle ${cycle}/${cycles} · paused`
+      : phase === "focus"
+        ? `Cycle ${cycle}/${cycles} · deep work`
+        : `Cycle ${cycle}/${cycles} · break`;
 
   async function pickAmbient(id: AmbientId) {
     setAmbient(id);
@@ -212,14 +230,33 @@ export function FocusOverlay({
             <p className="mb-3 text-[11px] uppercase tracking-[0.35em] text-white/75">{sub}</p>
             <div
               className={`font-display text-[6.5rem] font-bold leading-none tabular-nums tracking-tight sm:text-[8rem] md:text-[9rem] ${
-                paused ? "text-white/45" : ""
+                paused || awaitingBreak ? "text-white/45" : ""
               }`}
             >
               {fmt(remaining)}
             </div>
             <p className="mt-4 text-sm uppercase tracking-[0.45em] text-white/60">{label}</p>
 
-            {playerOpen && (
+            {awaitingBreak && (
+              <div className="mt-8 flex w-full max-w-sm flex-col gap-2">
+                <button type="button" className="btn-primary py-2.5" onClick={() => onTakeBreak?.()}>
+                  Take break now
+                </button>
+                <button type="button" className="btn-secondary py-2.5" onClick={() => onSnooze?.()}>
+                  Remind in 5 minutes
+                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" className="btn-secondary py-2.5" onClick={() => onExtend?.(5)}>
+                    Extend +5
+                  </button>
+                  <button type="button" className="btn-secondary py-2.5" onClick={() => onExtend?.(10)}>
+                    Extend +10
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {playerOpen && !awaitingBreak && (
               <div className="glass-panel mt-8 w-full max-w-md p-4">
                 <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.2em] text-white/70">
                   Ambient / vibrations
@@ -264,20 +301,21 @@ export function FocusOverlay({
             <button type="button" onClick={minimize} className="btn-secondary px-6">
               Work with timer
             </button>
-            {paused ? (
-              onResume && (
-                <button type="button" onClick={onResume} className="btn-primary px-6">
-                  Resume
-                </button>
-              )
-            ) : (
-              onPause &&
-              remaining > 0 && (
-                <button type="button" onClick={onPause} className="btn-secondary px-6">
-                  Pause
-                </button>
-              )
-            )}
+            {!awaitingBreak &&
+              (paused ? (
+                onResume && (
+                  <button type="button" onClick={onResume} className="btn-primary px-6">
+                    Resume
+                  </button>
+                )
+              ) : (
+                onPause &&
+                remaining > 0 && (
+                  <button type="button" onClick={onPause} className="btn-secondary px-6">
+                    Pause
+                  </button>
+                )
+              ))}
             <button type="button" onClick={closeAll} className="btn-primary px-6">
               End session
             </button>
@@ -286,40 +324,87 @@ export function FocusOverlay({
       )}
 
       {!immersive && !desktopBridge.present() && (
-        <div className="fixed bottom-5 right-5 z-[9999]">
-          <div className="flex items-center gap-2.5 rounded-full border border-white/12 bg-[#1a1c1e]/96 py-1.5 pl-3.5 pr-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
-            <button
-              type="button"
-              onClick={() => setImmersive(true)}
-              className="flex items-center gap-2.5 text-left"
-              title="Back to immersive"
-            >
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${
-                  paused
-                    ? "bg-white/40"
-                    : phase === "break"
-                      ? "animate-pulse bg-[#60a5fa]"
-                      : "animate-pulse bg-[#b8422e]"
-                }`}
-              />
-              <span
-                className={`font-sans text-[15px] font-semibold tabular-nums tracking-wide ${
-                  paused ? "text-white/45" : "text-[#f4f4f5]"
-                }`}
+        <div className="fixed bottom-5 right-5 z-[9999] w-[min(100vw-2.5rem,20rem)]">
+          <div
+            className={`overflow-hidden border border-white/12 bg-[#1a1c1e]/96 shadow-[0_12px_40px_rgba(0,0,0,0.5)] ${
+              floatExpanded ? "rounded-2xl" : "rounded-full"
+            }`}
+          >
+            <div className="flex items-center gap-2.5 py-1.5 pl-3.5 pr-1.5">
+              <button
+                type="button"
+                onClick={() => setImmersive(true)}
+                className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                title="Back to immersive"
               >
-                {fmt(remaining)}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={closeAll}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-base leading-none text-white/70 hover:bg-[#3a3d40] hover:text-white"
-              aria-label="Close timer"
-              title="End session"
-            >
-              ×
-            </button>
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    paused
+                      ? "bg-white/40"
+                      : awaitingBreak
+                        ? "animate-pulse bg-[#e07a63]"
+                        : phase === "break"
+                          ? "animate-pulse bg-[#60a5fa]"
+                          : "animate-pulse bg-[#b8422e]"
+                  }`}
+                />
+                <span
+                  className={`font-sans text-[15px] font-semibold tabular-nums tracking-wide ${
+                    paused || awaitingBreak ? "text-white/45" : "text-[#f4f4f5]"
+                  }`}
+                >
+                  {fmt(remaining)}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFloatExpanded((v) => !v)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-xs text-white/70 hover:bg-[#3a3d40] hover:text-white"
+                aria-label={floatExpanded ? "Collapse" : "Expand"}
+              >
+                {floatExpanded ? "▴" : "▾"}
+              </button>
+              <button
+                type="button"
+                onClick={closeAll}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-base leading-none text-white/70 hover:bg-[#3a3d40] hover:text-white"
+                aria-label="Close timer"
+                title="End session"
+              >
+                ×
+              </button>
+            </div>
+            {floatExpanded && (
+              <div className="space-y-3 border-t border-white/10 px-3.5 pb-3.5 pt-3">
+                <FocusMusicPanel compact />
+                <div className="flex gap-1.5">
+                  <button
+                    type="button"
+                    className="btn-secondary min-h-8 flex-1 py-1 text-xs"
+                    onClick={() => onExtend?.(5)}
+                  >
+                    +5 min
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary min-h-8 flex-1 py-1 text-xs"
+                    onClick={() => onExtend?.(10)}
+                  >
+                    +10 min
+                  </button>
+                </div>
+                {awaitingBreak ? (
+                  <div className="flex flex-col gap-1.5">
+                    <button type="button" className="btn-primary min-h-8 text-xs" onClick={() => onTakeBreak?.()}>
+                      Break now
+                    </button>
+                    <button type="button" className="btn-secondary min-h-8 text-xs" onClick={() => onSnooze?.()}>
+                      Remind in 5 min
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
       )}

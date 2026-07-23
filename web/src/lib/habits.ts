@@ -161,7 +161,7 @@ export const HABIT_PRESETS: HabitPreset[] = [
   { id: "podcast", label: "Listen 1 podcast", emoji: "audio", verification: "manual", defaultGoal: 20, category: "work" },
   { id: "sport", label: "Sport", emoji: "strength", verification: "manual", defaultGoal: 20, category: "health" },
   { id: "10-products", label: "Ship 10 products / day", emoji: "crate", verification: "manual", defaultGoal: 15, category: "work" },
-  { id: "no-joint", label: "No weed", emoji: "ban", verification: "manual", defaultGoal: 25, category: "accountability" },
+  // "no-joint" retired from Quick add — existing DB / solo rows keep working
   { id: "no-cigarette", label: "No cigarettes", emoji: "smoke", verification: "manual", defaultGoal: 25, category: "accountability" },
   { id: "mirror-talk", label: "Mirror practice", emoji: "mirror", verification: "manual", defaultGoal: 20, category: "health" },
   { id: "business-formation", label: "Business study 4h / week", emoji: "chart", verification: "manual", defaultGoal: 12, category: "work" },

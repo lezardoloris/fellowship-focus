@@ -102,6 +102,8 @@ type StoredSession = {
   /** Frozen remaining seconds while paused (endsAt is ignored until resume). */
   remaining?: number;
   paused?: boolean;
+  /** Focus hit 0 — waiting for break / snooze / extend. */
+  awaitingBreak?: boolean;
 };
 
 function readSession(): StoredSession | null {
@@ -110,6 +112,9 @@ function readSession(): StoredSession | null {
     if (!raw) return null;
     const s = JSON.parse(raw) as StoredSession;
     if (s.phase !== "focus" && s.phase !== "break") return null;
+    if (s.awaitingBreak && s.phase === "focus") {
+      return { ...s, remaining: 0, paused: false, awaitingBreak: true };
+    }
     if (s.paused) {
       const left = Math.max(0, Math.floor(Number(s.remaining) || 0));
       if (left <= 0) return null;
@@ -163,6 +168,8 @@ export function BlockTab({
   // Firefox, extension not installed…).
   const [armFailed, setArmFailed] = useState(false);
   const [floatHidden, setFloatHidden] = useState(false);
+  const [floatExpanded, setFloatExpanded] = useState(false);
+  const [awaitingBreak, setAwaitingBreak] = useState(false);
   const [siteQuery, setSiteQuery] = useState("");
   const [suggestions, setSuggestions] = useState<HistorySuggestion[]>([]);
   const [scanBusy, setScanBusy] = useState(false);
@@ -658,10 +665,11 @@ export function BlockTab({
   }, [token, focusTotalSec]);
 
   const startPhase = useCallback(
-    (p: Phase, cyc: number, resumeSecs?: number) => {
-      stopAlarm();
+    (p: Phase, cyc: number, resumeSecs?: number, opts?: { keepAlarm?: boolean }) => {
+      if (!opts?.keepAlarm) stopAlarm();
       setExceeded(0);
       setPaused(false);
+      setAwaitingBreak(false);
       setPhase(p);
       setCycle(cyc);
       if (p !== "idle") setFloatHidden(false);
@@ -674,7 +682,13 @@ export function BlockTab({
         try {
           localStorage.setItem(
             SESSION_KEY,
-            JSON.stringify({ phase: p, cycle: cyc, endsAt: endsAtRef.current, paused: false })
+            JSON.stringify({
+              phase: p,
+              cycle: cyc,
+              endsAt: endsAtRef.current,
+              paused: false,
+              awaitingBreak: false,
+            })
           );
         } catch {
           /* storage full / private mode — timer still runs in-memory */
@@ -685,7 +699,14 @@ export function BlockTab({
   );
 
   const persistSession = useCallback(
-    (patch: { phase: Exclude<Phase, "idle">; cycle: number; endsAt: number; remaining?: number; paused?: boolean }) => {
+    (patch: {
+      phase: Exclude<Phase, "idle">;
+      cycle: number;
+      endsAt: number;
+      remaining?: number;
+      paused?: boolean;
+      awaitingBreak?: boolean;
+    }) => {
       try {
         localStorage.setItem(SESSION_KEY, JSON.stringify(patch));
       } catch {
@@ -709,6 +730,27 @@ export function BlockTab({
   useEffect(() => {
     const s = readSession();
     if (!s) return;
+    if (s.awaitingBreak && s.phase === "focus") {
+      stopAlarm();
+      setExceeded(0);
+      setPhase("focus");
+      setCycle(s.cycle);
+      setRemaining(0);
+      setPaused(false);
+      setAwaitingBreak(true);
+      setFloatHidden(false);
+      firedRef.current = true;
+      endsAtRef.current = Date.now();
+      persistSession({
+        phase: "focus",
+        cycle: s.cycle,
+        endsAt: endsAtRef.current,
+        remaining: 0,
+        awaitingBreak: true,
+      });
+      fireAlarm();
+      return;
+    }
     if (s.paused) {
       const left = Math.max(0, Math.floor(Number(s.remaining) || 0));
       if (left <= 0) {
@@ -727,6 +769,7 @@ export function BlockTab({
       setCycle(s.cycle);
       setRemaining(left);
       setPaused(true);
+      setAwaitingBreak(false);
       setFloatHidden(false);
       firedRef.current = false;
       endsAtRef.current = Date.now() + left * 1000;
@@ -768,25 +811,39 @@ export function BlockTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restore once on mount
   }, []);
 
+  const floatLabel = (left: number) => {
+    if (awaitingBreak) return "REST?";
+    if (paused) return "PAUSED";
+    return phase === "focus" ? "FOCUS" : "BREAK";
+  };
+
+  const pushFloat = useCallback(
+    (left: number) => {
+      desktopBridge.showFloatTimer({
+        remaining: left,
+        phase,
+        cycle,
+        cycles: prefs.cycles,
+        label: floatLabel(left),
+        paused: paused || awaitingBreak,
+        awaitingBreak,
+        expanded: floatExpanded,
+      });
+    },
+    // floatLabel closes over awaitingBreak/paused/phase
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [phase, cycle, prefs.cycles, paused, awaitingBreak, floatExpanded]
+  );
+
   useEffect(() => {
     if (phase === "idle") {
       stopTimer();
       desktopBridge.hideFloatTimer();
       return;
     }
-    const floatPayload = (left: number) =>
-      desktopBridge.showFloatTimer({
-        remaining: left,
-        phase,
-        cycle,
-        cycles: prefs.cycles,
-        label: paused ? "PAUSED" : phase === "focus" ? "FOCUS" : "BREAK",
-        paused,
-      });
-
-    if (paused) {
+    if (awaitingBreak || paused) {
       stopTimer();
-      floatPayload(remaining);
+      pushFloat(remaining);
       return;
     }
 
@@ -796,7 +853,7 @@ export function BlockTab({
       const left = Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000));
       setRemaining(left);
       if (left > 0) {
-        floatPayload(left);
+        pushFloat(left);
         return;
       }
       if (firedRef.current) return;
@@ -806,20 +863,103 @@ export function BlockTab({
         logSession();
         if (cycle >= prefs.cycles) {
           setPhase("idle");
+          setAwaitingBreak(false);
           clearSession();
           desktopBridge.hideFloatTimer();
           return;
         }
-        startPhase("break", cycle);
-      } else {
-        startPhase("focus", cycle + 1);
+        // Do NOT auto-start break — ask first (prompt + expandable float).
+        setRemaining(0);
+        setAwaitingBreak(true);
+        setFloatExpanded(true);
+        persistSession({
+          phase: "focus",
+          cycle,
+          endsAt: Date.now(),
+          remaining: 0,
+          awaitingBreak: true,
+        });
+        desktopBridge.showFloatTimer({
+          remaining: 0,
+          phase: "focus",
+          cycle,
+          cycles: prefs.cycles,
+          label: "REST?",
+          paused: true,
+          awaitingBreak: true,
+          expanded: true,
+        });
+        return;
       }
+      startPhase("focus", cycle + 1);
     }, 1000);
-    floatPayload(remaining);
+    pushFloat(remaining);
     return stopTimer;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- tick only on phase/cycle/pause changes
-  }, [phase, cycle, paused, prefs.cycles, startPhase, stopTimer, logSession, fireAlarm, clearSession]);
+  }, [
+    phase,
+    cycle,
+    paused,
+    awaitingBreak,
+    prefs.cycles,
+    startPhase,
+    stopTimer,
+    logSession,
+    fireAlarm,
+    clearSession,
+    persistSession,
+    pushFloat,
+  ]);
 
+  const takeBreakNow = useCallback(() => {
+    if (phase !== "focus") return;
+    setAwaitingBreak(false);
+    // Fresh chime when choosing break after deferral; keep ringing if already playing.
+    fireAlarm();
+    startPhase("break", cycle, undefined, { keepAlarm: true });
+    void extensionCommand("startFocus", {
+      remainingMs: Math.max(1, prefs.break_min) * 60 * 1000,
+      cycle,
+      webOwnsLog: true,
+    }).catch(() => {});
+  }, [phase, cycle, prefs.break_min, fireAlarm, startPhase]);
+
+  const extendFocusBy = useCallback(
+    (minutes: number) => {
+      if (phase === "idle") return;
+      const add = Math.max(1, Math.round(minutes)) * 60;
+      const base =
+        awaitingBreak || remaining <= 0
+          ? 0
+          : Math.max(0, Math.ceil((endsAtRef.current - Date.now()) / 1000));
+      const secs = base + add;
+      setAwaitingBreak(false);
+      setPaused(false);
+      stopAlarm();
+      setRemaining(secs);
+      firedRef.current = false;
+      endsAtRef.current = Date.now() + secs * 1000;
+      persistSession({
+        phase: phase as Exclude<Phase, "idle">,
+        cycle,
+        endsAt: endsAtRef.current,
+        remaining: secs,
+        paused: false,
+        awaitingBreak: false,
+      });
+      void extensionCommand("startFocus", {
+        remainingMs: secs * 1000,
+        cycle,
+        webOwnsLog: true,
+      }).catch(() => {});
+    },
+    [phase, remaining, awaitingBreak, cycle, stopAlarm, persistSession]
+  );
+
+  const snoozeBreak = useCallback(() => {
+    // Keep focus/shield; ask again after 5 minutes.
+    extendFocusBy(5);
+  }, [extendFocusBy]);
   // Track exceeded seconds when sitting at 0 (infinite alarm style)
   useEffect(() => {
     if (phase === "idle" || paused || remaining > 0) {
@@ -831,7 +971,7 @@ export function BlockTab({
   }, [phase, remaining, paused]);
 
   const pause = useCallback(() => {
-    if (phase === "idle" || paused || remaining <= 0) return;
+    if (phase === "idle" || paused || remaining <= 0 || awaitingBreak) return;
     const left = Math.max(
       0,
       Math.ceil((endsAtRef.current - Date.now()) / 1000)
@@ -856,8 +996,21 @@ export function BlockTab({
       cycles: prefs.cycles,
       label: "PAUSED",
       paused: true,
+      awaitingBreak: false,
+      expanded: floatExpanded,
     });
-  }, [phase, paused, remaining, cycle, prefs.cycles, stopTimer, stopAlarm, persistSession]);
+  }, [
+    phase,
+    paused,
+    remaining,
+    awaitingBreak,
+    cycle,
+    prefs.cycles,
+    stopTimer,
+    stopAlarm,
+    persistSession,
+    floatExpanded,
+  ]);
 
   const resume = useCallback(() => {
     if (phase === "idle" || !paused) return;
@@ -969,13 +1122,15 @@ export function BlockTab({
       setRemaining(0);
       setCycle(0);
       setExceeded(0);
+      setAwaitingBreak(false);
+      setFloatExpanded(false);
       desktopBridge.hideFloatTimer();
     })();
   }, [stopTimer, stopAlarm, clearSession, phase, token]);
 
   useEffect(() => {
     const onClosed = () => {
-      // Float × bypasses anti-oops — intentional close
+      // Float × End session — tear down
       extensionCommand("stopFocus").catch(() => {});
       stopTimer();
       stopAlarm();
@@ -984,12 +1139,33 @@ export function BlockTab({
       setRemaining(0);
       setCycle(0);
       setExceeded(0);
+      setAwaitingBreak(false);
+      setFloatExpanded(false);
       desktopBridge.hideFloatTimer();
     };
+    const onAdd = (e: Event) => {
+      const mins = Number((e as CustomEvent).detail?.minutes) || 5;
+      extendFocusBy(mins);
+    };
+    const onBreak = () => takeBreakNow();
+    const onSnooze = () => snoozeBreak();
+    const onPause = () => pause();
+    const onResume = () => resume();
     window.addEventListener("ff-float-closed", onClosed);
-    return () => window.removeEventListener("ff-float-closed", onClosed);
-  }, [stopTimer, stopAlarm, clearSession]);
-
+    window.addEventListener("ff-float-add-time", onAdd);
+    window.addEventListener("ff-float-break-now", onBreak);
+    window.addEventListener("ff-float-snooze", onSnooze);
+    window.addEventListener("ff-float-pause", onPause);
+    window.addEventListener("ff-float-resume", onResume);
+    return () => {
+      window.removeEventListener("ff-float-closed", onClosed);
+      window.removeEventListener("ff-float-add-time", onAdd);
+      window.removeEventListener("ff-float-break-now", onBreak);
+      window.removeEventListener("ff-float-snooze", onSnooze);
+      window.removeEventListener("ff-float-pause", onPause);
+      window.removeEventListener("ff-float-resume", onResume);
+    };
+  }, [stopTimer, stopAlarm, clearSession, extendFocusBy, takeBreakNow, snoozeBreak, pause, resume]);
   useEffect(() => {
     // No extension can exist in the desktop webview — don't poll for one.
     if (isDesktop || isDesktopShell()) return;
@@ -1206,6 +1382,55 @@ export function BlockTab({
         </div>
       </div>
     )}
+    {awaitingBreak && (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 p-4">
+        <div
+          className="glass-panel max-w-md space-y-5 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
+          role="dialog"
+          aria-labelledby="ff-break-title"
+          aria-describedby="ff-break-desc"
+        >
+          <div className="space-y-2 text-center">
+            <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-[#e07a63]/90">
+              Fellowship Focus
+            </p>
+            <h2 id="ff-break-title" className="font-display text-2xl text-white">
+              The hour ends
+            </h2>
+            <p id="ff-break-desc" className="text-sm leading-relaxed text-white/70">
+              Rest, or continue the quest?
+            </p>
+          </div>
+          <div className="flex flex-col gap-2">
+            <button type="button" className="btn-primary w-full py-2.5" onClick={takeBreakNow}>
+              Take break now
+            </button>
+            <button type="button" className="btn-secondary w-full py-2.5" onClick={snoozeBreak}>
+              Remind in 5 minutes
+            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className="btn-secondary py-2.5"
+                onClick={() => extendFocusBy(5)}
+              >
+                Extend +5 min
+              </button>
+              <button
+                type="button"
+                className="btn-secondary py-2.5"
+                onClick={() => extendFocusBy(10)}
+              >
+                Extend +10 min
+              </button>
+            </div>
+          </div>
+          <p className="text-center text-[11px] text-white/40">
+            Shield stays armed until you stop the session
+          </p>
+        </div>
+      </div>
+    )}
     {connectChooser && (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4">
         <div className="glass-panel max-w-sm space-y-4 p-6" role="dialog" aria-labelledby="ff-connect-title">
@@ -1233,33 +1458,113 @@ export function BlockTab({
       </div>
     )}
     {inSession && !isDesktop && !floatHidden && (
-      <div className="fixed bottom-5 right-5 z-[9999]">
-        <div className="flex items-center gap-2.5 rounded-full border border-white/12 bg-[#1a1c1e]/96 py-1.5 pl-3.5 pr-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
-          <span
-            className={`h-2 w-2 shrink-0 rounded-full ${
-              paused
-                ? "bg-white/40"
-                : phase === "break"
-                  ? "animate-pulse bg-[#60a5fa]"
-                  : "animate-pulse bg-[#b8422e]"
-            }`}
-          />
-          <span
-            className={`font-sans text-[15px] font-semibold tabular-nums tracking-wide ${
-              paused ? "text-white/45" : "text-[#f4f4f5]"
-            }`}
-          >
-            {mm}:{ss}
-          </span>
-          <button
-            type="button"
-            onClick={() => setFloatHidden(true)}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-base leading-none text-white/70 hover:bg-[#3a3d40] hover:text-white"
-            aria-label="Hide timer"
-            title="Hide timer — session keeps running (use Stop to end)"
-          >
-            ×
-          </button>
+      <div className="fixed bottom-5 right-5 z-[9999] w-[min(100vw-2.5rem,20rem)]">
+        <div
+          className={`overflow-hidden border border-white/12 bg-[#1a1c1e]/96 shadow-[0_12px_40px_rgba(0,0,0,0.5)] transition-[border-radius] ${
+            floatExpanded ? "rounded-2xl" : "rounded-full"
+          }`}
+        >
+          <div className="flex items-center gap-2 py-1.5 pl-3.5 pr-1.5">
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${
+                paused
+                  ? "bg-white/40"
+                  : awaitingBreak
+                    ? "animate-pulse bg-[#e07a63]"
+                    : phase === "break"
+                      ? "animate-pulse bg-[#60a5fa]"
+                      : "animate-pulse bg-[#b8422e]"
+              }`}
+            />
+            <span
+              className={`min-w-0 flex-1 font-sans text-[15px] font-semibold tabular-nums tracking-wide ${
+                paused || awaitingBreak ? "text-white/55" : "text-[#f4f4f5]"
+              }`}
+            >
+              {mm}:{ss}
+              {awaitingBreak ? (
+                <span className="ml-2 text-[10px] font-medium uppercase tracking-[0.18em] text-[#e07a63]/90">
+                  Rest?
+                </span>
+              ) : null}
+            </span>
+            <button
+              type="button"
+              onClick={() => setFloatExpanded((v) => !v)}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-xs text-white/70 hover:bg-[#3a3d40] hover:text-white"
+              aria-expanded={floatExpanded}
+              aria-label={floatExpanded ? "Collapse timer" : "Expand timer"}
+              title={floatExpanded ? "Collapse" : "Expand"}
+            >
+              {floatExpanded ? "▴" : "▾"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFloatHidden(true)}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-base leading-none text-white/70 hover:bg-[#3a3d40] hover:text-white"
+              aria-label="Hide timer"
+              title="Hide timer — session keeps running (use Stop to end)"
+            >
+              ×
+            </button>
+          </div>
+          {floatExpanded && (
+            <div className="space-y-3 border-t border-white/10 px-3.5 pb-3.5 pt-3">
+              <FocusMusicPanel compact />
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  className="btn-secondary min-h-8 flex-1 px-2 py-1 text-xs"
+                  onClick={() => extendFocusBy(5)}
+                >
+                  +5 min
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary min-h-8 flex-1 px-2 py-1 text-xs"
+                  onClick={() => extendFocusBy(10)}
+                >
+                  +10 min
+                </button>
+              </div>
+              {awaitingBreak ? (
+                <div className="flex flex-col gap-1.5">
+                  <button type="button" className="btn-primary min-h-8 py-1.5 text-xs" onClick={takeBreakNow}>
+                    Break now
+                  </button>
+                  <button type="button" className="btn-secondary min-h-8 py-1.5 text-xs" onClick={snoozeBreak}>
+                    Remind in 5 min
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-1.5">
+                  {paused ? (
+                    <button type="button" className="btn-primary min-h-8 flex-1 py-1.5 text-xs" onClick={resume}>
+                      Resume
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-secondary min-h-8 flex-1 py-1.5 text-xs"
+                      disabled={remaining <= 0}
+                      onClick={pause}
+                    >
+                      Pause
+                    </button>
+                  )}
+                  {phase === "focus" && (
+                    <button
+                      type="button"
+                      className="btn-secondary min-h-8 flex-1 py-1.5 text-xs"
+                      onClick={takeBreakNow}
+                    >
+                      Break now
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     )}

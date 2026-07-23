@@ -403,16 +403,16 @@ async function getStatus() {
     ? (cfg.sites || []).filter(Boolean)
     : [...new Set([...(cfg.sites || []).filter(Boolean), ...HARD_HOSTS_OPTIONAL])];
   const dnrCount = rules.filter((r) => r.id < TEMP_ALLOW_ID_BASE).length;
-  // Notify mode installs zero DNR rules — report effective coverage so isArmed stays true.
-  const ruleCount =
-    effectiveShield(cfg) && notifyOnly ? Math.max(dnrCount, siteList.length) : dnrCount;
+  // ruleCount = real DNR rules only. Notify mode installs zero redirects; coveredSites
+  // is the enforce list so UI can still treat shield as armed without faking DNR.
   return {
     ready: true,
     shieldOn: effectiveShield(cfg),
     manualShield: !!cfg.manualShield,
     focusOn: !!cfg.focus,
     siteCount: (cfg.sites || []).filter(Boolean).length,
-    ruleCount,
+    ruleCount: dnrCount,
+    coveredSites: siteList.length,
     mode: soft ? "soft" : "hard",
     blockStyle: notifyOnly ? "notify" : "page",
     desktopShieldOn: !!cfg.desktopShieldOn,
@@ -421,8 +421,6 @@ async function getStatus() {
     blocksToday: cfg.stats?.blocks || 0,
     focusMinutesToday: cfg.stats?.focusMinutes || 0,
     version: chrome.runtime.getManifest().version,
-  };
-}
   };
 }
 
@@ -560,11 +558,20 @@ async function onFocusAlarm() {
   if (!cfg.focus || cfg.focus.paused) return;
   const { phase, cycle, webOwnsLog } = cfg.focus;
 
-  if (phase === "focus") {
-    // Single logger: web XOR extension. Skip if the web app owns session posts.
-    if (!webOwnsLog) {
-      await logSession(cfg);
+  // Web owns the session clock — do not auto-advance (break prompt lives in the app).
+  // Keep shield/focus state armed; web will start break, extend, or stop.
+  if (webOwnsLog) {
+    await chrome.alarms.clear("focus");
+    if (phase === "focus") {
+      notify("The hour ends", "Rest, or continue the quest?");
+    } else {
+      notify("Break ended", "Ready when you are — open Fellowship Focus.");
     }
+    return;
+  }
+
+  if (phase === "focus") {
+    await logSession(cfg);
     const mins = (await getConfig()).stats.focusMinutes + cfg.prefs.focus_min;
     await setConfig({ stats: { ...cfg.stats, focusMinutes: mins } });
     if (cycle >= cfg.prefs.cycles) {
@@ -1041,8 +1048,8 @@ async function checkActiveTab(tabId) {
 
 // Instant kill the moment a navigation STARTS — before the page loads, as soon
 // as you hit enter in the address bar. No keystroke logging: this is the
-// browser's own navigation event.
-chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
+// browser's own navigation event. Also historyStateUpdated for SPA (YouTube).
+async function onTopFrameNavigate(details) {
   if (details.frameId !== 0) return; // top frame only
   try {
     const cfg = await getConfig();
@@ -1053,7 +1060,10 @@ chrome.webNavigation.onBeforeNavigate.addListener(async (details) => {
   } catch {
     /* ignore */
   }
-});
+}
+
+chrome.webNavigation.onBeforeNavigate.addListener(onTopFrameNavigate);
+chrome.webNavigation.onHistoryStateUpdated.addListener(onTopFrameNavigate);
 
 chrome.tabs.onActivated.addListener((info) => {
   probeDesktopShield();
