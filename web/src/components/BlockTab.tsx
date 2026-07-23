@@ -16,7 +16,6 @@ import {
 } from "@/lib/extensionBridge";
 import { useToast } from "@/components/Toasts";
 import { PremiumLoader } from "@/components/PremiumLoader";
-import { FocusMusicPanel } from "@/components/FocusMusicPanel";
 import { requestHardUnlock } from "@/components/BlockerControls";
 import { usePublishBlockerMode } from "@/components/BlockerMode";
 import {
@@ -779,11 +778,6 @@ export function BlockTab({
     return () => window.removeEventListener("ff-float-closed", onClosed);
   }, [stopTimer, stopAlarm]);
 
-  function testAlarm() {
-    stopAlarm();
-    stopAlarmRef.current = playAlarm(prefs.alarm_secs < 0 ? 2 : prefs.alarm_secs, prefs.alarm_vol);
-  }
-
   useEffect(() => {
     // No extension can exist in the desktop webview — don't poll for one.
     if (isDesktop || isDesktopShell()) return;
@@ -941,10 +935,14 @@ export function BlockTab({
 
         {/* Blocker Mode lives in the sticky header on every tab (product moat). */}
 
-        {/* One horizontal band: Timer | Block list | Music. Equal heights, no
-            floating half-empty panel, stacks vertically under xl. */}
-        <div className="mx-auto grid w-full max-w-7xl items-start gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {/* Timer | Block list — music removed; keep the moat simple. */}
+        <div className="mx-auto grid w-full max-w-6xl items-start gap-4 lg:grid-cols-2">
           <div className="glass-panel overflow-hidden">
+            <div className="border-b border-white/10 px-5 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/55">
+                Timer
+              </p>
+            </div>
             {inSession && (
               <div className={`px-5 pt-5 text-center ${remaining === 0 ? "text-[#f87171]" : "text-white"}`}>
                 <div className="font-display text-5xl font-bold tabular-nums">{mm}:{ss}</div>
@@ -991,107 +989,125 @@ export function BlockTab({
                 <Stepper label="Break" value={prefs.break_min} min={0} max={60} suffix="min" disabled={inSession} onChange={(v) => savePrefs({ ...prefs, break_min: v })} />
                 <Stepper label="Cycles" value={prefs.cycles} min={1} max={12} disabled={inSession} onChange={(v) => savePrefs({ ...prefs, cycles: v })} />
               </div>
-              <div className="flex justify-end">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                  {ALARM_OPTS.map((o) => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      title="Alarm length"
+                      onClick={() => savePrefs({ ...prefs, alarm_secs: o.id })}
+                      className={`rounded-md border px-2 py-1 text-[11px] ${
+                        prefs.alarm_secs === o.id
+                          ? "border-[#b8422e] bg-[#b8422e] text-white"
+                          : "border-white/15 text-white/70"
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={prefs.alarm_vol}
+                    title="Alarm volume"
+                    aria-label="Alarm volume"
+                    onChange={(e) => savePrefs({ ...prefs, alarm_vol: Number(e.target.value) })}
+                    className="ml-1 h-1.5 w-20 accent-[#b8422e] sm:w-28"
+                  />
+                </div>
                 {phase === "idle" ? (
                   <button
                     onClick={start}
-                    className="btn-primary px-5"
+                    className="btn-primary shrink-0 px-5"
                     title={armFailed ? "Blocking is not armed — the timer still runs" : undefined}
                   >
                     Start
                   </button>
                 ) : (
-                  <button onClick={stop} className="btn-secondary px-5">Stop</button>
-                )}
-              </div>
-            </div>
-            <div className="space-y-3 px-5 py-4">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/55">Alarm</p>
-              <div className="flex flex-wrap gap-1">
-                {ALARM_OPTS.map((o) => (
-                  <button
-                    key={o.id}
-                    type="button"
-                    onClick={() => savePrefs({ ...prefs, alarm_secs: o.id })}
-                    className={`rounded-md border px-2 py-1 text-xs ${
-                      prefs.alarm_secs === o.id
-                        ? "border-[#b8422e] bg-[#b8422e] text-white"
-                        : "border-white/15 text-white/70"
-                    }`}
-                  >
-                    {o.label}
+                  <button onClick={stop} className="btn-secondary shrink-0 px-5">
+                    Stop
                   </button>
-                ))}
-                <button type="button" onClick={testAlarm} className="btn-secondary py-1! text-xs!">Test</button>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-white/55">Vol</span>
-                <input type="range" min={0} max={1} step={0.01} value={prefs.alarm_vol} onChange={(e) => savePrefs({ ...prefs, alarm_vol: Number(e.target.value) })} className="h-1.5 flex-1 accent-[#b8422e]" />
+                )}
               </div>
             </div>
           </div>
 
-          <div className="glass-panel p-5">
-            <p className="mb-2 text-sm font-semibold text-white">Block list · {sites.length}</p>
-            <div className="mb-3 flex flex-wrap items-center gap-1.5">
-              {(["hard", "soft"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={async () => {
-                    await savePrefs({ ...prefs, blocker_mode: m });
-                    prefsRef.current = { ...prefs, blocker_mode: m };
-                    if (extReady) {
-                      await armExtension();
-                      setExtState(await getExtensionState());
-                    }
-                  }}
-                  className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${
-                    prefs.blocker_mode === m
-                      ? "border-[#b8422e] bg-[#b8422e] text-white"
-                      : "border-white/15 bg-white/5 text-white/70 hover:bg-white/10"
-                  }`}
+          <div className="glass-panel flex min-h-[28rem] flex-col p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-white">
+                Block list
+                <span className="ml-1.5 font-normal tabular-nums text-white/45">{sites.length}</span>
+              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <div
+                  className="inline-flex rounded-full border border-white/12 bg-black/35 p-0.5"
+                  role="group"
+                  aria-label="Block scope"
                 >
-                  {m === "hard" ? "Whole sites" : "List only"}
-                </button>
-              ))}
-              <span className="ml-1 text-[10px] leading-tight text-white/65">
-                {prefs.blocker_mode === "soft"
-                  ? "Blocks only what’s on your list (add Video to kill YouTube)"
-                  : "Your list + YouTube / Instagram / LinkedIn always"}
-              </span>
-            </div>
-            {/* How a hit is shown: the full block page, or a quiet bounce with a
-                "-XP" notification. */}
-            <div className="mb-3 flex flex-wrap items-center gap-1.5">
-              {(["page", "notify"] as const).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={async () => {
-                    const next = { ...prefs, block_style: s };
-                    await savePrefs(next);
-                    prefsRef.current = next;
-                    if (extReady) {
-                      await armExtension();
-                      setExtState(await getExtensionState());
-                    }
-                  }}
-                  className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${
-                    prefs.block_style === s
-                      ? "border-[#b8422e] bg-[#b8422e] text-white"
-                      : "border-white/15 bg-white/5 text-white/70 hover:bg-white/10"
-                  }`}
+                  {([
+                    { id: "hard" as const, label: "Whole sites", tip: "Your list plus YouTube, Instagram, LinkedIn" },
+                    { id: "soft" as const, label: "List only", tip: "Only domains on your list" },
+                  ]).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      title={m.tip}
+                      onClick={async () => {
+                        await savePrefs({ ...prefs, blocker_mode: m.id });
+                        prefsRef.current = { ...prefs, blocker_mode: m.id };
+                        if (extReady) {
+                          await armExtension();
+                          setExtState(await getExtensionState());
+                        }
+                      }}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                        prefs.blocker_mode === m.id
+                          ? "bg-[#b8422e] text-white"
+                          : "text-white/65 hover:text-white"
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <div
+                  className="inline-flex rounded-full border border-white/12 bg-black/35 p-0.5"
+                  role="group"
+                  aria-label="Hit style"
                 >
-                  {s === "page" ? "Block page" : "Notify (−XP)"}
-                </button>
-              ))}
-              <span className="ml-1 text-[10px] leading-tight text-white/65">
-                {prefs.block_style === "notify"
-                  ? "Bounce tab + −XP toast (Chrome)"
-                  : "Interstitial block page (Chrome)"}
-              </span>
+                  {([
+                    { id: "page" as const, label: "Block page", tip: "Full interstitial (Chrome)" },
+                    { id: "notify" as const, label: "Notify", tip: "Bounce tab + −XP toast (Chrome)" },
+                  ]).map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      title={s.tip}
+                      onClick={async () => {
+                        const next = { ...prefs, block_style: s.id };
+                        await savePrefs(next);
+                        prefsRef.current = next;
+                        if (extReady) {
+                          await armExtension();
+                          setExtState(await getExtensionState());
+                        }
+                      }}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                        prefs.block_style === s.id
+                          ? "bg-[#b8422e] text-white"
+                          : "text-white/65 hover:text-white"
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
+
             <div className="flex flex-wrap gap-1.5">
               {PRESETS.map((p) => {
                 const active = presetSites(p.cats).every((s) => blockedSet.has(s));
@@ -1099,14 +1115,15 @@ export function BlockTab({
                   <button
                     key={p.id}
                     type="button"
+                    title={p.desc}
                     onClick={() => togglePreset(p)}
-                    className={`whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-left text-[11px] leading-tight transition ${
+                    className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
                       active
                         ? "border-[#b8422e] bg-[#b8422e]/25 text-white"
-                        : "border-white/15 bg-black/30 text-white/80 hover:bg-black/40"
+                        : "border-white/12 bg-white/[0.03] text-white/75 hover:border-white/25 hover:text-white"
                     }`}
                   >
-                    {active ? "✓ " : ""}{p.label}
+                    {p.label}
                   </button>
                 );
               })}
@@ -1119,34 +1136,55 @@ export function BlockTab({
                     key={c.id}
                     type="button"
                     onClick={() => toggleCategory(c)}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] ${
-                      active ? "border-[#b8422e] bg-[#b8422e]/20 text-white" : "border-white/15 text-white/78"
+                    className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
+                      active
+                        ? "border-[#b8422e]/80 bg-[#b8422e]/15 text-white"
+                        : "border-transparent text-white/60 hover:bg-white/5 hover:text-white/85"
                     }`}
                   >
-                    {active ? "✓ " : ""}{c.label}
+                    {c.label}
                   </button>
                 );
               })}
             </div>
-            <form onSubmit={addCustom} className="mt-3 flex gap-2">
-              <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Add site…" className="input-premium flex-1 bg-white/5 py-1.5 text-sm" />
-              <button type="submit" className="btn-primary">Add</button>
+
+            <form onSubmit={addCustom} className="mt-4 flex gap-2">
+              <input
+                value={custom}
+                onChange={(e) => setCustom(e.target.value)}
+                placeholder="Add site…"
+                className="input-premium flex-1 bg-white/5 py-2 text-sm"
+              />
+              <button type="submit" className="btn-primary">
+                Add
+              </button>
             </form>
-            <ul className="mt-3 max-h-56 space-y-1 overflow-y-auto pr-1">
+
+            <ul className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
               {sites.length === 0 ? (
-                <li className="text-xs text-white/65">Pick a preset above.</li>
+                <li className="rounded-lg border border-dashed border-white/12 px-3 py-6 text-center text-xs text-white/50">
+                  Pick a preset or add a site
+                </li>
               ) : (
                 sites.map((s) => (
-                  <li key={s.id} className="flex items-center gap-2 rounded-md bg-white/5 px-2.5 py-1.5">
+                  <li
+                    key={s.id}
+                    className="group flex items-center gap-2 rounded-lg border border-transparent px-2.5 py-1.5 transition hover:border-white/10 hover:bg-white/[0.04]"
+                  >
                     <span className="flex-1 truncate text-sm text-white/85">{s.site}</span>
-                    <button onClick={() => removeSite(s.site)} className="text-white/65 hover:text-red-400" aria-label={`Remove ${s.site}`}>✕</button>
+                    <button
+                      type="button"
+                      onClick={() => removeSite(s.site)}
+                      className="text-white/35 opacity-0 transition group-hover:opacity-100 hover:text-red-400"
+                      aria-label={`Remove ${s.site}`}
+                    >
+                      ✕
+                    </button>
                   </li>
                 ))
               )}
             </ul>
           </div>
-
-          <FocusMusicPanel />
         </div>
 
     </div>

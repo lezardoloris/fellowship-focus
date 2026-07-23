@@ -228,8 +228,7 @@ export function FellowshipDashboard({
 
         {!myToken && (
           <form onSubmit={joinFellowship} className="glass-panel mb-8 p-6">
-            <h2 className="mb-1 text-lg font-semibold text-white">Join this guild</h2>
-            <p className="mb-4 text-sm text-[#9ca3af]">Pick your name. You&apos;ll get a token for the desktop app.</p>
+            <h2 className="mb-4 text-lg font-semibold text-white">Join this guild</h2>
             <div className="flex gap-3">
               <input
                 type="text"

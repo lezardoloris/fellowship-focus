@@ -342,8 +342,7 @@ export function FocusApp() {
       </header>
 
       <div className="relative z-10 mx-auto max-w-6xl px-4 py-4 md:px-8 md:py-6">
-        {/* Keep Block mounted when switching tabs. Remounting FocusMusicPanel used
-            to re-fire auto-play (and still can against older deployed web builds). */}
+        {/* Keep Block mounted when switching tabs so timer/shield state survives. */}
         <div className={tab === "block" ? undefined : "hidden"} aria-hidden={tab !== "block"}>
           <BlockTab code={code} token={token} name={name} />
         </div>

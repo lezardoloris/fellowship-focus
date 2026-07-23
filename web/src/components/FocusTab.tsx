@@ -120,19 +120,12 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="font-display text-2xl font-bold text-white">Your week</h1>
-          <p className="mt-1 text-xs text-white/70">
-            Ladder · habit calendar · OKRs
-            {fellowshipCode ? " · synced with guild when connected" : " — works solo"}.{" "}
-            {source === "desktop" ? "Desktop screen-time live." : "Filled by timers you finish on Block."}
-          </p>
         </div>
       </div>
 
       {empty && (
         <div className="glass-panel border border-[#b8422e]/40 px-5 py-4 text-sm text-white/80">
-          Focus week is empty until you complete a session. Go to{" "}
-          <span className="font-semibold text-white">Block → Start the timer</span>, finish a cycle —
-          it lands here automatically (streak + ladder XP). Habit check-ins still work below.
+          Finish a timer on <span className="font-semibold text-white">Block</span> to fill this week.
         </div>
       )}
 
@@ -174,9 +167,7 @@ function WeekPanel({
     <div className="glass-panel p-6">
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-white">Week overview</h2>
-        <p className="mt-0.5 text-xs text-[#9ca3af]">
-          Week of {rangeLabel(stats.weekStart)} · from your local screen-time data
-        </p>
+        <p className="mt-0.5 text-xs text-[#9ca3af]">{rangeLabel(stats.weekStart)}</p>
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">

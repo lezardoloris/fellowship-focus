@@ -216,9 +216,7 @@ export function GuildDirectory({
       <div className="mx-auto max-w-md">
         <div className="glass-panel p-6">
           <h2 className="text-lg font-semibold text-white">Private invite</h2>
-          <p className="mt-1 mb-4 text-sm text-white/75">
-            Optional — only if someone shared a private guild code.
-          </p>
+          <p className="mt-1 mb-4 text-sm text-white/60">Enter a private guild code.</p>
           <form
             className="space-y-3"
             onSubmit={(e) => {
@@ -259,7 +257,6 @@ export function GuildDirectory({
       <div className="mx-auto max-w-lg">
         <div className="glass-panel p-6">
           <h2 className="font-display text-xl font-semibold text-white">Found a guild</h2>
-          <p className="mt-1 text-sm text-white/75">Pick a niche and an objective so people know what to join.</p>
           <form onSubmit={createGuild} className="mt-5 space-y-4">
             <label className="block">
               <span className="text-[11px] uppercase tracking-wider text-white/70">Name</span>
@@ -332,9 +329,6 @@ export function GuildDirectory({
         <div className="flex flex-wrap items-start gap-3">
           <div className="mr-auto min-w-0">
             <h2 className="font-display text-xl font-semibold text-white">Guild ladder</h2>
-            <p className="mt-1 max-w-2xl text-sm text-white/75">
-              Browse public guilds by niche and objective. Focus ladder stays solo if you prefer.
-            </p>
           </div>
           <button type="button" onClick={onGoFocus} className="btn-secondary text-sm">
             Stay solo

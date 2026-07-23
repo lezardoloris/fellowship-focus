@@ -201,12 +201,6 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-white">Habit tracker</h2>
-          <p className="text-xs text-white/65">
-            Monthly grid · goal vs done
-            {fellowshipCode
-              ? ` · visible to guild mates on /f/${fellowshipCode}`
-              : " · solo — stays on this device"}
-          </p>
         </div>
         <div className="flex gap-2">
           <button
