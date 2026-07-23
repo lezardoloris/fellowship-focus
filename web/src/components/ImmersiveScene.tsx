@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { scenePoster, sceneVideo, type SceneId } from "@/lib/scenes";
 
 /**
  * Full-bleed HD looping video behind the app.
- * Perf: poster-first, one playing video, pause when hidden,
- * no backdrop-blur dependency, skip motion when reduced-motion.
+ * Poster paints immediately; video fades in once it can play.
+ * On error, poster stays (no stuck opacity-0 layer).
  */
 export function ImmersiveScene({
   scene,
@@ -91,27 +91,35 @@ function SceneLayer({
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
   const poster = scenePoster(scene);
   const video = sceneVideo(scene);
-  const useVideo = Boolean(video) && !reduceMotion;
+  const useVideo = Boolean(video) && !reduceMotion && !failed;
+
+  const tryPlay = useCallback(() => {
+    const el = videoRef.current;
+    if (!el || !play) return;
+    el.muted = true;
+    el.defaultMuted = true;
+    el.setAttribute("muted", "");
+    el.playsInline = true;
+    const p = el.play();
+    if (p) {
+      p.then(() => setReady(true)).catch(() => {
+        /* Autoplay blocked or not ready yet — onCanPlay will retry. */
+      });
+    }
+  }, [play]);
 
   useEffect(() => {
     const el = videoRef.current;
     if (!el || !useVideo) return;
-    el.muted = true;
-    el.defaultMuted = true;
-    el.playsInline = true;
-
-    // The ping-pong is baked into the file itself (scripts/make-pingpong.mjs),
-    // so plain native looping gives a seamless forward/backward cycle. Driving
-    // the reverse leg from JS forced a seek per frame and stuttered.
     if (play) {
-      const p = el.play();
-      if (p) p.catch(() => {});
+      tryPlay();
     } else {
       el.pause();
     }
-  }, [play, useVideo, scene]);
+  }, [play, useVideo, scene, tryPlay]);
 
   return (
     <div className={`absolute inset-0 ${className || ""}`}>
@@ -128,13 +136,25 @@ function SceneLayer({
           src={video}
           poster={poster}
           muted
+          autoPlay={play}
           loop
           playsInline
-          preload="metadata"
+          preload={play ? "auto" : "none"}
           disablePictureInPicture
           disableRemotePlayback
-          onLoadedData={() => setReady(true)}
-          onCanPlay={() => setReady(true)}
+          onLoadedData={() => {
+            setReady(true);
+            tryPlay();
+          }}
+          onCanPlay={() => {
+            setReady(true);
+            tryPlay();
+          }}
+          onPlaying={() => setReady(true)}
+          onError={() => {
+            setFailed(true);
+            setReady(false);
+          }}
         />
       )}
     </div>

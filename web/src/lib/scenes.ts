@@ -112,6 +112,33 @@ export const BLOCKED_SCENE: SceneId = "fire";
 
 export const ALL_SCENE_IDS = Object.keys(SCENES) as SceneId[];
 
+/**
+ * One picker entry per unique loop file. Alias IDs (gold→fellowship, etc.)
+ * stay in SCENES for stored prefs / tab defaults, but the Settings grid
+ * should not fake variety with duplicate posters.
+ */
+export const PICKER_SCENE_IDS: SceneId[] = [
+  "fellowship", // loop-ridge
+  "haven", // loop-path
+  "mordor", // loop-ember
+  "fire", // loop-fire
+  "guardians", // loop-dawn
+  "sentinel", // loop-mist
+];
+
+/** Alias scene → canonical picker id (same mp4). */
+const SCENE_ALIASES: Partial<Record<SceneId, SceneId>> = {
+  gold: "fellowship",
+  path: "haven",
+  ember: "mordor",
+  dusk: "guardians",
+  mist: "sentinel",
+};
+
+export function canonicalSceneId(id: SceneId): SceneId {
+  return SCENE_ALIASES[id] ?? id;
+}
+
 export function scenePoster(id: SceneId): string {
   return SCENES[id]?.poster || SCENES.fellowship.poster;
 }

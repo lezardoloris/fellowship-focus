@@ -43,15 +43,21 @@ export function BlockerControls({
   const [coachBusy, setCoachBusy] = useState(false);
   const force = shieldForcedOn(settings);
 
-  function patch(p: Partial<BlockerSettings>) {
+  function patch(p: Partial<BlockerSettings>, feedback?: string) {
     onChange({ ...settings, ...p });
+    if (feedback) toast.ok(feedback);
   }
 
   function addAllow(e: React.FormEvent) {
     e.preventDefault();
     const d = normDomain(allowDraft);
     if (!d) return;
-    if (!settings.allowlist.includes(d)) patch({ allowlist: [...settings.allowlist, d] });
+    if (settings.allowlist.includes(d)) {
+      toast.info("Already allowed", d);
+      setAllowDraft("");
+      return;
+    }
+    patch({ allowlist: [...settings.allowlist, d] }, `Allowed ${d}`);
     setAllowDraft("");
   }
 
@@ -64,12 +70,14 @@ export function BlockerControls({
       end: "18:00",
       locked: false,
     };
-    patch({ schedules: [...settings.schedules, rule] });
+    patch({ schedules: [...settings.schedules, rule] }, "Schedule added");
   }
 
   function quickLock(hours: number) {
-    patch({ quick_lock_until: new Date(Date.now() + hours * 3600 * 1000).toISOString() });
-    toast.ok(`Locked ${hours < 1 ? "30m" : `${hours}h`}`);
+    patch(
+      { quick_lock_until: new Date(Date.now() + hours * 3600 * 1000).toISOString() },
+      `Locked ${hours < 1 ? "30m" : `${hours}h`}`
+    );
   }
 
   function exportConfig() {
@@ -83,6 +91,7 @@ export function BlockerControls({
     a.download = "fellowship-focus-blocker.json";
     a.click();
     URL.revokeObjectURL(url);
+    toast.ok("Exported");
   }
 
   async function runCoach() {
@@ -108,91 +117,137 @@ export function BlockerControls({
     }
   }
 
-  const hardModes: Array<{ id: HardMode; label: string }> = [
-    { id: "off", label: "Off" },
-    { id: "confirm", label: "Confirm" },
-    { id: "delay", label: "Delay" },
-    { id: "phrase", label: "Phrase" },
+  const hardModes: Array<{ id: HardMode; label: string; hint: string }> = [
+    { id: "off", label: "Off", hint: "Confirm once" },
+    { id: "confirm", label: "Confirm", hint: "Ask again" },
+    { id: "delay", label: "Delay", hint: "Wait then confirm" },
+    { id: "phrase", label: "Phrase", hint: "Type unlock phrase" },
   ];
 
+  const lockUntil =
+    force.on && force.reason === "quick_lock" && settings.quick_lock_until
+      ? new Date(settings.quick_lock_until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : null;
+
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-white/70">Lock</span>
-        {[0.5, 1, 2, 4].map((h) => (
-          <button
-            key={h}
-            type="button"
-            disabled={disabled}
-            onClick={() => quickLock(h)}
-            className="rounded-md border border-white/15 px-2.5 py-1 text-xs text-white/80 hover:bg-white/10"
-          >
-            {h < 1 ? "30m" : `${h}h`}
-          </button>
-        ))}
-        {force.on && (
-          <button type="button" onClick={() => patch({ quick_lock_until: null })} className="text-xs text-white/65 underline">
-            clear
-          </button>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-white/70">Hard</span>
-        {hardModes.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            disabled={disabled}
-            onClick={() => patch({ hard_mode: m.id })}
-            className={`rounded-md border px-2.5 py-1 text-xs ${
-              settings.hard_mode === m.id
-                ? "border-[#b8422e] bg-[#b8422e] text-white"
-                : "border-white/15 text-white/70"
-            }`}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-white/70">Schedule</span>
-        <button type="button" onClick={addWorkdaySchedule} className="rounded-md border border-white/15 px-2.5 py-1 text-xs text-white/80">
-          + Work 9–18
-        </button>
-        {settings.schedules.map((r) => (
-          <button
-            key={r.id}
-            type="button"
-            title="Remove"
-            onClick={() => patch({ schedules: settings.schedules.filter((s) => s.id !== r.id) })}
-            className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-white/75"
-          >
-            {r.days.map((d) => DAY_LABELS[d]).join("")} {r.start}–{r.end} ✕
-          </button>
-        ))}
+    <div className="space-y-4">
+      <div>
+        <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
+          <span className="text-xs font-medium text-white/80">Quick lock</span>
+          {lockUntil && (
+            <span className="text-[10px] text-[#e8a598]">Shield forced until {lockUntil}</span>
+          )}
+          {force.on && force.reason && force.reason !== "quick_lock" && (
+            <span className="text-[10px] text-[#e8a598]">On schedule · {force.reason}</span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {[0.5, 1, 2, 4].map((h) => (
+            <button
+              key={h}
+              type="button"
+              disabled={disabled}
+              onClick={() => quickLock(h)}
+              className="rounded-md border border-white/15 px-2.5 py-1 text-xs text-white/80 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 disabled:opacity-40"
+            >
+              {h < 1 ? "30m" : `${h}h`}
+            </button>
+          ))}
+          {force.on && force.reason === "quick_lock" && (
+            <button
+              type="button"
+              onClick={() => patch({ quick_lock_until: null }, "Lock cleared")}
+              className="text-xs text-white/65 underline hover:text-white/85"
+            >
+              Clear lock
+            </button>
+          )}
+        </div>
       </div>
 
       <div>
+        <p className="mb-1.5 text-xs font-medium text-white/80">Hard unlock</p>
+        <p className="mb-2 text-[10px] text-white/50">How hard it is to stop a session or disarm the shield.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          {hardModes.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              disabled={disabled}
+              title={m.hint}
+              onClick={() => patch({ hard_mode: m.id }, `Hard unlock · ${m.label}`)}
+              className={`rounded-md border px-2.5 py-1 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 disabled:opacity-40 ${
+                settings.hard_mode === m.id
+                  ? "border-[#b8422e] bg-[#b8422e] text-white"
+                  : "border-white/15 text-white/70 hover:bg-white/10"
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-xs font-medium text-white/80">Schedule</p>
+        <p className="mb-2 text-[10px] text-white/50">Auto-arm the shield on these days and hours.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={addWorkdaySchedule}
+            className="rounded-md border border-white/15 px-2.5 py-1 text-xs text-white/80 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 disabled:opacity-40"
+          >
+            + Workdays 9–18
+          </button>
+          {settings.schedules.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              title="Remove schedule"
+              aria-label={`Remove schedule ${r.label || ""} ${r.start} to ${r.end}`}
+              onClick={() =>
+                patch(
+                  { schedules: settings.schedules.filter((s) => s.id !== r.id) },
+                  "Schedule removed"
+                )
+              }
+              className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-white/75 hover:border-white/25 hover:text-white"
+            >
+              {r.days.map((d) => DAY_LABELS[d]).join("")} {r.start}–{r.end} ✕
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-xs font-medium text-white/80">Allowlist</p>
+        <p className="mb-2 text-[10px] text-white/50">Always reachable even when the shield is on.</p>
         <form onSubmit={addAllow} className="flex gap-2">
           <input
             value={allowDraft}
             onChange={(e) => setAllowDraft(e.target.value)}
-            placeholder="Allow domain…"
+            placeholder="example.com"
+            aria-label="Allow domain"
             className="input-premium flex-1 bg-white/5 py-1.5 text-sm"
           />
-          <button type="submit" className="btn-primary py-1.5! text-xs!">
+          <button type="submit" className="btn-primary py-1.5! text-xs!" disabled={disabled}>
             Allow
           </button>
         </form>
         <div className="mt-2 flex flex-wrap gap-1">
+          {settings.allowlist.length === 0 && (
+            <span className="text-[10px] text-white/40">No allowed domains yet</span>
+          )}
           {settings.allowlist.map((d) => (
             <button
               key={d}
               type="button"
-              onClick={() => patch({ allowlist: settings.allowlist.filter((x) => x !== d) })}
-              className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white/60"
+              aria-label={`Remove ${d} from allowlist`}
+              onClick={() =>
+                patch({ allowlist: settings.allowlist.filter((x) => x !== d) }, `Removed ${d}`)
+              }
+              className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white/60 hover:border-white/25 hover:text-white/85"
             >
               {d} ✕
             </button>
@@ -201,13 +256,13 @@ export function BlockerControls({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={onScanHistory} disabled={scanBusy} className="btn-secondary text-xs">
-          {scanBusy ? "…" : "Scan history"}
+        <button type="button" onClick={onScanHistory} disabled={scanBusy || disabled} className="btn-secondary text-xs">
+          {scanBusy ? "Scanning…" : "Scan history"}
         </button>
-        <button type="button" onClick={runCoach} disabled={coachBusy} className="btn-secondary text-xs">
+        <button type="button" onClick={runCoach} disabled={coachBusy || disabled} className="btn-secondary text-xs">
           {coachBusy ? "…" : "AI coach"}
         </button>
-        <button type="button" onClick={exportConfig} className="btn-secondary text-xs">
+        <button type="button" onClick={exportConfig} disabled={disabled} className="btn-secondary text-xs">
           Export
         </button>
         <label className="btn-secondary cursor-pointer text-xs">
@@ -216,6 +271,7 @@ export function BlockerControls({
             type="file"
             accept="application/json"
             className="hidden"
+            disabled={disabled}
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (!f) return;
@@ -231,6 +287,7 @@ export function BlockerControls({
                 }
               };
               reader.readAsText(f);
+              e.target.value = "";
             }}
           />
         </label>
@@ -241,7 +298,9 @@ export function BlockerControls({
             min={3}
             max={30}
             value={settings.friction_secs}
+            disabled={disabled}
             onChange={(e) => patch({ friction_secs: Number(e.target.value) || 8 })}
+            aria-label="Friction seconds"
             className="input-premium w-14 bg-white/5 py-1 text-xs"
           />
           s
@@ -259,8 +318,8 @@ export function BlockerControls({
       )}
 
       {devices.length > 0 && (
-        <p className="text-[10px] text-white/62">
-          Devices: {devices.map((d) => `${d.kind}${d.shield_on ? "●" : ""}`).join(" · ")}
+        <p className="text-[10px] text-white/55">
+          Devices: {devices.map((d) => `${d.label || d.kind}${d.shield_on ? " ●" : ""}`).join(" · ")}
         </p>
       )}
     </div>

@@ -1,6 +1,6 @@
 /** Persist background preference in localStorage. */
 
-import { ALL_SCENE_IDS, type SceneId } from "@/lib/scenes";
+import { ALL_SCENE_IDS, canonicalSceneId, type SceneId } from "@/lib/scenes";
 
 export const BG_PREFS_KEY = "ff-bg-prefs";
 
@@ -23,16 +23,19 @@ export function loadBackgroundPrefs(): BackgroundPrefs {
       mode?: string;
       lockedScene?: SceneId;
     };
-    const scene =
+    const rawScene =
       (parsed.scene && ALL_SCENE_IDS.includes(parsed.scene) && parsed.scene) ||
       (parsed.lockedScene && ALL_SCENE_IDS.includes(parsed.lockedScene) && parsed.lockedScene) ||
       DEFAULT_BG_PREFS.scene;
-    return { scene };
+    return { scene: canonicalSceneId(rawScene) };
   } catch {
     return DEFAULT_BG_PREFS;
   }
 }
 
 export function saveBackgroundPrefs(prefs: BackgroundPrefs) {
-  localStorage.setItem(BG_PREFS_KEY, JSON.stringify(prefs));
+  localStorage.setItem(
+    BG_PREFS_KEY,
+    JSON.stringify({ scene: canonicalSceneId(prefs.scene) })
+  );
 }
