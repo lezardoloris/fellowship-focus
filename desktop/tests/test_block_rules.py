@@ -104,13 +104,33 @@ def test_category_for(site, expected):
 
 # ── Soft / hard mode toggle ─────────────────────────────────
 
-def test_soft_mode_removes_optional_hard_hosts():
+def test_soft_mode_keeps_explicit_optional_hosts():
+    """Feeds-only must not strip YouTube if the user put it on the list."""
     if not HARD_HOSTS_OPTIONAL:
         pytest.skip("no hard_hosts_optional configured")
     host = HARD_HOSTS_OPTIONAL[0]
     config = {"blocked_sites": ["reddit.com", host], "blocker_mode": "soft"}
     sites, _ = effective_block_lists(config)
-    assert host not in sites
+    assert host in sites or any(host.endswith(s) or s.endswith(host) for s in sites)
+    # Alias expansion may canonicalize — youtube.com stays when listed.
+    from fellowship_focus.constants import canonical_host, expand_domains
+
+    expanded = set()
+    for s in sites:
+        expanded.add(canonical_host(s))
+    assert canonical_host(host) in expanded
+    assert "reddit.com" in sites
+
+
+def test_soft_mode_does_not_auto_add_optional_hosts():
+    if not HARD_HOSTS_OPTIONAL:
+        pytest.skip("no hard_hosts_optional configured")
+    host = HARD_HOSTS_OPTIONAL[0]
+    config = {"blocked_sites": ["reddit.com"], "blocker_mode": "soft"}
+    sites, _ = effective_block_lists(config)
+    from fellowship_focus.constants import canonical_host
+
+    assert canonical_host(host) not in {canonical_host(s) for s in sites}
     assert "reddit.com" in sites
 
 
@@ -120,13 +140,21 @@ def test_hard_mode_adds_optional_hard_hosts():
     host = HARD_HOSTS_OPTIONAL[0]
     config = {"blocked_sites": ["reddit.com"], "blocker_mode": "hard"}
     sites, _ = effective_block_lists(config)
-    assert host in sites
+    from fellowship_focus.constants import canonical_host
+
+    assert canonical_host(host) in {canonical_host(s) for s in sites}
 
 
 def test_hard_mode_no_duplicate():
     if not HARD_HOSTS_OPTIONAL:
         pytest.skip("no hard_hosts_optional configured")
     host = HARD_HOSTS_OPTIONAL[0]
-    config = {"blocked_sites": ["reddit.com", host], "blocker_mode": "hard"}
+    config = {"blocked_sites": ["reddit.com", host, host], "blocker_mode": "hard"}
     sites, _ = effective_block_lists(config)
-    assert sites.count(host) == 1
+    from collections import Counter
+
+    # Each expanded form appears once (aliases are separate hosts by design).
+    assert max(Counter(sites).values()) == 1
+    from fellowship_focus.constants import canonical_host
+
+    assert canonical_host(host) in {canonical_host(s) for s in sites}

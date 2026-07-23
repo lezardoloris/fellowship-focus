@@ -32,8 +32,9 @@ export type BlockerSettings = {
   site_modes: Record<string, SiteMode>;
   friction_secs: number;
   /**
-   * "soft" = block only the doomscroll paths of feed sites (Shorts, Reels…)
-   * so tutorials and DMs still work. "hard" = block those domains outright.
+   * "soft" = do not auto-add YouTube/Instagram/LinkedIn — only your list.
+   * "hard" = auto-add those hosts on top of your list.
+   * Listed sites are always full-domain blocked in both modes.
    */
   blocker_mode: BlockerMode;
   /** Block-page voice; "random" rotates. */
@@ -45,7 +46,7 @@ export type BlockerSettings = {
 export type BlockerMode = "soft" | "hard";
 export type BlockStyle = "page" | "notify";
 
-/** Feed sites worth blocking by path instead of wholesale, mirroring desktop. */
+/** Path extras for soft mode when a feed host is not on the full-domain list. */
 export const SOFT_PATH_RULES: Array<{ host: string; paths: string[] }> = [
   { host: "youtube.com", paths: ["/shorts", "/feed/trending"] },
   { host: "instagram.com", paths: ["/reels", "/explore", "/stories"] },
@@ -55,7 +56,7 @@ export const SOFT_PATH_RULES: Array<{ host: string; paths: string[] }> = [
   { host: "reddit.com", paths: ["/r/popular", "/r/all"] },
 ];
 
-/** Hosts that soft mode spares at the domain level. */
+/** Hosts that hard mode auto-adds; listed sites always full-block either mode. */
 export const SOFT_PATH_HOSTS = SOFT_PATH_RULES.map((r) => r.host);
 
 export const DEFAULT_BLOCKER_SETTINGS: BlockerSettings = {

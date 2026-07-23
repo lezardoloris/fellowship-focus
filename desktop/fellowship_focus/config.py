@@ -77,7 +77,7 @@ def default_config() -> dict:
         "long_break_duration": 15,
         "work_intervals": 2,
         "enable_website_blocker": True,
-        "blocker_mode": "soft",
+        "blocker_mode": "hard",
         "blocked_path_rules": DEFAULT_PATH_RULES.copy(),
         "block_redirects": DEFAULT_REDIRECTS.copy(),
         "pause_blocker_minutes": 0,

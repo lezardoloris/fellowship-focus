@@ -74,7 +74,7 @@ MITMDUMP_PORT = 8080
 # exactly how "the blocker doesn't work" happened. Kept in sync with the Chrome
 # extension's DOMAIN_ALIASES (extension/background.js).
 DOMAIN_ALIASES = {
-    "youtube.com": ["youtu.be", "youtube-nocookie.com"],
+    "youtube.com": ["youtu.be", "youtube-nocookie.com", "m.youtube.com", "music.youtube.com"],
     "twitter.com": ["x.com", "t.co"],
     "x.com": ["twitter.com", "t.co"],
     "facebook.com": ["fb.com", "fb.watch"],
@@ -130,10 +130,14 @@ def expand_domains(site: str) -> list[str]:
 def effective_block_lists(config: dict) -> tuple[list[str], list]:
     """Resolve the (domains, path_rules) to block for the given config.
 
-    Soft mode (Deep Work): distraction hosts like YouTube/Instagram are filtered
-    only by path (Shorts/Reels), so they drop out of the full-domain list.
-    Hard mode (Lockdown): those hosts get blocked entirely.
+    Soft mode (Feeds only): do **not** auto-add YouTube/Instagram/LinkedIn.
+    Whatever the user put on the list is still blocked as a whole domain —
+    otherwise adding Video → youtube.com looked blocked in the UI but watch
+    pages kept working (only /shorts was enforced).
 
+    Hard mode (Whole sites): auto-add those optional hosts on top of the list.
+
+    Path rules (Shorts/Reels) always stay active as a belt-and-suspenders layer.
     Every site is alias-expanded, so blocking one form blocks them all.
     """
     raw = list(config.get("blocked_sites", DEFAULT_BLOCKED_SITES))
@@ -142,20 +146,13 @@ def effective_block_lists(config: dict) -> tuple[list[str], list]:
 
     if mode == "hard":
         for host in HARD_HOSTS_OPTIONAL:
-            if host not in raw:
+            if canonical_host(host) not in {canonical_host(s) for s in raw}:
                 raw.append(host)
-        soft_hosts: set[str] = set()
-    else:
-        soft_hosts = {canonical_host(h) for h in HARD_HOSTS_OPTIONAL}
 
     sites: list[str] = []
     seen: set[str] = set()
     for site in raw:
         for domain in expand_domains(site):
-            # Soft mode spares the feed hosts at the domain level (path rules
-            # handle them); don't re-add them via an alias either.
-            if mode != "hard" and domain in soft_hosts:
-                continue
             if domain not in seen:
                 seen.add(domain)
                 sites.append(domain)

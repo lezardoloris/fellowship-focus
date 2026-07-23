@@ -1037,24 +1037,23 @@ class MainWindow(QMainWindow):
             self._release_blocker_infra()
             self._enable_blocker()
         label = (
-            "Deep Work — Shorts, Reels and feeds blocked, tutorials and DMs still work."
+            "List only — blocks what’s on your list (add YouTube yourself)."
             if mode == "soft"
-            else "Lockdown — full YouTube, Instagram and LinkedIn blocked too."
+            else "Whole sites — your list plus full YouTube, Instagram and LinkedIn."
         )
         self.toasts.show("Saved", label, "success", 2500)
 
     def _sync_preset_ui(self) -> None:
-        mode = self.config.get("blocker_mode", "soft")
+        mode = self.config.get("blocker_mode", "hard")
         self.preset_soft_btn.setChecked(mode == "soft")
         self.preset_hard_btn.setChecked(mode == "hard")
         if mode == "soft":
             self.preset_desc.setText(
-                "Allowed: YouTube tutorials, DMs, work tools.   "
-                "Blocked: Shorts, Reels, Twitter/X, TikTok, feeds and your site list."
+                "Blocks only your site list. Add youtube.com (Video) to kill YouTube entirely."
             )
         else:
             self.preset_desc.setText(
-                "Blocked: everything from Deep Work, plus full YouTube, Instagram and LinkedIn."
+                "Blocks your list plus full YouTube, Instagram and LinkedIn automatically."
             )
 
     def _autosave_sites(self) -> None:

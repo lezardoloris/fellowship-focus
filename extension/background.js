@@ -95,7 +95,7 @@ function isAllowlisted(domain, allowlist) {
 // Sites that live on more than one apex domain. Blocking the obvious name
 // without these leaves an open door (youtu.be links bypass a youtube.com rule).
 const DOMAIN_ALIASES = {
-  "youtube.com": ["youtu.be", "youtube-nocookie.com"],
+  "youtube.com": ["youtu.be", "youtube-nocookie.com", "m.youtube.com", "music.youtube.com"],
   "twitter.com": ["x.com", "t.co"],
   "x.com": ["twitter.com", "t.co"],
   "facebook.com": ["fb.com", "fb.watch"],
@@ -131,8 +131,10 @@ function ruleForDomain(domain, id, friction) {
   };
 }
 
-// Soft mode: block the doomscroll surfaces of feed sites without killing the
-// whole domain, so tutorials and DMs still work. Mirrors the desktop path rules.
+// Soft-mode path extras used to REPLACE full-domain rules for YouTube etc.,
+ // which meant adding youtube.com to the list still left /watch reachable.
+ // Listed sites are always full-domain blocked. Soft vs hard only controls
+ // whether optional feed hosts are auto-added (desktop) — the list wins.
 const SOFT_PATH_RULES = {
   "youtube.com": ["/shorts", "/feed/trending"],
   "instagram.com": ["/reels", "/explore", "/stories"],
@@ -205,20 +207,23 @@ function blockDecision(urlString, cfg) {
     const base = normalizeSite(site);
     if (!base) continue;
     const friction = modes[base] === "friction";
-    if (soft && SOFT_PATH_RULES[base]) {
-      if (host === base || host.endsWith("." + base)) {
-        const path = u.pathname.toLowerCase();
-        for (const p of SOFT_PATH_RULES[base]) {
-          if (path === p || path.startsWith(p + "/") || path.startsWith(p + "?")) {
-            return { domain: base + p, friction };
-          }
-        }
-      }
-      continue;
-    }
+    // Listed sites always full-domain block (aliases included). Soft mode used
+    // to path-only YouTube here and left watch pages open — that felt broken.
     for (const domain of expandDomains(site)) {
       if (host === domain || host.endsWith("." + domain)) {
         return { domain, friction };
+      }
+    }
+  }
+  // Soft extras: if a feed host isn't full-listed, still catch doomscroll paths.
+  if (soft) {
+    for (const [base, paths] of Object.entries(SOFT_PATH_RULES)) {
+      if (!(host === base || host.endsWith("." + base))) continue;
+      const path = u.pathname.toLowerCase();
+      for (const p of paths) {
+        if (path === p || path.startsWith(p + "/") || path.startsWith(p + "?")) {
+          return { domain: base + p, friction: false };
+        }
       }
     }
   }
@@ -287,13 +292,7 @@ async function rebuildRules() {
     for (const site of cfg.sites.filter(Boolean)) {
       const base = normalizeSite(site);
       const friction = modes[base] === "friction";
-      // In soft mode a feed site is blocked only on its doomscroll paths.
-      if (soft && SOFT_PATH_RULES[base]) {
-        for (const path of SOFT_PATH_RULES[base]) {
-          addRules.push(ruleForPath(base, path, id++, friction));
-        }
-        continue;
-      }
+      // Always install full-domain rules for listed sites (YouTube included).
       for (const domain of expandDomains(site)) {
         if (seen.has(domain)) continue;
         if (isAllowlisted(domain, allow)) continue;
@@ -302,6 +301,17 @@ async function rebuildRules() {
         if (id > 4000) break;
       }
       if (id > 4000) break;
+    }
+    // Soft mode: also block doomscroll paths on feed hosts that aren't listed.
+    if (soft) {
+      for (const [base, paths] of Object.entries(SOFT_PATH_RULES)) {
+        if (seen.has(base) || isAllowlisted(base, allow)) continue;
+        for (const path of paths) {
+          addRules.push(ruleForPath(base, path, id++, false));
+          if (id > 4000) break;
+        }
+        if (id > 4000) break;
+      }
     }
     // Temporary allows win over block rules via priority.
     let allowId = TEMP_ALLOW_ID_BASE;

@@ -1037,7 +1037,7 @@ export function BlockTab({
 
           <div className="glass-panel p-5">
             <p className="mb-2 text-sm font-semibold text-white">Block list · {sites.length}</p>
-            <div className="mb-3 flex items-center gap-1.5">
+            <div className="mb-3 flex flex-wrap items-center gap-1.5">
               {(["hard", "soft"] as const).map((m) => (
                 <button
                   key={m}
@@ -1056,20 +1056,18 @@ export function BlockTab({
                       : "border-white/15 bg-white/5 text-white/70 hover:bg-white/10"
                   }`}
                 >
-                  {/* Not "Deep Work": a preset already owns that name above,
-                      and this control answers "how", not "what". */}
-                  {m === "hard" ? "Whole sites" : "Feeds only"}
+                  {m === "hard" ? "Whole sites" : "List only"}
                 </button>
               ))}
               <span className="ml-1 text-[10px] leading-tight text-white/65">
                 {prefs.blocker_mode === "soft"
-                  ? "Shorts, Reels and feeds blocked — tutorials and DMs still work"
-                  : "Whole domains blocked"}
+                  ? "Blocks only what’s on your list (add Video to kill YouTube)"
+                  : "Your list + YouTube / Instagram / LinkedIn always"}
               </span>
             </div>
             {/* How a hit is shown: the full block page, or a quiet bounce with a
                 "-XP" notification. */}
-            <div className="mb-3 flex items-center gap-1.5">
+            <div className="mb-3 flex flex-wrap items-center gap-1.5">
               {(["page", "notify"] as const).map((s) => (
                 <button
                   key={s}
@@ -1094,8 +1092,8 @@ export function BlockTab({
               ))}
               <span className="ml-1 text-[10px] leading-tight text-white/65">
                 {prefs.block_style === "notify"
-                  ? "Bounces the tab back with a quick −XP toast"
-                  : "Full block page (Chrome only)"}
+                  ? "Bounce tab + −XP toast (Chrome)"
+                  : "Interstitial block page (Chrome)"}
               </span>
             </div>
             <div className="flex flex-wrap gap-1.5">
