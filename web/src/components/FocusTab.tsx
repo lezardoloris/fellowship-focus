@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { HabitTracker } from "@/components/HabitTracker";
+import { useToast } from "@/components/Toasts";
 import { desktopBridge, type WeeklyStats } from "@/lib/desktop";
 import { parseGithubUsername } from "@/lib/githubActivity";
 import { buildSoloWeeklyStats, saveSoloOkr } from "@/lib/soloStats";
@@ -57,6 +58,12 @@ type FocusTabProps = {
 export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps) {
   const [stats, setStats] = useState<WeeklyStats>(() => buildSoloWeeklyStats());
   const [source, setSource] = useState<"desktop" | "solo">("solo");
+  const [ghWeek, setGhWeek] = useState<{ commits: number; prs: number; reviews: number; xp: number } | null>(
+    null
+  );
+  const onGhSynced = useCallback((w: { commits: number; prs: number; reviews: number; xp: number }) => {
+    setGhWeek(w);
+  }, []);
 
   const load = useCallback(async () => {
     // Never block the UI on the desktop bridge — solo dashboard is always ready.
@@ -130,10 +137,10 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
       )}
 
       <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
-        <WeekPanel stats={stats} today={today} onSaveOkr={saveOkr} />
+        <WeekPanel stats={stats} today={today} onSaveOkr={saveOkr} githubWeek={ghWeek} />
         <div className="space-y-5">
           <LadderCard stats={stats} />
-          <GitHubCard />
+          <GitHubCard token={token} onSynced={onGhSynced} />
         </div>
       </div>
 
@@ -148,10 +155,12 @@ function WeekPanel({
   stats,
   today,
   onSaveOkr,
+  githubWeek,
 }: {
   stats: WeeklyStats;
   today: string;
   onSaveOkr: (patch: Record<string, number>) => void;
+  githubWeek: { commits: number; prs: number; reviews: number; xp: number } | null;
 }) {
   const { days, kpis, okr } = stats;
   const maxMinutes = Math.max(30, ...days.map((d) => d.focus_minutes));
@@ -160,7 +169,14 @@ function WeekPanel({
     { label: "Focus this week", value: `${kpis.focus_hours} h`, sub: `target ${okr.focus_hours.target} h` },
     { label: "Avg focus score", value: `${kpis.avg_focus_score}`, sub: "work vs distraction" },
     { label: "Streak", value: `${kpis.streak} d`, sub: `${kpis.focus_days} focus days` },
-    { label: "Distraction", value: `${kpis.distraction_hours} h`, sub: "tracked this week" },
+    {
+      label: "GitHub · 7d",
+      value: githubWeek ? `${githubWeek.commits}` : "—",
+      sub: githubWeek
+        ? `${githubWeek.prs} PRs · ${githubWeek.reviews} reviews` +
+          (githubWeek.xp > 0 ? ` · +${githubWeek.xp} XP` : "")
+        : "connect coding track",
+    },
   ];
 
   return (
@@ -309,7 +325,14 @@ function LadderCard({ stats }: { stats: WeeklyStats }) {
   );
 }
 
-function GitHubCard() {
+function GitHubCard({
+  token,
+  onSynced,
+}: {
+  token?: string | null;
+  onSynced?: (w: { commits: number; prs: number; reviews: number; xp: number }) => void;
+}) {
+  const toast = useToast();
   const [user, setUser] = useState("");
   const [draft, setDraft] = useState("");
   const [data, setData] = useState<GitHubStats | null>(null);
@@ -342,18 +365,70 @@ function GitHubCard() {
         }
       })
       .catch(() => {});
-  }, []);
-
-  const fetchStats = useCallback(async (u: string) => {
-    if (!u) {
-      setData(null);
-      return;
+    if (token) {
+      fetch(`/api/github/link?token=${encodeURIComponent(token)}`)
+        .then((r) => r.json())
+        .then((j) => {
+          if (j.week) onSynced?.(j.week);
+          if (j.link?.github_login && !saved) {
+            setUser(j.link.github_login);
+            setDraft(j.link.github_login);
+          }
+        })
+        .catch(() => {});
     }
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/github/activity?user=${encodeURIComponent(u)}`);
-      const json = await res.json();
-      if (!res.ok) {
+  }, [token, onSynced]);
+
+  const fetchStats = useCallback(
+    async (u: string) => {
+      if (!u) {
+        setData(null);
+        return;
+      }
+      setLoading(true);
+      try {
+        const q = new URLSearchParams({ user: u });
+        if (token) q.set("token", token);
+        const res = await fetch(`/api/github/activity?${q}`);
+        const json = await res.json();
+        if (!res.ok) {
+          const err = json.error || "GitHub error";
+          toast.error("GitHub", err);
+          setData({
+            user: u,
+            avatarUrl: null,
+            commits: 0,
+            prs: 0,
+            reviews: 0,
+            issues: 0,
+            repos: 0,
+            activeDays: 0,
+            perDay: {},
+            topRepos: [],
+            privateIncluded: false,
+            error: err,
+          });
+          return;
+        }
+        setData(json as GitHubStats);
+        if (json.week) onSynced?.(json.week);
+        if (json.sync?.xpAwarded > 0) {
+          toast.ok("Coding XP", `+${json.sync.xpAwarded} XP from GitHub`);
+        }
+        if (json.user && json.user !== u) {
+          localStorage.setItem(GITHUB_KEY, json.user);
+          setUser(json.user);
+          setDraft(json.user);
+        }
+        if (token && oauthLogin && json.user?.toLowerCase() === oauthLogin.toLowerCase()) {
+          fetch("/api/github/link", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token }),
+          }).catch(() => {});
+        }
+      } catch {
+        toast.error("GitHub", "Network error");
         setData({
           user: u,
           avatarUrl: null,
@@ -366,35 +441,14 @@ function GitHubCard() {
           perDay: {},
           topRepos: [],
           privateIncluded: false,
-          error: json.error || "GitHub error",
+          error: "Network error",
         });
-        return;
+      } finally {
+        setLoading(false);
       }
-      setData(json as GitHubStats);
-      if (json.user && json.user !== u) {
-        localStorage.setItem(GITHUB_KEY, json.user);
-        setUser(json.user);
-        setDraft(json.user);
-      }
-    } catch {
-      setData({
-        user: u,
-        avatarUrl: null,
-        commits: 0,
-        prs: 0,
-        reviews: 0,
-        issues: 0,
-        repos: 0,
-        activeDays: 0,
-        perDay: {},
-        topRepos: [],
-        privateIncluded: false,
-        error: "Network error",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    [token, toast, onSynced, oauthLogin]
+  );
 
   useEffect(() => {
     if (user) fetchStats(user);
@@ -403,20 +457,7 @@ function GitHubCard() {
   const connect = () => {
     const u = parseGithubUsername(draft);
     if (!u) {
-      setData({
-        user: draft,
-        avatarUrl: null,
-        commits: 0,
-        prs: 0,
-        reviews: 0,
-        issues: 0,
-        repos: 0,
-        activeDays: 0,
-        perDay: {},
-        topRepos: [],
-        privateIncluded: false,
-        error: "Enter a username or github.com URL",
-      });
+      toast.error("GitHub", "Enter a username or github.com URL");
       return;
     }
     localStorage.setItem(GITHUB_KEY, u);
@@ -464,6 +505,7 @@ function GitHubCard() {
         <p className="mt-3 text-[11px] text-white/70">
           Connected as <span className="text-white/80">@{oauthLogin}</span>
           {data?.privateIncluded ? " · private + public" : ""}
+          {token ? " · linked to guild" : ""}
         </p>
       )}
 
@@ -476,7 +518,7 @@ function GitHubCard() {
           className="input-premium flex-1 py-2 text-sm"
         />
         <button type="button" onClick={connect} className="btn-primary px-4 py-2 text-sm" disabled={loading}>
-          {loading ? "…" : user ? "Refresh" : "Track"}
+          {loading ? "…" : user ? "Sync" : "Track"}
         </button>
       </div>
       {user && (
@@ -501,9 +543,7 @@ function GitHubCard() {
             ))}
           </div>
           {data.topRepos.length > 0 && (
-            <p className="mt-3 truncate text-[11px] text-white/70">
-              {data.topRepos.join(" · ")}
-            </p>
+            <p className="mt-3 truncate text-[11px] text-white/70">{data.topRepos.join(" · ")}</p>
           )}
           <p className="mt-2 text-[11px] text-white/65">
             @{data.user}
@@ -517,7 +557,7 @@ function GitHubCard() {
       {data?.error && <p className="mt-3 text-[11px] text-[#f87171]">{data.error}</p>}
       {!data && !user && (
         <p className="mt-3 text-[11px] text-white/65">
-          Track commits, PRs, and reviews from the last 7 days.
+          Track commits, PRs, and reviews. Connect OAuth + guild for XP & habit auto-check.
         </p>
       )}
     </div>

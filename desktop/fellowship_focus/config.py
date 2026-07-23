@@ -78,6 +78,13 @@ def default_config() -> dict:
         "work_intervals": 2,
         "enable_website_blocker": True,
         "blocker_mode": "hard",
+        "allowed_sites": [
+            "github.com",
+            "githubusercontent.com",
+            "docs.google.com",
+            "stackoverflow.com",
+            "notion.so",
+        ],
         "blocked_path_rules": DEFAULT_PATH_RULES.copy(),
         "block_redirects": DEFAULT_REDIRECTS.copy(),
         "pause_blocker_minutes": 0,

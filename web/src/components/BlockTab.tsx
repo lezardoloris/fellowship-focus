@@ -524,10 +524,13 @@ export function BlockTab({
     // write on every focus_min tweak was disarming Shield for ~15s.
     const modeChanged = merged.blocker_mode !== prev.blocker_mode;
     const styleChanged = merged.block_style !== prev.block_style;
-    if ((isDesktopShell() || isDesktop) && (modeChanged || styleChanged)) {
+    const allowChanged =
+      JSON.stringify(merged.allowlist) !== JSON.stringify(prev.allowlist);
+    if ((isDesktopShell() || isDesktop) && (modeChanged || styleChanged || allowChanged)) {
       const patch: Record<string, unknown> = {};
       if (modeChanged) patch.blocker_mode = merged.blocker_mode;
       if (styleChanged) patch.block_style = merged.block_style;
+      if (allowChanged) patch.allowlist = merged.allowlist;
       const st = await desktopBridge.setPrefs(patch);
       if (st.available) setDt(st);
     }

@@ -2,9 +2,10 @@ import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
-import { calcBlockPenalty, calcSessionXp, getLeague, POINTS } from "./points";
+import { calcBlockPenalty, calcGithubDayXp, calcSessionXp, getLeague, POINTS } from "./points";
 import { HABIT_MARKS, HABIT_PRESETS, HABIT_XP, calcStakeScore, monthKey, resolveHabitMarkId, todayDate } from "./habits";
 import type { VerificationType } from "./habits";
+import type { GithubWeekStats } from "./githubActivity";
 import {
   type FocusProof,
   type ProofPrivacyTier,
@@ -128,7 +129,7 @@ export type BlockEvent = {
 
 export type FeedEvent = {
   id: string;
-  type: "session" | "block" | "join" | "waypoint" | "habit" | "stake" | "proof";
+  type: "session" | "block" | "join" | "waypoint" | "habit" | "stake" | "proof" | "github";
   member_name: string;
   message: string;
   created_at: string;
@@ -167,8 +168,11 @@ export type Stake = {
   week_start: string;
   min_habit_rate: number;
   max_blocks: number;
+  goal_label: string;
+  goal_type: string;
   status: string;
   escrow_transaction_id: string | null;
+  settlement_note: string | null;
   created_by: string | null;
   created_at: string;
 };
@@ -181,6 +185,8 @@ export type StakeEntry = {
   funded: number;
   outcome: string;
   escrow_transaction_id: string | null;
+  settlement_status: string | null;
+  settlement_error: string | null;
 };
 
 let db: Database.Database | null = null;
@@ -292,8 +298,11 @@ function initSchema(database: Database.Database) {
       week_start TEXT NOT NULL,
       min_habit_rate INTEGER NOT NULL DEFAULT 70,
       max_blocks INTEGER NOT NULL DEFAULT 5,
+      goal_label TEXT NOT NULL DEFAULT 'Weekly habits + focus',
+      goal_type TEXT NOT NULL DEFAULT 'habits',
       status TEXT NOT NULL DEFAULT 'open',
       escrow_transaction_id TEXT,
+      settlement_note TEXT,
       created_by TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (fellowship_id) REFERENCES fellowships(id)
@@ -307,6 +316,8 @@ function initSchema(database: Database.Database) {
       funded INTEGER NOT NULL DEFAULT 0,
       outcome TEXT NOT NULL DEFAULT 'pending',
       escrow_transaction_id TEXT,
+      settlement_status TEXT,
+      settlement_error TEXT,
       FOREIGN KEY (stake_id) REFERENCES stakes(id),
       FOREIGN KEY (member_id) REFERENCES members(id)
     );
@@ -468,6 +479,57 @@ function initSchema(database: Database.Database) {
   } catch {
     /* column exists */
   }
+  try {
+    database.exec(`ALTER TABLE stakes ADD COLUMN goal_label TEXT NOT NULL DEFAULT 'Weekly habits + focus'`);
+  } catch {
+    /* exists */
+  }
+  try {
+    database.exec(`ALTER TABLE stakes ADD COLUMN goal_type TEXT NOT NULL DEFAULT 'habits'`);
+  } catch {
+    /* exists */
+  }
+  try {
+    database.exec(`ALTER TABLE stakes ADD COLUMN settlement_note TEXT`);
+  } catch {
+    /* exists */
+  }
+  try {
+    database.exec(`ALTER TABLE stake_entries ADD COLUMN settlement_status TEXT`);
+  } catch {
+    /* exists */
+  }
+  try {
+    database.exec(`ALTER TABLE stake_entries ADD COLUMN settlement_error TEXT`);
+  } catch {
+    /* exists */
+  }
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_stake_entries_escrow_tx ON stake_entries(escrow_transaction_id);
+    CREATE TABLE IF NOT EXISTS github_users (
+      member_id TEXT PRIMARY KEY,
+      github_login TEXT NOT NULL,
+      avatar_url TEXT,
+      linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_sync_at TEXT,
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_github_users_login ON github_users(github_login);
+    CREATE TABLE IF NOT EXISTS github_activity_daily (
+      member_id TEXT NOT NULL,
+      day TEXT NOT NULL,
+      commits INTEGER NOT NULL DEFAULT 0,
+      prs INTEGER NOT NULL DEFAULT 0,
+      reviews INTEGER NOT NULL DEFAULT 0,
+      issues INTEGER NOT NULL DEFAULT 0,
+      repos INTEGER NOT NULL DEFAULT 0,
+      xp_awarded INTEGER NOT NULL DEFAULT 0,
+      private_included INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (member_id, day),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+  `);
   database.exec(`
     CREATE TABLE IF NOT EXISTS blocker_devices (
       id TEXT PRIMARY KEY,
@@ -1010,7 +1072,7 @@ export function logBlock(
   };
 }
 
-function addFeedEvent(
+export function addFeedEvent(
   fellowshipId: string,
   type: FeedEvent["type"],
   memberName: string,
@@ -1151,8 +1213,183 @@ export function syncAutoHabits(memberId: string, fellowshipId: string) {
         .get(memberId, today) as { c: number };
       if (sessions.c > 0 && blocks.c === 0) upsertCheckin(habit.id, memberId, today, true, "auto_clean", false);
     }
+    if (habit.verification === "auto_github") {
+      const row = database
+        .prepare(
+          `SELECT commits FROM github_activity_daily WHERE member_id = ? AND day = ?`
+        )
+        .get(memberId, today) as { commits: number } | undefined;
+      if (row && row.commits >= 1) {
+        upsertCheckin(habit.id, memberId, today, true, "auto_github", false);
+      }
+    }
   }
   void fellowshipId;
+}
+
+export type GithubUserLink = {
+  member_id: string;
+  github_login: string;
+  avatar_url: string | null;
+  linked_at: string;
+  last_sync_at: string | null;
+};
+
+export function linkGithubUser(
+  memberId: string,
+  login: string,
+  avatarUrl?: string | null
+): GithubUserLink {
+  const database = getDb();
+  database
+    .prepare(
+      `INSERT INTO github_users (member_id, github_login, avatar_url, linked_at, last_sync_at)
+       VALUES (?, ?, ?, datetime('now'), NULL)
+       ON CONFLICT(member_id) DO UPDATE SET
+         github_login = excluded.github_login,
+         avatar_url = COALESCE(excluded.avatar_url, github_users.avatar_url)`
+    )
+    .run(memberId, login, avatarUrl ?? null);
+  return database.prepare("SELECT * FROM github_users WHERE member_id = ?").get(memberId) as GithubUserLink;
+}
+
+export function getGithubLink(memberId: string): GithubUserLink | null {
+  return (
+    (getDb().prepare("SELECT * FROM github_users WHERE member_id = ?").get(memberId) as
+      | GithubUserLink
+      | undefined) ?? null
+  );
+}
+
+export function getGithubLinkByLogin(login: string): GithubUserLink | null {
+  return (
+    (getDb()
+      .prepare("SELECT * FROM github_users WHERE lower(github_login) = lower(?)")
+      .get(login) as GithubUserLink | undefined) ?? null
+  );
+}
+
+/**
+ * Persist today's GitHub headline stats + soft XP (delta only, capped).
+ * Also seeds per-day activity from the Events heatmap when present.
+ */
+export function syncGithubActivityFromStats(
+  memberId: string,
+  fellowshipId: string,
+  stats: GithubWeekStats
+): { xpAwarded: number; todayCommits: number } {
+  const database = getDb();
+  linkGithubUser(memberId, stats.user, stats.avatarUrl);
+  database
+    .prepare(`UPDATE github_users SET last_sync_at = datetime('now') WHERE member_id = ?`)
+    .run(memberId);
+
+  const today = todayDate();
+
+  for (const [day, weight] of Object.entries(stats.perDay)) {
+    if (day === today) continue;
+    database
+      .prepare(
+        `INSERT INTO github_activity_daily
+           (member_id, day, commits, prs, reviews, issues, repos, xp_awarded, private_included, updated_at)
+         VALUES (?, ?, ?, 0, 0, 0, ?, 0, ?, datetime('now'))
+         ON CONFLICT(member_id, day) DO UPDATE SET
+           commits = MAX(github_activity_daily.commits, excluded.commits),
+           repos = excluded.repos,
+           private_included = excluded.private_included,
+           updated_at = datetime('now')`
+      )
+      .run(memberId, day, weight, stats.repos, stats.privateIncluded ? 1 : 0);
+  }
+
+  const dayXp = calcGithubDayXp({
+    commits: stats.commits,
+    prs: stats.prs,
+    reviews: stats.reviews,
+  });
+  const existing = database
+    .prepare(`SELECT xp_awarded FROM github_activity_daily WHERE member_id = ? AND day = ?`)
+    .get(memberId, today) as { xp_awarded: number } | undefined;
+  const prevXp = existing?.xp_awarded ?? 0;
+  const grant = Math.max(0, dayXp - prevXp);
+
+  database
+    .prepare(
+      `INSERT INTO github_activity_daily
+         (member_id, day, commits, prs, reviews, issues, repos, xp_awarded, private_included, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(member_id, day) DO UPDATE SET
+         commits = excluded.commits,
+         prs = excluded.prs,
+         reviews = excluded.reviews,
+         issues = excluded.issues,
+         repos = excluded.repos,
+         xp_awarded = MAX(github_activity_daily.xp_awarded, excluded.xp_awarded),
+         private_included = excluded.private_included,
+         updated_at = datetime('now')`
+    )
+    .run(
+      memberId,
+      today,
+      stats.commits,
+      stats.prs,
+      stats.reviews,
+      stats.issues,
+      stats.repos,
+      Math.max(prevXp, dayXp),
+      stats.privateIncluded ? 1 : 0
+    );
+
+  if (grant > 0) {
+    database.prepare("UPDATE members SET total_xp = total_xp + ? WHERE id = ?").run(grant, memberId);
+  }
+
+  syncAutoHabits(memberId, fellowshipId);
+
+  if (stats.commits > 0 || grant > 0) {
+    const member = database.prepare("SELECT name FROM members WHERE id = ?").get(memberId) as {
+      name: string;
+    };
+    addFeedEvent(
+      fellowshipId,
+      "github",
+      member.name,
+      `${member.name} coded on GitHub` +
+        (stats.commits > 0 ? ` · ${stats.commits} commits/7d` : "") +
+        (grant > 0 ? ` (+${grant} XP)` : "")
+    );
+  }
+
+  return { xpAwarded: grant, todayCommits: stats.commits };
+}
+
+export function getGithubWeekTotals(memberId: string): {
+  commits: number;
+  prs: number;
+  reviews: number;
+  activeDays: number;
+  xp: number;
+} {
+  const weekStart = getWeekStartSql().slice(0, 10);
+  const rows = getDb()
+    .prepare(
+      `SELECT commits, prs, reviews, xp_awarded, day FROM github_activity_daily
+       WHERE member_id = ? AND day >= ?`
+    )
+    .all(memberId, weekStart) as {
+    commits: number;
+    prs: number;
+    reviews: number;
+    xp_awarded: number;
+    day: string;
+  }[];
+  return {
+    commits: rows.reduce((s, r) => s + r.commits, 0),
+    prs: rows.reduce((s, r) => s + r.prs, 0),
+    reviews: rows.reduce((s, r) => s + r.reviews, 0),
+    activeDays: rows.filter((r) => r.commits + r.prs + r.reviews > 0).length,
+    xp: rows.reduce((s, r) => s + r.xp_awarded, 0),
+  };
 }
 
 function upsertCheckin(
@@ -1305,17 +1542,30 @@ export function createStake(
   title: string,
   amountCents: number,
   minHabitRate: number,
-  maxBlocks: number
+  maxBlocks: number,
+  goalLabel = "Weekly habits + focus",
+  goalType = "habits"
 ): Stake {
   const database = getDb();
   const id = nanoid();
   const weekStart = getWeekStartSql().slice(0, 10);
   database
     .prepare(
-      `INSERT INTO stakes (id, fellowship_id, title, amount_cents, week_start, min_habit_rate, max_blocks, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO stakes (id, fellowship_id, title, amount_cents, week_start, min_habit_rate, max_blocks, goal_label, goal_type, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, fellowshipId, title, amountCents, weekStart, minHabitRate, maxBlocks, createdBy);
+    .run(
+      id,
+      fellowshipId,
+      title,
+      amountCents,
+      weekStart,
+      minHabitRate,
+      maxBlocks,
+      goalLabel,
+      goalType,
+      createdBy
+    );
 
   const members = getMembers(fellowshipId);
   for (const m of members) {
@@ -1329,10 +1579,20 @@ export function createStake(
     fellowshipId,
     "stake",
     creator.name,
-    `${creator.name} opened a weekly stake: ${title} (€${(amountCents / 100).toFixed(0)}/person).`
+    `${creator.name} opened a goal bet: ${title} (€${(amountCents / 100).toFixed(0)}/person) — ${goalLabel}.`
   );
 
   return database.prepare("SELECT * FROM stakes WHERE id = ?").get(id) as Stake;
+}
+
+export function getStakeById(stakeId: string): (Stake & { entries: StakeEntry[] }) | null {
+  const database = getDb();
+  const stake = database.prepare("SELECT * FROM stakes WHERE id = ?").get(stakeId) as Stake | undefined;
+  if (!stake) return null;
+  const entries = database
+    .prepare("SELECT * FROM stake_entries WHERE stake_id = ?")
+    .all(stake.id) as StakeEntry[];
+  return { ...stake, entries };
 }
 
 export function getActiveStake(fellowshipId: string): (Stake & { entries: StakeEntry[] }) | null {
@@ -1352,6 +1612,45 @@ export function getActiveStake(fellowshipId: string): (Stake & { entries: StakeE
   return { ...stake, entries };
 }
 
+/** Latest stake including settled (for UI after Sunday settle). */
+export function getLatestStake(fellowshipId: string): (Stake & { entries: StakeEntry[] }) | null {
+  const database = getDb();
+  const stake = database
+    .prepare(
+      `SELECT * FROM stakes WHERE fellowship_id = ? ORDER BY created_at DESC LIMIT 1`
+    )
+    .get(fellowshipId) as Stake | undefined;
+  if (!stake) return null;
+  const entries = database
+    .prepare("SELECT * FROM stake_entries WHERE stake_id = ?")
+    .all(stake.id) as StakeEntry[];
+  return { ...stake, entries };
+}
+
+export function findStakeEntryByEscrowTx(txId: string): StakeEntry | null {
+  const database = getDb();
+  return (
+    (database
+      .prepare("SELECT * FROM stake_entries WHERE escrow_transaction_id = ?")
+      .get(String(txId)) as StakeEntry | undefined) ?? null
+  );
+}
+
+export function markStakeEntryFunded(txId: string): StakeEntry | null {
+  const database = getDb();
+  database
+    .prepare(
+      `UPDATE stake_entries SET funded = 1 WHERE escrow_transaction_id = ?`
+    )
+    .run(String(txId));
+  const entry = findStakeEntryByEscrowTx(txId);
+  if (entry) {
+    database.prepare("UPDATE stakes SET status = 'active' WHERE id = ?").run(entry.stake_id);
+  }
+  return entry;
+}
+
+/** Link Escrow tx — funded stays 0 until webhook confirms funds secured. */
 export function joinStakeEntry(
   stakeId: string,
   memberId: string,
@@ -1361,14 +1660,32 @@ export function joinStakeEntry(
   const database = getDb();
   database
     .prepare(
-      `UPDATE stake_entries SET email = ?, funded = 1, escrow_transaction_id = ?
+      `UPDATE stake_entries SET email = ?, escrow_transaction_id = ?, funded = 0
        WHERE stake_id = ? AND member_id = ?`
     )
     .run(email, escrowTransactionId ?? null, stakeId, memberId);
   database.prepare("UPDATE stakes SET status = 'active' WHERE id = ?").run(stakeId);
 }
 
-export function evaluateStakeOutcomes(fellowshipId: string) {
+export function updateStakeEntrySettlement(
+  entryId: string,
+  settlementStatus: string,
+  settlementError?: string
+) {
+  getDb()
+    .prepare(
+      `UPDATE stake_entries SET settlement_status = ?, settlement_error = ? WHERE id = ?`
+    )
+    .run(settlementStatus, settlementError ?? null, entryId);
+}
+
+export function updateStakeSettlement(stakeId: string, status: string, note: string) {
+  getDb()
+    .prepare(`UPDATE stakes SET status = ?, settlement_note = ? WHERE id = ?`)
+    .run(status, note, stakeId);
+}
+
+export function evaluateStakeOutcomes(fellowshipId: string): (Stake & { entries: StakeEntry[] }) | null {
   const stake = getActiveStake(fellowshipId);
   if (!stake) return null;
 
@@ -1388,15 +1705,38 @@ export function evaluateStakeOutcomes(fellowshipId: string) {
 
     const habitOk = (memberHabits?.stake_score ?? 0) >= stake.min_habit_rate;
     const blocksOk = blocks <= stake.max_blocks;
-    const outcome = habitOk && blocksOk ? "winner" : blocks > stake.max_blocks ? "forfeited" : "partial";
+    let outcome: string =
+      habitOk && blocksOk ? "winner" : blocks > stake.max_blocks ? "forfeited" : "partial";
+
+    if (stake.goal_type === "github") {
+      const gh = (
+        database
+          .prepare(
+            `SELECT COALESCE(SUM(commits),0) as c FROM github_activity_daily
+             WHERE member_id = ? AND day >= ?`
+          )
+          .get(entry.member_id, weekStart) as { c: number }
+      ).c;
+      if (gh < 1) {
+        outcome = habitOk && blocksOk ? "partial" : "forfeited";
+      } else if (habitOk && blocksOk) {
+        outcome = "winner";
+      }
+    }
 
     database
       .prepare("UPDATE stake_entries SET outcome = ? WHERE id = ?")
       .run(outcome, entry.id);
   }
 
-  database.prepare("UPDATE stakes SET status = 'settled' WHERE id = ?").run(stake.id);
-  return getActiveStake(fellowshipId);
+  // Keep status active until escrow settlement finishes; settleStakeEscrow flips it.
+  return getStakeById(stake.id);
+}
+
+export function listActiveStakesForCron(): Stake[] {
+  return getDb()
+    .prepare(`SELECT * FROM stakes WHERE status IN ('open', 'active')`)
+    .all() as Stake[];
 }
 
 export function addFocusProof(
@@ -2044,6 +2384,9 @@ const DISTRACTOR_WEIGHT: Record<string, number> = {
 
 const WORK_DOMAINS = new Set([
   "github.com",
+  "githubusercontent.com",
+  "gist.github.com",
+  "raw.githubusercontent.com",
   "gitlab.com",
   "stackoverflow.com",
   "docs.google.com",

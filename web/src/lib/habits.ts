@@ -3,7 +3,7 @@
  * Habits × days grid, Goal vs Achieved, verification tiers for stakes.
  */
 
-export type VerificationType = "manual" | "auto_focus" | "auto_clean";
+export type VerificationType = "manual" | "auto_focus" | "auto_clean" | "auto_github";
 
 export type HabitPreset = {
   id: string;
@@ -168,6 +168,7 @@ export const HABIT_PRESETS: HabitPreset[] = [
   { id: "learn-code", label: "Learn to code 2h / week", emoji: "code", verification: "manual", defaultGoal: 8, category: "work" },
   { id: "focus-quest", label: "Focus quest ≥25 min", emoji: "sword", verification: "auto_focus", defaultGoal: 25, category: "focus" },
   { id: "clean-focus", label: "Zero distraction day", emoji: "shield", verification: "auto_clean", defaultGoal: 20, category: "focus" },
+  { id: "ship-code", label: "Ship ≥1 commit on GitHub", emoji: "code", verification: "auto_github", defaultGoal: 20, category: "work" },
 ];
 
 export const HABIT_XP = {
@@ -194,6 +195,8 @@ export function verificationLabel(v: VerificationType): string {
       return "Auto — focus session";
     case "auto_clean":
       return "Auto — zero blocks";
+    case "auto_github":
+      return "Auto — GitHub commit";
     default:
       return "Manual — honor system";
   }
@@ -205,6 +208,8 @@ export function verificationBadge(v: VerificationType): { label: string; color: 
       return { label: "✓ Auto", color: "text-green-400" };
     case "auto_clean":
       return { label: "✓ Auto", color: "text-green-400" };
+    case "auto_github":
+      return { label: "✓ GitHub", color: "text-green-400" };
     default:
       return { label: "Manual", color: "text-stone-500" };
   }

@@ -231,6 +231,9 @@ function matchAdultHit(url) {
 
 const WORK = new Set([
   "github.com",
+  "githubusercontent.com",
+  "gist.github.com",
+  "raw.githubusercontent.com",
   "gitlab.com",
   "stackoverflow.com",
   "docs.google.com",

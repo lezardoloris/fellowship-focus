@@ -147,6 +147,7 @@ def start_mitmdump(
     path_rules: list | None = None,
     redirects: dict | None = None,
     dashboard_url: str = "",
+    allowlist: list[str] | None = None,
 ) -> subprocess.Popen | None:
     prefix = _proxy_launch_prefix()
     if not prefix:
@@ -158,6 +159,8 @@ def start_mitmdump(
     joined = ",".join(addresses)
     rules_b64 = base64.b64encode(json.dumps(path_rules or []).encode()).decode("ascii")
     redirects_b64 = base64.b64encode(json.dumps(redirects or {}).encode()).decode("ascii")
+    allow = allowlist or ["github.com", "githubusercontent.com", "docs.google.com", "stackoverflow.com", "notion.so"]
+    allow_joined = ",".join(a.strip() for a in allow if a and a.strip())
 
     args = [
         *prefix,
@@ -176,6 +179,8 @@ def start_mitmdump(
         f"redirects_b64={redirects_b64}",
         "--set",
         "block_type=blocklist",
+        "--set",
+        f"allowlist_str={allow_joined}",
         "--set",
         f"api_url={api_url}",
         "--set",

@@ -44,12 +44,12 @@ export async function GET(
     const progress = getProgressToNext(totalXp);
 
     // Identify "me" from the caller's own bearer — never by scanning member tokens.
-    let me: { id: string; name: string } | null = null;
+    let me: { id: string; name: string; total_xp: number } | null = null;
     const own = bearerToken(request);
     if (own) {
       const member = getMemberByToken(own);
       if (member && member.fellowship_id === fellowship.id) {
-        me = { id: member.id, name: member.name };
+        me = { id: member.id, name: member.name, total_xp: member.total_xp };
       }
     }
 

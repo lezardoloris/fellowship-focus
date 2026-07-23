@@ -36,6 +36,12 @@ def load(loader) -> None:
     loader.add_option("path_rules_b64", str, "", "Base64 JSON path rules.")
     loader.add_option("redirects_b64", str, "", "Base64 JSON redirects.")
     loader.add_option("block_type", str, "blocklist", "Allowlist or blocklist.")
+    loader.add_option(
+        "allowlist_str",
+        str,
+        "github.com,githubusercontent.com",
+        "Comma-separated domains that never block (even if on the blocklist).",
+    )
     loader.add_option("api_url", str, "", "Fellowship API URL for block logging.")
     loader.add_option("member_token", str, "", "Member token for block logging.")
     loader.add_option("dashboard_url", str, "", "Guild dashboard URL for the block page CTA.")
@@ -286,12 +292,17 @@ def request(flow) -> None:
         return
 
     addresses = {_strip_www(a.strip()) for a in ctx.options.addresses_str.split(",") if a.strip()}
+    allow = {_strip_www(a.strip()) for a in (ctx.options.allowlist_str or "").split(",") if a.strip()}
     path_rules = _decode_json(ctx.options.path_rules_b64, [])
     redirects = _decode_json(ctx.options.redirects_b64, {})
 
     parsed = urllib.parse.urlparse(flow.request.pretty_url)
     url_domain = _strip_www(parsed.netloc.lower())
     path = parsed.path or "/"
+
+    # Hard skip for productive allowlisted hosts (github, docs, …).
+    if any(_domain_matches(url_domain, a) for a in allow):
+        return
 
     full_hit = any(_domain_matches(url_domain, a) for a in addresses)
     path_hit = _path_matches(path, path_rules, url_domain) if path_rules else None

@@ -389,7 +389,7 @@ export function HabitTracker({ token, fellowshipCode }: Props) {
             <tbody ref={tbodyRef}>
               {data.grid.map((habit, rowIndex) => {
                 const badge = verificationBadge(
-                  habit.verification as "manual" | "auto_focus" | "auto_clean"
+                  habit.verification as "manual" | "auto_focus" | "auto_clean" | "auto_github"
                 );
                 const isDragging = draggingId === habit.id;
                 const showDropBefore =

@@ -11,6 +11,11 @@ export const POINTS = {
   STREAK_BONUS_EVERY_7_DAYS: 50,
   SESSION_COMPLETE_BONUS: 5,
   ZERO_BLOCKS_SESSION_BONUS: 15,
+  /** Soft XP from GitHub coding day (capped — anti empty-commit farm). */
+  GITHUB_COMMIT_XP: 2,
+  GITHUB_PR_XP: 8,
+  GITHUB_REVIEW_XP: 4,
+  GITHUB_DAILY_XP_CAP: 40,
 
   // ── Penalties (block page) ─────────────────────────
   BLOCK_BASE_PENALTY: 10,
@@ -27,6 +32,19 @@ export const POINTS = {
     { id: "shire", name: "Shire", minNetXp: 0, color: "#8b7355" },
   ],
 } as const;
+
+/** Soft XP for a coding day snapshot (commits / PRs / reviews). */
+export function calcGithubDayXp(input: {
+  commits: number;
+  prs: number;
+  reviews: number;
+}): number {
+  const raw =
+    Math.max(0, input.commits) * POINTS.GITHUB_COMMIT_XP +
+    Math.max(0, input.prs) * POINTS.GITHUB_PR_XP +
+    Math.max(0, input.reviews) * POINTS.GITHUB_REVIEW_XP;
+  return Math.min(POINTS.GITHUB_DAILY_XP_CAP, raw);
+}
 
 export function calcBlockPenalty(recentBlockCount: number): number {
   const penalty =

@@ -66,7 +66,7 @@ const DEFAULTS = {
     hard_mode: "confirm",
     hard_delay_secs: 30,
     hard_phrase: "i will focus",
-    allowlist: ["github.com", "docs.google.com", "stackoverflow.com", "notion.so"],
+    allowlist: ["github.com", "githubusercontent.com", "docs.google.com", "stackoverflow.com", "notion.so"],
     schedules: [],
     quick_lock_until: null,
     site_modes: {},

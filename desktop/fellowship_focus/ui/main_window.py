@@ -1145,7 +1145,7 @@ class MainWindow(QMainWindow):
     def _web_set_prefs(self, patch: dict) -> dict:
         """Push prefs edited in the web UI into the desktop config.
 
-        Field-scoped: only blocker_mode / block_style are accepted here.
+        Field-scoped: only blocker_mode / block_style / allowlist are accepted here.
         Timer, alarm, and music must NEVER arrive on this path — and even if
         they do, they must not restart mitm. Restarting releases the system
         proxy (~15s gap) and looks like Shield randomly disarmed.
@@ -1169,9 +1169,24 @@ class MainWindow(QMainWindow):
                 self.config["block_style"] = new_style
                 config_dirty = True
                 # block_style is extension-facing; mitm does not need a restart.
+        if "allowlist" in patch and isinstance(patch.get("allowlist"), list):
+            cleaned = []
+            for a in patch["allowlist"]:
+                if not isinstance(a, str):
+                    continue
+                host = a.strip().lower()
+                if host.startswith("http"):
+                    host = host.split("://", 1)[-1]
+                host = host.split("/", 1)[0].removeprefix("www.")
+                if host and host not in cleaned:
+                    cleaned.append(host)
+            if cleaned != list(self.config.get("allowed_sites") or []):
+                self.config["allowed_sites"] = cleaned
+                engine_dirty = True
+                config_dirty = True
         if config_dirty:
             save_config(self.config)
-        # Only reapply when mode actually changed — skip when sites/mode unchanged
+        # Only reapply when mode/allowlist actually changed — skip when unchanged
         # so we never open a proxy gap for a no-op prefs write.
         if engine_dirty and self.blocker_active:
             self._release_blocker_infra()
@@ -1536,6 +1551,18 @@ class MainWindow(QMainWindow):
             path_rules=path_rules,
             redirects=redirects,
             dashboard_url=self._dashboard_url() or "",
+            allowlist=list(
+                self.config.get(
+                    "allowed_sites",
+                    [
+                        "github.com",
+                        "githubusercontent.com",
+                        "docs.google.com",
+                        "stackoverflow.com",
+                        "notion.so",
+                    ],
+                )
+            ),
         )
         if not self.mitm_process:
             self._on_blocker_failed("The blocking engine could not start on this PC.")

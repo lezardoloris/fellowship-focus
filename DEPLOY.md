@@ -32,9 +32,26 @@ Root `package.json` + `railway.toml` delegate build/start to `web/` (no Root Dir
 | `GOOGLE_CLIENT_SECRET` | for Sign in | Google OAuth client secret (`AUTH_GOOGLE_SECRET` alias OK) |
 | `AUTH_URL` | recommended | Public site URL, e.g. `https://fellowship-focus-production.up.railway.app` |
 | `DATA_DIR` | optional | SQLite folder — mount a volume here for persistence |
-| `ESCROW_API_KEY` | optional | Escrow stakes |
-| `ESCROW_EMAIL` | optional | Escrow broker email |
-| `ESCROW_SANDBOX` | optional | `1` for sandbox |
+| `GITHUB_CLIENT_ID` | optional | GitHub OAuth (Focus coding track) |
+| `GITHUB_CLIENT_SECRET` | optional | GitHub OAuth secret |
+| `GITHUB_TOKEN` | optional | PAT for public Events rate limits |
+| `ESCROW_API_KEY` | optional | Escrow.com API key (goal bets) |
+| `ESCROW_EMAIL` | optional | Escrow broker account email |
+| `ESCROW_WEBHOOK_KEY` | optional | Shared secret for `/api/escrow/webhook?key=` |
+| `ESCROW_SANDBOX` | optional | `1` = sandbox API |
+| `CRON_SECRET` | optional | Protects `/api/cron/settle-stakes?key=` (falls back to webhook key) |
+
+### Escrow webhook (goal bets)
+
+In Escrow.com → API / webhooks, point to:
+
+`https://YOUR_HOST/api/escrow/webhook?key=YOUR_ESCROW_WEBHOOK_KEY`
+
+Funded status flips only after Escrow secures payment (not on “Deposit” click).
+
+Sunday auto-settle (Railway cron or external):
+
+`GET https://YOUR_HOST/api/cron/settle-stakes?key=CRON_SECRET`
 
 Google Console redirect URI and full steps: [docs/GOOGLE-OAUTH-SETUP.md](docs/GOOGLE-OAUTH-SETUP.md).
 
