@@ -251,23 +251,26 @@ export function FocusOverlay({ open, phase, remaining, cycle, cycles, onStop, on
 
       {!immersive && !desktopBridge.present() && (
         <div className="fixed bottom-5 right-5 z-[9999]">
-          <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-[#141618]/95 px-1.5 py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.55)]">
+          <div className="flex items-center gap-2.5 rounded-full border border-white/12 bg-[#1a1c1e]/96 py-1.5 pl-3.5 pr-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
             <button
               type="button"
               onClick={() => setImmersive(true)}
-              className="flex items-center gap-3 rounded-lg px-3.5 py-2 text-left hover:bg-white/5"
+              className="flex items-center gap-2.5 text-left"
               title="Back to immersive"
             >
-              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#b8422e]" />
-              <span className="font-display text-base font-semibold tabular-nums text-white">
+              <span
+                className={`h-2 w-2 shrink-0 animate-pulse rounded-full ${
+                  phase === "break" ? "bg-[#60a5fa]" : "bg-[#b8422e]"
+                }`}
+              />
+              <span className="font-sans text-[15px] font-semibold tabular-nums tracking-wide text-[#f4f4f5]">
                 {fmt(remaining)}
               </span>
-              <span className="text-[10px] uppercase tracking-wider text-white/75">{label}</span>
             </button>
             <button
               type="button"
               onClick={closeAll}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white/75 hover:bg-white/10 hover:text-white"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-base leading-none text-white/70 hover:bg-[#3a3d40] hover:text-white"
               aria-label="Close timer"
               title="End session"
             >

@@ -14,11 +14,19 @@ from PySide6.QtGui import QCursor, QFont, QGuiApplication
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QPushButton, QWidget
 
 from fellowship_focus.config import load_config, save_config
-from fellowship_focus.ui.theme import ACCENT, BG, BG_ELEVATED, FG, MUTED
+from fellowship_focus.ui.theme import (
+    ACCENT,
+    BG,
+    BG_ELEVATED,
+    BORDER,
+    FG,
+    MUTED,
+    font_timer,
+)
 
 
 class FloatTimerWindow(QWidget):
-    """Frameless, always-on-top session indicator."""
+    """Frameless, always-on-top session indicator — premium capsule (time only)."""
 
     closed_by_user = Signal()
     dismissed_by_user = Signal()
@@ -34,8 +42,9 @@ class FloatTimerWindow(QWidget):
         )
         super().__init__(parent, flags)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
-        self.setFixedHeight(36)
+        # Translucent host so the capsule radius actually clips (no square chrome).
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setFixedHeight(40)
 
         self._remaining = 0
         self._label = "FOCUS"
@@ -46,25 +55,28 @@ class FloatTimerWindow(QWidget):
         self._session_active = False
         self._dismissed = False  # × hid the pill; session still running
 
-        # Capsule pill: radius ≈ half height for a premium rounded look.
+        # True capsule: radius = half height. No phase word — status is the accent dot.
         self.setStyleSheet(
             f"""
             QWidget#floatRoot {{
                 background: {BG};
-                border: 1px solid #3a3d40;
-                border-radius: 18px;
+                border: 1px solid {BORDER};
+                border-radius: 20px;
             }}
             QLabel#timeLabel {{
                 color: {FG};
-                font-weight: 700;
-                font-size: 14px;
+                background: transparent;
+                padding: 0 2px;
+            }}
+            QLabel#statusDot {{
+                background: transparent;
             }}
             QPushButton#closeBtn {{
                 background: {BG_ELEVATED};
                 color: {MUTED};
                 border: none;
-                border-radius: 11px;
-                font-size: 14px;
+                border-radius: 12px;
+                font-size: 15px;
                 padding: 0;
             }}
             QPushButton#closeBtn:hover {{
@@ -81,25 +93,25 @@ class FloatTimerWindow(QWidget):
         layout.addWidget(root)
 
         row = QHBoxLayout(root)
-        row.setContentsMargins(12, 4, 6, 4)
-        row.setSpacing(6)
+        row.setContentsMargins(14, 6, 8, 6)
+        row.setSpacing(10)
 
         self._dot = QLabel("●")
-        self._dot.setStyleSheet(f"color: {ACCENT}; font-size: 9px;")
+        self._dot.setObjectName("statusDot")
+        self._dot.setStyleSheet(f"color: {ACCENT}; font-size: 10px;")
         self._dot.setFixedWidth(12)
         self._dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
         row.addWidget(self._dot)
 
         self._time = QLabel("00:00")
         self._time.setObjectName("timeLabel")
-        font = QFont("Consolas", 13)
-        font.setBold(True)
-        self._time.setFont(font)
+        self._time.setFont(font_timer(14))
+        self._time.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         row.addWidget(self._time)
 
         close = QPushButton("×")
         close.setObjectName("closeBtn")
-        close.setFixedSize(22, 22)
+        close.setFixedSize(24, 24)
         close.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         close.setToolTip("Hide timer (session keeps running)")
         close.clicked.connect(self._on_dismiss)
@@ -186,7 +198,7 @@ class FloatTimerWindow(QWidget):
         m, s = divmod(max(0, self._remaining), 60)
         self._time.setText(f"{m:02d}:{s:02d}")
         self._dot.setStyleSheet(
-            f"color: {'#60a5fa' if self._label == 'BREAK' else ACCENT}; font-size: 9px;"
+            f"color: {'#60a5fa' if self._label == 'BREAK' else ACCENT}; font-size: 10px;"
         )
         self.adjustSize()
 

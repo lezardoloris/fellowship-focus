@@ -85,14 +85,27 @@ const LOCAL_PREFS_KEY = "ff-local-prefs";
 /** Live session, persisted so a closed window/tab doesn't lose the deep-work clock. */
 const SESSION_KEY = "ff-focus-session";
 
-type StoredSession = { phase: Exclude<Phase, "idle">; cycle: number; endsAt: number };
+type StoredSession = {
+  phase: Exclude<Phase, "idle">;
+  cycle: number;
+  endsAt: number;
+  /** Frozen remaining seconds while paused (endsAt is ignored until resume). */
+  remaining?: number;
+  paused?: boolean;
+};
 
 function readSession(): StoredSession | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as StoredSession;
-    if (!s?.endsAt || (s.phase !== "focus" && s.phase !== "break")) return null;
+    if (s.phase !== "focus" && s.phase !== "break") return null;
+    if (s.paused) {
+      const left = Math.max(0, Math.floor(Number(s.remaining) || 0));
+      if (left <= 0) return null;
+      return { ...s, remaining: left, paused: true };
+    }
+    if (!s?.endsAt) return null;
     return s;
   } catch {
     return null;
@@ -131,6 +144,7 @@ export function BlockTab({
   const [phase, setPhase] = useState<Phase>("idle");
   const [remaining, setRemaining] = useState(0);
   const [cycle, setCycle] = useState(0);
+  const [paused, setPaused] = useState(false);
   const [exceeded, setExceeded] = useState(0);
   const [extReady, setExtReady] = useState(false);
   const [extState, setExtState] = useState<ExtensionState | null>(null);
@@ -891,20 +905,19 @@ export function BlockTab({
     <>
     {inSession && !isDesktop && !floatHidden && (
       <div className="fixed bottom-5 right-5 z-[9999]">
-        <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-[#141618]/95 px-1.5 py-1.5 shadow-2xl">
-          <div className="flex items-center gap-3 rounded-lg px-3.5 py-2">
-            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#b8422e]" />
-            <span className="font-display text-base font-semibold tabular-nums text-white">
-              {mm}:{ss}
-            </span>
-            <span className="text-[10px] uppercase tracking-wider text-white/75">
-              {phase === "focus" ? "FOCUS" : "BREAK"}
-            </span>
-          </div>
+        <div className="flex items-center gap-2.5 rounded-full border border-white/12 bg-[#1a1c1e]/96 py-1.5 pl-3.5 pr-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.5)]">
+          <span
+            className={`h-2 w-2 shrink-0 animate-pulse rounded-full ${
+              phase === "break" ? "bg-[#60a5fa]" : "bg-[#b8422e]"
+            }`}
+          />
+          <span className="font-sans text-[15px] font-semibold tabular-nums tracking-wide text-[#f4f4f5]">
+            {mm}:{ss}
+          </span>
           <button
             type="button"
             onClick={() => setFloatHidden(true)}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white/75 hover:bg-white/10 hover:text-white"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-base leading-none text-white/70 hover:bg-[#3a3d40] hover:text-white"
             aria-label="Hide timer"
             title="Hide timer — session keeps running (use Stop to end)"
           >
@@ -935,107 +948,140 @@ export function BlockTab({
 
         {/* Blocker Mode lives in the sticky header on every tab (product moat). */}
 
-        {/* Timer | Block list — music removed; keep the moat simple. */}
-        <div className="mx-auto grid w-full max-w-6xl items-stretch gap-4 lg:grid-cols-2 xl:grid-cols-[1fr_1.15fr_0.85fr]">
-          <div className="glass-panel flex h-full max-h-[min(70vh,34rem)] flex-col overflow-hidden">
-            <div className="border-b border-white/10 px-5 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/55">
-                Timer
-              </p>
-            </div>
-            {inSession && (
-              <div className={`px-5 pt-5 text-center ${remaining === 0 ? "text-[#f87171]" : "text-white"}`}>
-                <div className="font-display text-5xl font-bold tabular-nums">{mm}:{ss}</div>
-                <p className="mt-1 text-[10px] uppercase tracking-[0.3em] text-white/70">
-                  {phase} · {cycle}/{prefs.cycles}
+        {/* Timer | Block list | Music */}
+        <div className="mx-auto grid w-full max-w-6xl items-start gap-4 lg:grid-cols-2 xl:grid-cols-[0.85fr_1.25fr_0.9fr]">
+          <div className="glass-panel flex flex-col p-5">
+            <div
+              className={`text-center ${
+                inSession && remaining === 0 ? "text-[#f87171]" : "text-white"
+              }`}
+            >
+              <div className="font-display text-[3.25rem] font-bold leading-none tabular-nums tracking-tight">
+                {inSession
+                  ? `${mm}:${ss}`
+                  : `${String(prefs.focus_min).padStart(2, "0")}:00`}
+              </div>
+              {inSession ? (
+                <p className="mt-2 text-[11px] tabular-nums tracking-[0.2em] text-white/50">
+                  {cycle} / {prefs.cycles}
+                  {phase === "break" ? " · break" : ""}
                 </p>
-              </div>
-            )}
-            <div className="border-b border-white/10 px-5 py-4">
-              <div className="mb-3 flex flex-wrap gap-1">
-                {TIMER_PRESETS.map((tp) => {
-                  const active =
-                    prefs.focus_min === tp.focus &&
-                    prefs.break_min === tp.break &&
-                    prefs.cycles === tp.cycles;
-                  return (
-                    <button
-                      key={tp.id}
-                      type="button"
-                      title={tp.basis}
-                      disabled={inSession}
-                      onClick={() =>
-                        savePrefs({
-                          ...prefs,
-                          focus_min: tp.focus,
-                          break_min: tp.break,
-                          cycles: tp.cycles,
-                          focus_sec: 0,
-                        })
-                      }
-                      className={`rounded-md border px-2 py-1 text-xs font-medium transition disabled:opacity-40 ${
-                        active
-                          ? "border-[#b8422e] bg-[#b8422e] text-white"
-                          : "border-white/15 bg-white/5 text-white/75 hover:bg-white/10"
-                      }`}
-                    >
-                      {tp.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mb-3 grid grid-cols-3 gap-2">
-                <Stepper label="Focus" value={prefs.focus_min} min={1} max={180} suffix="min" disabled={inSession} onChange={(v) => savePrefs({ ...prefs, focus_min: v })} />
-                <Stepper label="Break" value={prefs.break_min} min={0} max={60} suffix="min" disabled={inSession} onChange={(v) => savePrefs({ ...prefs, break_min: v })} />
-                <Stepper label="Cycles" value={prefs.cycles} min={1} max={12} disabled={inSession} onChange={(v) => savePrefs({ ...prefs, cycles: v })} />
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                  {ALARM_OPTS.map((o) => (
-                    <button
-                      key={o.id}
-                      type="button"
-                      title="Alarm length"
-                      onClick={() => savePrefs({ ...prefs, alarm_secs: o.id })}
-                      className={`rounded-md border px-2 py-1 text-[11px] ${
-                        prefs.alarm_secs === o.id
-                          ? "border-[#b8422e] bg-[#b8422e] text-white"
-                          : "border-white/15 text-white/70"
-                      }`}
-                    >
-                      {o.label}
-                    </button>
+              ) : (
+                <p className="mt-2 text-[11px] text-white/45">
+                  {prefs.focus_min}m · {prefs.break_min}m · ×{prefs.cycles}
+                </p>
+              )}
+            </div>
+
+            {!inSession && (
+              <div className="mt-5 space-y-3">
+                <select
+                  value={
+                    TIMER_PRESETS.find(
+                      (tp) =>
+                        tp.focus === prefs.focus_min &&
+                        tp.break === prefs.break_min &&
+                        tp.cycles === prefs.cycles
+                    )?.id ?? "custom"
+                  }
+                  onChange={(e) => {
+                    const tp = TIMER_PRESETS.find((p) => p.id === e.target.value);
+                    if (!tp) return;
+                    savePrefs({
+                      ...prefs,
+                      focus_min: tp.focus,
+                      break_min: tp.break,
+                      cycles: tp.cycles,
+                      focus_sec: 0,
+                    });
+                  }}
+                  className="input-premium w-full py-2 text-sm"
+                  aria-label="Timer preset"
+                >
+                  <option value="custom">Custom</option>
+                  {TIMER_PRESETS.map((tp) => (
+                    <option key={tp.id} value={tp.id} title={tp.basis}>
+                      {tp.label} — {tp.basis}
+                    </option>
                   ))}
-                  <input
-                    type="range"
+                </select>
+                <div className="grid grid-cols-3 gap-2">
+                  <Stepper
+                    label="Focus"
+                    value={prefs.focus_min}
+                    min={1}
+                    max={180}
+                    suffix="m"
+                    compact
+                    disabled={inSession}
+                    onChange={(v) => savePrefs({ ...prefs, focus_min: v })}
+                  />
+                  <Stepper
+                    label="Break"
+                    value={prefs.break_min}
                     min={0}
-                    max={1}
-                    step={0.01}
-                    value={prefs.alarm_vol}
-                    title="Alarm volume"
-                    aria-label="Alarm volume"
-                    onChange={(e) => savePrefs({ ...prefs, alarm_vol: Number(e.target.value) })}
-                    className="ml-1 h-1.5 w-20 accent-[#b8422e] sm:w-28"
+                    max={60}
+                    suffix="m"
+                    compact
+                    disabled={inSession}
+                    onChange={(v) => savePrefs({ ...prefs, break_min: v })}
+                  />
+                  <Stepper
+                    label="Cycles"
+                    value={prefs.cycles}
+                    min={1}
+                    max={12}
+                    compact
+                    disabled={inSession}
+                    onChange={(v) => savePrefs({ ...prefs, cycles: v })}
                   />
                 </div>
-                {phase === "idle" ? (
-                  <button
-                    onClick={start}
-                    className="btn-primary shrink-0 px-5"
-                    title={armFailed ? "Blocking is not armed — the timer still runs" : undefined}
-                  >
-                    Start
-                  </button>
-                ) : (
-                  <button onClick={stop} className="btn-secondary shrink-0 px-5">
-                    Stop
-                  </button>
-                )}
               </div>
+            )}
+
+            <div className="mt-5 flex items-center gap-2">
+              <select
+                value={prefs.alarm_secs}
+                onChange={(e) => savePrefs({ ...prefs, alarm_secs: Number(e.target.value) })}
+                className="input-premium min-w-0 flex-1 py-2 text-xs"
+                aria-label="Alarm length"
+                title="Alarm length"
+              >
+                {ALARM_OPTS.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    Alarm · {o.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={prefs.alarm_vol}
+                title="Alarm volume"
+                aria-label="Alarm volume"
+                onChange={(e) => savePrefs({ ...prefs, alarm_vol: Number(e.target.value) })}
+                className="h-1 w-16 shrink-0 accent-[#b8422e] sm:w-20"
+              />
             </div>
+
+            {phase === "idle" ? (
+              <button
+                onClick={start}
+                className="btn-primary mt-4 w-full py-2.5"
+                title={armFailed ? "Blocking is not armed — the timer still runs" : undefined}
+              >
+                Start
+              </button>
+            ) : (
+              <button onClick={stop} className="btn-secondary mt-4 w-full py-2.5">
+                Stop
+              </button>
+            )}
           </div>
 
-          <div className="glass-panel flex h-full max-h-[min(70vh,34rem)] flex-col overflow-hidden p-5">
+          <div className="glass-panel flex max-h-[min(70vh,34rem)] min-h-[22rem] flex-col overflow-hidden p-5 xl:row-span-1">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-white">
                 Block list
@@ -1252,9 +1298,13 @@ function Stepper({
   const inc = () => !disabled && onChange(clamp(value + step));
 
   return (
-    <div className={compact ? "flex items-center gap-1" : "flex flex-col gap-1.5"}>
+    <div className={compact ? "flex flex-col gap-1" : "flex flex-col gap-1.5"}>
       {label ? (
-        <span className="text-center text-[11px] font-medium uppercase tracking-wider text-white/70">
+        <span
+          className={`text-center font-medium uppercase tracking-wider text-white/55 ${
+            compact ? "text-[10px]" : "text-[11px]"
+          }`}
+        >
           {label}
         </span>
       ) : null}
@@ -1267,12 +1317,14 @@ function Stepper({
           type="button"
           disabled={disabled || value <= min}
           onClick={dec}
-          className="flex h-10 w-9 items-center justify-center text-lg font-medium text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          className={`flex items-center justify-center font-medium text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30 ${
+            compact ? "h-8 w-7 text-base" : "h-10 w-9 text-lg"
+          }`}
           aria-label={`Decrease ${label || "value"}`}
         >
           −
         </button>
-        <div className="flex min-w-12 flex-1 flex-col items-center justify-center px-1">
+        <div className={`flex flex-1 flex-col items-center justify-center px-1 ${compact ? "min-w-10" : "min-w-12"}`}>
           <input
             type="text"
             inputMode="numeric"
@@ -1308,15 +1360,19 @@ function Stepper({
                 dec();
               }
             }}
-            className="w-full bg-transparent text-center text-lg font-semibold tabular-nums leading-none text-white outline-none disabled:cursor-not-allowed"
+            className={`w-full bg-transparent text-center font-semibold tabular-nums leading-none text-white outline-none disabled:cursor-not-allowed ${
+              compact ? "text-sm" : "text-lg"
+            }`}
           />
-          {suffix ? <span className="mt-0.5 text-[10px] text-white/65">{suffix}</span> : null}
+          {suffix ? <span className="mt-0.5 text-[10px] text-white/55">{suffix}</span> : null}
         </div>
         <button
           type="button"
           disabled={disabled || value >= max}
           onClick={inc}
-          className="flex h-10 w-9 items-center justify-center text-lg font-medium text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+          className={`flex items-center justify-center font-medium text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30 ${
+            compact ? "h-8 w-7 text-base" : "h-10 w-9 text-lg"
+          }`}
           aria-label={`Increase ${label || "value"}`}
         >
           +

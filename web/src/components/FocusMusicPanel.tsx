@@ -57,9 +57,24 @@ export function FocusMusicPanel() {
   // ── Render: desktop ──
   if (inShell) {
     const available = music?.available && music.tracks.length > 0;
+    const title =
+      available && music && music.index >= 0
+        ? music.tracks[music.index] ?? "Focus music"
+        : "Add tracks in the app";
     return (
-      <Shell count={music?.tracks.length ?? 0}>
-        <div className="flex items-center gap-2">
+      <Shell
+        count={music?.tracks.length ?? 0}
+        title={title}
+        playing={!!music?.playing}
+        disabled={!available}
+        onToggle={() =>
+          desktopBridge.musicCmd({ cmd: "toggle" }).then((s) => s && setMusic(s))
+        }
+        volume={music?.volume ?? 0.5}
+        onVolume={(v) =>
+          desktopBridge.musicCmd({ cmd: "volume", value: v }).then((s) => s && setMusic(s))
+        }
+        select={
           <select
             value={music?.index ?? -1}
             disabled={!available}
@@ -68,7 +83,7 @@ export function FocusMusicPanel() {
                 (s) => s && setMusic(s)
               )
             }
-            className="input-premium min-w-0 flex-1 truncate py-1.5 text-sm"
+            className="input-premium w-full truncate py-2 text-sm"
             aria-label="Focus track"
           >
             {!available && <option value={-1}>Add tracks in the app</option>}
@@ -78,21 +93,8 @@ export function FocusMusicPanel() {
               </option>
             ))}
           </select>
-          <TransportButton
-            playing={!!music?.playing}
-            disabled={!available}
-            onClick={() =>
-              desktopBridge.musicCmd({ cmd: "toggle" }).then((s) => s && setMusic(s))
-            }
-          />
-        </div>
-        <Volume
-          value={music?.volume ?? 0.5}
-          onChange={(v) =>
-            desktopBridge.musicCmd({ cmd: "volume", value: v }).then((s) => s && setMusic(s))
-          }
-        />
-      </Shell>
+        }
+      />
     );
   }
 
@@ -119,7 +121,7 @@ export function FocusMusicPanel() {
   };
 
   return (
-    <Shell count={options.length}>
+    <>
       <audio
         ref={audioRef}
         loop
@@ -127,96 +129,115 @@ export function FocusMusicPanel() {
         className="hidden"
         onEnded={() => setPlaying(false)}
       />
-      <div className="flex items-center gap-2">
-        <select
-          value={current?.src || ""}
-          disabled={!hasLocal}
-          onChange={(e) => {
-            setTrackSrc(e.target.value);
-            localStorage.setItem(FOCUS_MUSIC_KEY, e.target.value);
-            // Selecting a track must not start playback — only the Play button.
-            const el = audioRef.current;
-            if (el) {
-              el.src = e.target.value;
-              if (playing) {
-                el.play()
-                  .then(() => setPlaying(true))
-                  .catch(() => setPlaying(false));
+      <Shell
+        count={options.length}
+        title={hasLocal ? current?.label || "Focus music" : "Available in the desktop app"}
+        playing={playing}
+        disabled={!hasLocal || !current}
+        onToggle={() => current && play(current.src)}
+        volume={vol}
+        onVolume={setVol}
+        select={
+          <select
+            value={current?.src || ""}
+            disabled={!hasLocal}
+            onChange={(e) => {
+              setTrackSrc(e.target.value);
+              localStorage.setItem(FOCUS_MUSIC_KEY, e.target.value);
+              const el = audioRef.current;
+              if (el) {
+                el.src = e.target.value;
+                if (playing) {
+                  el.play()
+                    .then(() => setPlaying(true))
+                    .catch(() => setPlaying(false));
+                }
               }
-            }
-          }}
-          className="input-premium min-w-0 flex-1 truncate py-1.5 text-sm"
-          aria-label="Focus track"
-        >
-          {!hasLocal && <option value="">No local tracks</option>}
-          {options.map((o) => (
-            <option key={o.src} value={o.src}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <TransportButton
-          playing={playing}
-          disabled={!hasLocal || !current}
-          onClick={() => current && play(current.src)}
-        />
-      </div>
-      {!hasLocal && (
-        <p className="mt-1.5 text-[11px] text-white/55">Available in the desktop app.</p>
-      )}
-      <Volume value={vol} onChange={setVol} />
-    </Shell>
+            }}
+            className="input-premium w-full truncate py-2 text-sm"
+            aria-label="Focus track"
+          >
+            {!hasLocal && <option value="">No local tracks</option>}
+            {options.map((o) => (
+              <option key={o.src} value={o.src}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        }
+      />
+    </>
   );
 }
 
-function Shell({ count, children }: { count: number; children: React.ReactNode }) {
-  return (
-    <div className="glass-panel flex h-full max-h-[min(70vh,34rem)] flex-col overflow-hidden p-3.5">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-white/70">Focus music</p>
-        {count > 0 && <span className="text-[10px] text-white/45">{count}</span>}
-      </div>
-      <div className="mt-auto">{children}</div>
-    </div>
-  );
-}
-
-function TransportButton({
+function Shell({
+  count,
+  title,
   playing,
   disabled,
-  onClick,
+  onToggle,
+  volume,
+  onVolume,
+  select,
 }: {
+  count: number;
+  title: string;
   playing: boolean;
   disabled: boolean;
-  onClick: () => void;
+  onToggle: () => void;
+  volume: number;
+  onVolume: (v: number) => void;
+  select: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={playing ? "Pause" : "Play"}
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#b8422e] text-white transition hover:bg-[#c46551] disabled:opacity-40"
-    >
-      {playing ? <span className="text-xs">❚❚</span> : <span className="ml-0.5 text-sm">▶</span>}
-    </button>
-  );
-}
+    <div className="glass-panel flex flex-col p-5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-white/55">Music</p>
+        {count > 0 && <span className="text-[10px] tabular-nums text-white/40">{count}</span>}
+      </div>
 
-function Volume({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return (
-    <div className="mt-2 flex items-center gap-2">
-      <span className="text-[10px] text-white/55">Vol</span>
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.01}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="h-1 flex-1 accent-[#b8422e]"
-        aria-label="Volume"
-      />
+      <div className="mt-6 flex flex-col items-center text-center">
+        <button
+          type="button"
+          onClick={onToggle}
+          disabled={disabled}
+          aria-label={playing ? "Pause" : "Play"}
+          className={`flex h-16 w-16 items-center justify-center rounded-full text-white shadow-[0_10px_28px_rgba(184,66,46,0.35)] transition disabled:opacity-40 ${
+            playing
+              ? "bg-[#912a1d] hover:bg-[#b8422e]"
+              : "bg-[#b8422e] hover:bg-[#c46551]"
+          }`}
+        >
+          {playing ? (
+            <span className="text-sm tracking-widest">❚❚</span>
+          ) : (
+            <span className="ml-0.5 text-lg">▶</span>
+          )}
+        </button>
+        <p className="mt-4 line-clamp-2 max-w-[16rem] text-sm font-medium leading-snug text-white/90">
+          {title}
+        </p>
+        {playing && (
+          <p className="mt-1 text-[10px] uppercase tracking-[0.25em] text-[#e07a63]/90">Playing</p>
+        )}
+      </div>
+
+      <div className="mt-6 space-y-3">
+        {select}
+        <div className="flex items-center gap-2.5">
+          <span className="text-[10px] text-white/45">Vol</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={volume}
+            onChange={(e) => onVolume(Number(e.target.value))}
+            className="h-1 flex-1 accent-[#b8422e]"
+            aria-label="Volume"
+          />
+        </div>
+      </div>
     </div>
   );
 }
