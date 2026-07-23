@@ -268,12 +268,13 @@ class MainWindow(QMainWindow):
         if bool(self.config.get("session_nudge_enabled", True)):
             self._nudge_timer.start(30000)
 
-        # During an armed shield: mitm queues dopamine-site visits → Yes/No
-        # "Block youtube.com?" card. Also drains extension-requested adds.
+        # During an armed shield: mitm queues dopamine/adult visits → Yes/No
+        # prompt card. Also drains extension-requested adds.
         self._block_prompt = SessionNudge()
         self._block_prompt.accepted.connect(self._on_block_prompt_accept)
         self._block_prompt.dismissed.connect(self._on_block_prompt_dismiss)
         self._block_prompt_domain: str | None = None
+        self._block_prompt_kind: str = "dopamine"
         self._block_prompt_snooze: dict[str, float] = {}
         self._proxy_sidechannel_timer = QTimer(self)
         self._proxy_sidechannel_timer.timeout.connect(self._poll_proxy_sidechannel)
@@ -2181,43 +2182,69 @@ class MainWindow(QMainWindow):
         domain = self._normalize_host(str(data.get("domain") or ""))
         if not domain:
             return
-        blocked = {self._normalize_host(s) for s in self.config.get("blocked_sites") or []}
-        if domain in blocked or any(
-            domain == b or domain.endswith("." + b) for b in blocked if b
-        ):
-            return
+        kind = str(data.get("kind") or "dopamine").lower()
+        is_adult = kind == "adult" or domain == "google-search"
+        # Search SERP keys are not real hosts — never treat as already-blocked.
+        if domain != "google-search":
+            blocked = {self._normalize_host(s) for s in self.config.get("blocked_sites") or []}
+            if domain in blocked or any(
+                domain == b or domain.endswith("." + b) for b in blocked if b
+            ):
+                return
         until = self._block_prompt_snooze.get(domain, 0.0)
         if time.monotonic() < until:
             return
 
         self._block_prompt_domain = domain
-        self._block_prompt.show_nudge(
-            18000,
-            title=f"Block {domain}?",
-            subtitle="Distracting site during focus",
-            accept_tip="Add to blocklist",
-            decline_tip="Allow for now",
-        )
+        self._block_prompt_kind = "adult" if is_adult else "dopamine"
+        if is_adult:
+            accept_tip = "Close tab" if domain == "google-search" else "Block site"
+            self._block_prompt.show_nudge(
+                18000,
+                title="Back to work?",
+                subtitle="This won't help the quest.",
+                accept_tip=accept_tip,
+                decline_tip="Snooze 5m",
+            )
+        else:
+            self._block_prompt.show_nudge(
+                18000,
+                title=f"Block {domain}?",
+                subtitle="Distracting site during focus",
+                accept_tip="Add to blocklist",
+                decline_tip="Allow for now",
+            )
 
     def _on_block_prompt_accept(self) -> None:
         domain = self._block_prompt_domain
+        kind = getattr(self, "_block_prompt_kind", "dopamine")
         self._block_prompt_domain = None
+        self._block_prompt_kind = "dopamine"
         if not domain:
+            return
+        # Adult search SERP — don't add google to the blocklist.
+        if domain == "google-search" or (kind == "adult" and domain.endswith("-search")):
+            if hasattr(self, "toasts"):
+                self.toasts.show("Back to work", "This won't help the quest.", "success", 2000)
             return
         self._web_add_sites([domain])
         if hasattr(self, "toasts"):
-            self.toasts.show("Blocked", f"{domain} added to your blocklist.", "success", 2000)
+            title = "Blocked" if kind != "adult" else "Back to work"
+            self.toasts.show(title, f"{domain} added to your blocklist.", "success", 2000)
 
     def _on_block_prompt_dismiss(self) -> None:
         import time
 
         domain = self._block_prompt_domain
+        kind = getattr(self, "_block_prompt_kind", "dopamine")
         self._block_prompt_domain = None
+        self._block_prompt_kind = "dopamine"
         if domain:
-            self._block_prompt_snooze[domain] = time.monotonic() + 1800
-        import time
+            # Adult: short 5m snooze. Dopamine: 30m.
+            snooze_s = 300 if kind == "adult" else 1800
+            self._block_prompt_snooze[domain] = time.monotonic() + snooze_s
 
-        # Snooze 30 min so a "not now" is respected.
+        # Snooze session nudge so a "not now" is respected.
         self._nudge_snooze_until = time.monotonic() + 1800
 
     def _show_from_tray(self) -> None:
