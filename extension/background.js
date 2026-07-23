@@ -1135,11 +1135,7 @@ async function acceptAdultAction(domain) {
       try {
         await chrome.tabs.remove(tabId);
       } catch {
-        try {
-          await chrome.tabs.goBack(tabId);
-        } catch {
-          /* ignore */
-        }
+        /* tab may already be gone */
       }
     }
     notify("Back to work", "Tab closed — the quest continues");
@@ -1174,6 +1170,22 @@ async function declineAdultAction(domain, ms = ADULT_SNOOZE_MS) {
 async function showAdultPrompt(domain, tabId, kind) {
   const id = adultNotifId(domain);
   _adultPending.set(domain, { tabId, at: Date.now(), kind: kind || "site" });
+
+  // Prefer the in-page toast (3 actions) — falls back to chrome.notifications.
+  if (typeof tabId === "number") {
+    try {
+      await chrome.tabs.sendMessage(tabId, {
+        type: "FF_FOCUS_NUDGE",
+        domain,
+        kind: kind || "site",
+        category: "adult",
+      });
+      return;
+    } catch {
+      /* no content script yet — notification fallback */
+    }
+  }
+
   const blockLabel = kind === "search" ? "Close tab" : "Block site";
   const base = {
     type: "basic",

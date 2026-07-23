@@ -22,20 +22,27 @@ const DISTRACTORS = {
   "web.whatsapp.com": 18,
 };
 
-/** Social / video / news (and close cousins) — used for "Block this site?" prompts
- * during an active shield. Mirrors BlockTab CATEGORIES + DISTRACTORS. */
+/** Social / video / news / games (+ cousins) — soft "Back to work?" nudges during
+ * an active shield when the host is not yet on the blocklist.
+ * Mirrors BlockTab CATEGORIES + DISTRACTORS. */
 const DOPAMINE_SITES = new Set([
   ...Object.keys(DISTRACTORS),
   "primevideo.com",
   "disneyplus.com",
+  "hulu.com",
+  "max.com",
+  "crunchyroll.com",
   "lemonde.fr",
   "threads.net",
+  "aliexpress.com",
+  "roblox.com",
+  "steampowered.com",
+  "epicgames.com",
 ]);
 
 /**
- * Adult / porn apexes — "Back to work?" accountability during focus.
- * Kept separate from DOPAMINE_SITES so copy stays calm-but-clearer than generic
- * distractor prompts. Includes common tube sites not always on the default list.
+ * Adult / porn apexes — same "Back to work?" soft nudge, higher priority than
+ * DOPAMINE_SITES. Includes common tube sites not always on the default list.
  */
 const ADULT_SITES = new Set([
   "pornhub.com",

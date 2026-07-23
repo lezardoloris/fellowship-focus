@@ -90,6 +90,7 @@ def test_path_rule_ignored_for_other_hosts():
     [
         ("pornhub.com", "nsfw"),
         ("onlyfans.com", "nsfw"),
+        ("xhamster.com", "nsfw"),
         ("twitter.com", "social"),
         ("x.com", "social"),
         ("reddit.com", "social"),
@@ -100,6 +101,78 @@ def test_path_rule_ignored_for_other_hosts():
 )
 def test_category_for(site, expected):
     assert block._category_for(site) == expected
+
+
+# ── Adult / "Back to work?" matching ─────────────────────
+
+def test_match_adult_domain_tube_sites():
+    assert block._match_adult_domain("www.xhamster.com") == "xhamster.com"
+    assert block._match_adult_domain("pornhub.com") == "pornhub.com"
+    assert block._match_adult_domain("foo.xxx") == "foo.xxx"
+    assert block._match_adult_domain("youtube.com") is None
+
+
+def test_adult_search_google_q_porn():
+    key = block._adult_search_hit(
+        "https://www.google.com/search?q=porn",
+        "www.google.com",
+        "/search",
+        "q=porn",
+    )
+    assert key == "google-search"
+
+
+def test_adult_search_google_fr():
+    key = block._adult_search_hit(
+        "https://www.google.fr/search?q=pornhub",
+        "www.google.fr",
+        "/search",
+        "q=pornhub",
+    )
+    assert key == "google-search"
+
+
+def test_adult_search_no_false_positive_python():
+    assert (
+        block._adult_search_hit(
+            "https://www.google.com/search?q=python+tutorial",
+            "www.google.com",
+            "/search",
+            "q=python+tutorial",
+        )
+        is None
+    )
+
+
+def test_adult_search_no_bare_sex():
+    # "sex" alone is intentionally not a trigger (education / false positives).
+    assert (
+        block._adult_search_hit(
+            "https://www.google.com/search?q=sex+education",
+            "www.google.com",
+            "/search",
+            "q=sex+education",
+        )
+        is None
+    )
+
+
+def test_match_adult_combines_site_and_search():
+    assert block._match_adult("https://xhamster.com/", "xhamster.com", "/", "") == (
+        "xhamster.com",
+        "site",
+    )
+    assert block._match_adult(
+        "https://www.google.com/search?q=porn",
+        "www.google.com",
+        "/search",
+        "q=porn",
+    ) == ("google-search", "search")
+
+
+def test_adult_reddit_curated_only():
+    assert block._adult_reddit_hit("reddit.com", "/r/porn/")
+    assert not block._adult_reddit_hit("reddit.com", "/r/programming/")
 
 
 # ── Soft / hard mode toggle ─────────────────────────────────
