@@ -9,6 +9,8 @@
 
 - [`BLOCK-LAYOUT-PLAN.md`](./BLOCK-LAYOUT-PLAN.md) — Block panel layout detail; Wave 1 wire-up owns shipping.
 - [`UX-PLAN.md`](./UX-PLAN.md) — prior chrome/toast backlog; many items Done; open gaps fold into this plan.
+- [`BLOCKER-100-PLAN.md`](./BLOCKER-100-PLAN.md) — layered blocker reliability (DNR → SPA → mitm → hosts), canary invariant, Waves B0–B3.
+- [`BROWSER-HONESTY.md`](./BROWSER-HONESTY.md) — Chrome / desktop / Incognito / Firefox-Edge honesty matrix.
 
 ---
 

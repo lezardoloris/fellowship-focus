@@ -129,8 +129,12 @@ export type ExtensionState = {
   manualShield: boolean;
   focusOn: boolean;
   siteCount: number;
+  /** Real declarativeNetRequest rule count (0 in notify mode by design). */
   ruleCount: number;
+  /** Effective enforce list size (includes hard-mode auto-hosts). */
+  coveredSites?: number;
   mode: "soft" | "hard";
+  blockStyle?: "notify" | "page";
   blocksToday: number;
   focusMinutesToday: number;
   version: string;
@@ -165,9 +169,13 @@ export async function getExtensionState(timeoutMs = 2500): Promise<ExtensionStat
   });
 }
 
-/** True only when the extension is actually blocking something right now. */
+/** True when shield is on and enforcement is live (DNR rules, or notify-mode coverage). */
 export function isArmed(state: ExtensionState | null): boolean {
-  return Boolean(state?.shieldOn && state.ruleCount > 0);
+  if (!state?.shieldOn) return false;
+  if (state.ruleCount > 0) return true;
+  // Notify mode installs zero DNR redirects; coveredSites is the real enforce list.
+  if (state.blockStyle === "notify" && (state.coveredSites ?? state.siteCount) > 0) return true;
+  return false;
 }
 
 /** One-shot connect: push apiUrl/token/sites into the extension. Prefer direct channel. */
