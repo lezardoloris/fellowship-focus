@@ -138,6 +138,7 @@ export function BlockTab({
   // Firefox, extension not installed…).
   const [armFailed, setArmFailed] = useState(false);
   const [floatHidden, setFloatHidden] = useState(false);
+  const [siteQuery, setSiteQuery] = useState("");
   const [suggestions, setSuggestions] = useState<HistorySuggestion[]>([]);
   const [scanBusy, setScanBusy] = useState(false);
   const [devices, setDevices] = useState<
@@ -381,6 +382,7 @@ export function BlockTab({
     if (!custom.trim()) return;
     post({ action: "add", sites: [custom], category: "custom" });
     setCustom("");
+    setSiteQuery("");
   }
 
   async function savePrefs(next: Prefs) {
@@ -933,8 +935,8 @@ export function BlockTab({
         {/* Blocker Mode lives in the sticky header on every tab (product moat). */}
 
         {/* Timer | Block list — music removed; keep the moat simple. */}
-        <div className="mx-auto grid w-full max-w-6xl items-start gap-4 lg:grid-cols-2">
-          <div className="glass-panel overflow-hidden">
+        <div className="mx-auto grid w-full max-w-6xl items-stretch gap-4 lg:grid-cols-2">
+          <div className="glass-panel flex h-full max-h-[min(70vh,34rem)] flex-col overflow-hidden">
             <div className="border-b border-white/10 px-5 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/55">
                 Timer
@@ -1032,8 +1034,8 @@ export function BlockTab({
             </div>
           </div>
 
-          <div className="glass-panel flex min-h-[28rem] flex-col p-5">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="glass-panel flex h-full max-h-[min(70vh,34rem)] flex-col overflow-hidden p-5">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-white">
                 Block list
                 <span className="ml-1.5 font-normal tabular-nums text-white/45">{sites.length}</span>
@@ -1124,8 +1126,6 @@ export function BlockTab({
                   </button>
                 );
               })}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1">
               {CATEGORIES.map((c) => {
                 const active = c.sites.every((s) => blockedSet.has(s));
                 return (
@@ -1136,7 +1136,7 @@ export function BlockTab({
                     className={`rounded-full border px-2.5 py-1 text-[11px] transition ${
                       active
                         ? "border-[#b8422e]/80 bg-[#b8422e]/15 text-white"
-                        : "border-transparent text-white/60 hover:bg-white/5 hover:text-white/85"
+                        : "border-transparent text-white/55 hover:bg-white/5 hover:text-white/85"
                     }`}
                   >
                     {c.label}
@@ -1145,42 +1145,58 @@ export function BlockTab({
               })}
             </div>
 
-            <form onSubmit={addCustom} className="mt-4 flex gap-2">
+            <form onSubmit={addCustom} className="mt-3 flex gap-2">
               <input
                 value={custom}
-                onChange={(e) => setCustom(e.target.value)}
-                placeholder="Add site…"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCustom(v);
+                  setSiteQuery(v);
+                }}
+                placeholder="Filter or add site…"
                 className="input-premium flex-1 bg-white/5 py-2 text-sm"
               />
-              <button type="submit" className="btn-primary">
+              <button type="submit" className="btn-primary shrink-0">
                 Add
               </button>
             </form>
 
-            <ul className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-              {sites.length === 0 ? (
-                <li className="rounded-lg border border-dashed border-white/12 px-3 py-6 text-center text-xs text-white/50">
-                  Pick a preset or add a site
-                </li>
-              ) : (
-                sites.map((s) => (
-                  <li
-                    key={s.id}
-                    className="group flex items-center gap-2 rounded-lg border border-transparent px-2.5 py-1.5 transition hover:border-white/10 hover:bg-white/[0.04]"
-                  >
-                    <span className="flex-1 truncate text-sm text-white/85">{s.site}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeSite(s.site)}
-                      className="text-white/35 opacity-0 transition group-hover:opacity-100 hover:text-red-400"
-                      aria-label={`Remove ${s.site}`}
-                    >
-                      ✕
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
+            {(() => {
+              const q = siteQuery.trim().toLowerCase();
+              const visible = q
+                ? sites.filter((s) => s.site.includes(q))
+                : sites;
+              if (sites.length === 0) {
+                return (
+                  <div className="mt-3 flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/12 px-3 py-8 text-center text-xs text-white/45">
+                    Pick a preset or add a site
+                  </div>
+                );
+              }
+              return (
+                <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-white/8 bg-black/25 p-2.5">
+                  <div className="flex flex-wrap gap-1.5">
+                    {visible.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => removeSite(s.site)}
+                        title={`Remove ${s.site}`}
+                        className="group inline-flex max-w-full items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] py-1 pl-2 pr-1.5 text-[11px] text-white/80 transition hover:border-[#b8422e]/50 hover:bg-[#b8422e]/15 hover:text-white"
+                      >
+                        <span className="truncate">{s.site}</span>
+                        <span className="shrink-0 text-white/35 group-hover:text-[#fca5a5]" aria-hidden>
+                          ×
+                        </span>
+                      </button>
+                    ))}
+                    {visible.length === 0 ? (
+                      <span className="px-1 py-2 text-[11px] text-white/45">No match</span>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
