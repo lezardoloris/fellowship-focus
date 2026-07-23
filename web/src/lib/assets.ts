@@ -15,3 +15,20 @@ export const FEATURE_IMAGES = {
   focus: "/assets/focus-quest.jpg",
   ladder: "/assets/journey-map.jpg",
 } as const;
+
+/**
+ * Compact corner art for guild directory cards (by niche).
+ * Regenerate with Gemini: `npm run generate-guild-illustrations` (from web/).
+ */
+export const GUILD_ILLUSTRATIONS: Record<string, string> = {
+  students: "/assets/guilds/students.png",
+  builders: "/assets/guilds/builders.png",
+  fitness: "/assets/guilds/fitness.png",
+  "deep-work": "/assets/guilds/deep-work.png",
+  accountability: "/assets/guilds/accountability.png",
+  creators: "/assets/guilds/creators.png",
+};
+
+export function guildIllustration(niche: string): string | null {
+  return GUILD_ILLUSTRATIONS[niche] ?? null;
+}

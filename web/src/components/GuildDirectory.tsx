@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useToast } from "@/components/Toasts";
 import { PremiumLoader } from "@/components/PremiumLoader";
+import { guildIllustration } from "@/lib/assets";
 
 type Niche = { id: string; label: string; blurb: string };
 type GuildCard = {
@@ -101,6 +102,25 @@ export function GuildDirectory({
     }
   }
 
+  /** Re-enter a guild we already joined (token in localStorage) instead of prompting Join again. */
+  function enterOrPromptJoin(g: GuildCard) {
+    const clean = g.code.trim().toLowerCase();
+    try {
+      const raw = localStorage.getItem(`ff-member-${clean}`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { token?: string; name?: string };
+        if (parsed.token) {
+          onJoined(clean, parsed.token, parsed.name || joinName || defaultName || "");
+          return;
+        }
+      }
+    } catch {
+      /* fall through to join form */
+    }
+    setSelected({ ...g, code: clean });
+    setMode("join");
+  }
+
   async function createGuild(e: React.FormEvent) {
     e.preventDefault();
     const name = createName.trim();
@@ -197,7 +217,7 @@ export function GuildDirectory({
         <div className="glass-panel p-6">
           <h2 className="text-lg font-semibold text-white">Private invite</h2>
           <p className="mt-1 mb-4 text-sm text-white/75">
-            Optional — only if someone shared a private code. Public guilds need no link.
+            Optional — only if someone shared a private guild code.
           </p>
           <form
             className="space-y-3"
@@ -205,7 +225,7 @@ export function GuildDirectory({
               e.preventDefault();
               const clean = privateCode.trim().toLowerCase();
               if (!clean) return;
-              setSelected({
+              enterOrPromptJoin({
                 code: clean,
                 name: clean,
                 niche: "deep-work",
@@ -214,7 +234,6 @@ export function GuildDirectory({
                 total_xp: 0,
                 blocker_bypass_penalty: 0,
               });
-              setMode("join");
             }}
           >
             <input
@@ -314,8 +333,7 @@ export function GuildDirectory({
           <div className="mr-auto min-w-0">
             <h2 className="font-display text-xl font-semibold text-white">Guild ladder</h2>
             <p className="mt-1 max-w-2xl text-sm text-white/75">
-              Browse public guilds by niche and objective — no special invite link needed.
-              Focus ladder stays solo if you prefer.
+              Browse public guilds by niche and objective. Focus ladder stays solo if you prefer.
             </p>
           </div>
           <button type="button" onClick={onGoFocus} className="btn-secondary text-sm">
@@ -352,36 +370,57 @@ export function GuildDirectory({
         </div>
       ) : (
         <ul className="grid gap-3 md:grid-cols-2">
-          {guilds.map((g, i) => (
-            <li key={g.code}>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelected(g);
-                  setMode("join");
-                }}
-                className="glass-panel w-full p-5 text-left transition hover:bg-white/5"
-              >
-                <div className="flex items-baseline gap-2">
-                  <span className="font-display text-lg tabular-nums text-white/62">
-                    #{String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/70">
-                    {nicheLabel(g.niche)}
-                  </span>
-                </div>
-                <h3 className="mt-2 text-base font-semibold text-white">{g.name}</h3>
-                {g.objective ? (
-                  <p className="mt-1 line-clamp-2 text-sm text-white/75">{g.objective}</p>
-                ) : (
-                  <p className="mt-1 text-sm text-white/65">No objective set yet.</p>
-                )}
-                <p className="mt-3 text-xs text-white/65">
-                  {g.member_count} member{g.member_count === 1 ? "" : "s"} · {g.total_xp} XP
-                </p>
-              </button>
-            </li>
-          ))}
+          {guilds.map((g, i) => {
+            const art = guildIllustration(g.niche);
+            return (
+              <li key={g.code}>
+                <button
+                  type="button"
+                  onClick={() => enterOrPromptJoin(g)}
+                  className="glass-panel group relative w-full overflow-hidden p-5 text-left transition hover:bg-white/5"
+                >
+                  {art ? (
+                    <div
+                      aria-hidden
+                      className="pointer-events-none absolute inset-y-0 right-0 w-[42%] max-w-[180px]"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={art}
+                        alt=""
+                        className="h-full w-full object-cover object-center opacity-55 transition group-hover:opacity-70"
+                        style={{
+                          maskImage:
+                            "linear-gradient(90deg, transparent 0%, black 38%, black 100%)",
+                          WebkitMaskImage:
+                            "linear-gradient(90deg, transparent 0%, black 38%, black 100%)",
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                  <div className="relative z-[1] pr-[28%] sm:pr-[32%]">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-display text-lg tabular-nums text-white/62">
+                        #{String(i + 1).padStart(2, "0")}
+                      </span>
+                      <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/70">
+                        {nicheLabel(g.niche)}
+                      </span>
+                    </div>
+                    <h3 className="mt-2 text-base font-semibold text-white">{g.name}</h3>
+                    {g.objective ? (
+                      <p className="mt-1 line-clamp-2 text-sm text-white/75">{g.objective}</p>
+                    ) : (
+                      <p className="mt-1 text-sm text-white/65">No objective set yet.</p>
+                    )}
+                    <p className="mt-3 text-xs text-white/65">
+                      {g.member_count} member{g.member_count === 1 ? "" : "s"} · {g.total_xp} XP
+                    </p>
+                  </div>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
 

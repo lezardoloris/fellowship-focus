@@ -12,6 +12,7 @@
     "lint": "eslint",
     "generate-assets": "node scripts/generate-assets.mjs",
     "generate-icon": "node scripts/generate-icon.mjs",
+    "generate-guild-illustrations": "node scripts/generate-guild-illustrations.mjs",
     "sync-assets": "powershell -ExecutionPolicy Bypass -File ../scripts/sync-assets.ps1"
   },
   "dependencies": {
