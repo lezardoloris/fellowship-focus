@@ -215,7 +215,18 @@ export function FocusApp() {
   async function connectGoogle() {
     setAuthBusy(true);
     try {
+      const res = await fetch("/api/auth/providers-status");
+      const status = (await res.json()) as { google?: boolean };
+      if (!status.google) {
+        toast.error(
+          "Google sign-in not configured",
+          "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on the server (see docs/GOOGLE-OAUTH-SETUP.md)."
+        );
+        return;
+      }
       await signIn("google", { callbackUrl: "/app" });
+    } catch {
+      toast.error("Sign-in failed");
     } finally {
       setAuthBusy(false);
     }
@@ -236,12 +247,18 @@ export function FocusApp() {
     }
   }
 
-  function share() {
+  async function share() {
     if (!code) return;
-    navigator.clipboard.writeText(`${window.location.origin}/app?code=${code}`);
-    toast.ok("Invite link copied");
-    setShared(true);
-    setTimeout(() => setShared(false), 2000);
+    const url = `${window.location.origin}/app?code=${code}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.ok("Invite link copied");
+      setShared(true);
+      setTimeout(() => setShared(false), 2000);
+    } catch {
+      window.prompt("Copy invite link:", url);
+      toast.info("Copy the invite link");
+    }
   }
 
   if (!ready) {
@@ -324,7 +341,7 @@ export function FocusApp() {
             <button
               type="button"
               onClick={leaveGuild}
-              className="hidden min-h-9 rounded-full border border-white/15 bg-transparent px-2.5 py-1.5 text-[11px] text-white/70 hover:text-white/90 md:inline"
+              className="min-h-9 rounded-full border border-white/15 bg-transparent px-2.5 py-1.5 text-[11px] text-white/70 hover:text-white/90"
               title={`Leave ${code}`}
             >
               Leave

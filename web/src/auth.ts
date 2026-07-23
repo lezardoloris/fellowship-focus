@@ -16,15 +16,23 @@ const GOOGLE_SCOPES = "openid email profile";
 /** read:user — identity + events for the authenticated user (public + private pushes). */
 const GITHUB_SCOPES = "read:user";
 
-const googleConfigured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-const githubConfigured = Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
+/** Prefer GOOGLE_CLIENT_*; Auth.js-style AUTH_GOOGLE_* aliases also work. */
+const googleClientId = process.env.GOOGLE_CLIENT_ID || process.env.AUTH_GOOGLE_ID || "";
+const googleClientSecret =
+  process.env.GOOGLE_CLIENT_SECRET || process.env.AUTH_GOOGLE_SECRET || "";
+const googleConfigured = Boolean(googleClientId && googleClientSecret);
+
+const githubClientId = process.env.GITHUB_CLIENT_ID || process.env.AUTH_GITHUB_ID || "";
+const githubClientSecret =
+  process.env.GITHUB_CLIENT_SECRET || process.env.AUTH_GITHUB_SECRET || "";
+const githubConfigured = Boolean(githubClientId && githubClientSecret);
 
 const providers = [
   ...(googleConfigured
     ? [
         Google({
-          clientId: process.env.GOOGLE_CLIENT_ID!,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+          clientId: googleClientId,
+          clientSecret: googleClientSecret,
           authorization: {
             params: {
               scope: GOOGLE_SCOPES,
@@ -38,8 +46,8 @@ const providers = [
   ...(githubConfigured
     ? [
         GitHub({
-          clientId: process.env.GITHUB_CLIENT_ID!,
-          clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+          clientId: githubClientId,
+          clientSecret: githubClientSecret,
           authorization: { params: { scope: GITHUB_SCOPES } },
         }),
       ]

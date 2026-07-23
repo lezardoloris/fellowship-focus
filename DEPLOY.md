@@ -27,10 +27,16 @@ Root `package.json` + `railway.toml` delegate build/start to `web/` (no Root Dir
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `PORT` | auto | Set by Railway |
+| `AUTH_SECRET` | **yes** (prod) | Auth.js session secret (`NEXTAUTH_SECRET` also accepted) |
+| `GOOGLE_CLIENT_ID` | for Sign in | Google OAuth client ID (`AUTH_GOOGLE_ID` alias OK) |
+| `GOOGLE_CLIENT_SECRET` | for Sign in | Google OAuth client secret (`AUTH_GOOGLE_SECRET` alias OK) |
+| `AUTH_URL` | recommended | Public site URL, e.g. `https://fellowship-focus-production.up.railway.app` |
 | `DATA_DIR` | optional | SQLite folder — mount a volume here for persistence |
 | `ESCROW_API_KEY` | optional | Escrow stakes |
 | `ESCROW_EMAIL` | optional | Escrow broker email |
 | `ESCROW_SANDBOX` | optional | `1` for sandbox |
+
+Google Console redirect URI and full steps: [docs/GOOGLE-OAUTH-SETUP.md](docs/GOOGLE-OAUTH-SETUP.md).
 
 ## Persistent SQLite (important)
 
