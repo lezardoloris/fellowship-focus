@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { desktopBridge, isDesktopShell, type DesktopState } from "@/lib/desktop";
+import { desktopBridge, isDesktopShell, isDesktopShieldLive, type DesktopState } from "@/lib/desktop";
 import { playAlarm } from "@/lib/alarm";
 import { logSoloSession } from "@/lib/soloStats";
 import {
@@ -50,6 +50,10 @@ const ALARM_OPTS = [
 ] as const;
 
 const DEFAULT_PREFS: Prefs = DEFAULT_BLOCKER_SETTINGS;
+
+/** Align with desktop mitm boot (~30s engine + canary). */
+const ARM_POLL_MS = 500;
+const ARM_WAIT_ATTEMPTS = 60;
 
 const CATEGORIES: Array<{ id: string; label: string; sites: string[] }> = [
   { id: "social", label: "Social", sites: ["x.com", "twitter.com", "facebook.com", "instagram.com", "reddit.com", "tiktok.com", "linkedin.com"] },
@@ -383,22 +387,22 @@ export function BlockTab({
       // Never toast OFF while still arming — wait for live/fail.
       if (turningOn) {
         if (st.arming) {
-          // Poll until live or idle-off.
-          for (let i = 0; i < 20; i++) {
-            await new Promise((r) => setTimeout(r, 400));
+          // Poll until live or idle-off (~30s — desktop boot + canary).
+          for (let i = 0; i < ARM_WAIT_ATTEMPTS; i++) {
+            await new Promise((r) => setTimeout(r, ARM_POLL_MS));
             const poll = await desktopBridge.getState();
             if (poll.available) applyDesktopState(poll);
-            if (poll.shieldOn && poll.active) {
+            if (isDesktopShieldLive(poll)) {
               toast.ok("Shield ON");
               return;
             }
-            if (!poll.arming && !(poll.shieldOn && poll.active)) {
+            if (!poll.arming && !isDesktopShieldLive(poll)) {
               toast.error("Shield failed to arm", "Check the certificate in the Blocker tab.");
               return;
             }
           }
           toast.error("Still arming", "Shield has not confirmed live yet.");
-        } else if (st.shieldOn && st.active) {
+        } else if (isDesktopShieldLive(st)) {
           toast.ok("Shield ON");
         } else {
           toast.error("Shield failed to arm");
@@ -1081,19 +1085,19 @@ export function BlockTab({
     void (async () => {
       // Desktop: arm shield first (or confirm unprotected).
       if (isDesktop || isDesktopShell()) {
-        if (isDesktop && dt?.certReady && !(dt.shieldOn && dt.active)) {
+        if (isDesktop && dt?.certReady && !isDesktopShieldLive(dt)) {
           setShieldBusy(true);
           try {
             toast.info("Arming Shield…");
             const st = await desktopBridge.setShield(true);
             applyDesktopState(st);
-            let live = Boolean(st.shieldOn && st.active);
+            let live = isDesktopShieldLive(st);
             if (st.arming || !live) {
-              for (let i = 0; i < 20 && !live; i++) {
-                await new Promise((r) => setTimeout(r, 400));
+              for (let i = 0; i < ARM_WAIT_ATTEMPTS && !live; i++) {
+                await new Promise((r) => setTimeout(r, ARM_POLL_MS));
                 const poll = await desktopBridge.getState();
                 if (poll.available) applyDesktopState(poll);
-                live = Boolean(poll.shieldOn && poll.active);
+                live = isDesktopShieldLive(poll);
                 if (!poll.arming && !live) break;
               }
             }
@@ -1283,7 +1287,7 @@ export function BlockTab({
   const mm = String(Math.floor(remaining / 60)).padStart(2, "0");
   const ss = String(remaining % 60).padStart(2, "0");
 
-  const on = Boolean(dt?.shieldOn && dt?.active);
+  const on = isDesktopShieldLive(dt);
   const inSession = phase !== "idle";
   /** Idle or paused: show focus/break/cycles + presets. Hide while countdown runs. */
   const canEditTimer = phase === "idle" || paused;

@@ -32,6 +32,7 @@ from fellowship_focus.activity_tracker import ActivityTracker
 from fellowship_focus.api_client import FellowshipApi
 from fellowship_focus.blocker.manager import (
     blocker_log,
+    disable_browser_quic,
     force_release_blocker,
     is_mitmdump_running,
     proxy_engine_available,
@@ -41,7 +42,7 @@ from fellowship_focus.blocker.manager import (
 from fellowship_focus.cert_setup import install_cert_windows, is_cert_installed, is_cert_generated
 from fellowship_focus.config import load_config, save_config
 from fellowship_focus.invite import apply_parsed_config, parse_invite_or_sync
-from fellowship_focus.constants import DEFAULT_BLOCKED_SITES, DEFAULT_REDIRECTS, effective_block_lists
+from fellowship_focus.constants import DEFAULT_BLOCKED_SITES, DEFAULT_REDIRECTS, PROXY_PORT, effective_block_lists
 from fellowship_focus.notifications import (
     notify,
     notify_back_to_focus,
@@ -91,10 +92,14 @@ class MainWindow(QMainWindow):
         self.mitm_process = None
         self.blocker_active = False
         self._blocker_arming = False
+        self._filter_ok: bool | None = None
         # Detects a dead engine and releases the system proxy so a crash can
         # never leave the whole machine without internet.
         self._blocker_watchdog = QTimer(self)
         self._blocker_watchdog.timeout.connect(self._watchdog_tick)
+        # Continuous canary while Shield claims ON (warn + refresh filterOk).
+        self._health_timer = QTimer(self)
+        self._health_timer.timeout.connect(self._health_tick)
         self._wizard_running = False
         self._cert_ok = is_cert_installed()
         force_release_blocker()
@@ -1145,6 +1150,8 @@ class MainWindow(QMainWindow):
             "active": bool(self.blocker_active),
             "arming": bool(self._blocker_arming),
             "certReady": bool(self._cert_ok and proxy_engine_available()),
+            # None while unknown; True/False after canary. UI stays OFF until True.
+            "filterOk": self._filter_ok,
             "sites": list(self.config.get("blocked_sites", [])),
         }
 
@@ -1498,8 +1505,10 @@ class MainWindow(QMainWindow):
         # the entire engine boot (ERR_PROXY_CONNECTION_FAILED everywhere), and
         # left it stranded if the engine never came up.
         self._blocker_arming = True
+        self._filter_ok = None
         self._update_blocker_status()
-        QTimer.singleShot(1000, lambda: self._wait_engine_then_arm(attempts=25))
+        # ~30s boot window — web UI polls the same budget.
+        QTimer.singleShot(1000, lambda: self._wait_engine_then_arm(attempts=30))
 
     def _wait_engine_then_arm(self, attempts: int) -> None:
         if not self._blocker_arming:
@@ -1512,16 +1521,13 @@ class MainWindow(QMainWindow):
             )
             return
         if is_mitmdump_running():
-            self._blocker_arming = False
-            blocker_log("engine up — arming system proxy")
+            blocker_log("engine up — arming system proxy (canary pending)")
             set_system_proxy(True)
-            self.blocker_active = True
-            self._blocker_on_for_session = True
-            self._update_blocker_status()
-            self._blocker_watchdog.start(15000)
-            self.toasts.show("Shield up", "Distracting sites are now blocked.", "success", 2500)
-            # Prove it actually filters, not just that the engine answers.
-            self._verify_filtering()
+            # QUIC/HTTP3 can bypass the system proxy — best-effort HKCU policy.
+            if disable_browser_quic():
+                blocker_log("QUIC disabled for Chrome/Edge (restart browsers if needed)")
+            # Stay arming until verified canary — never toast ON on proxy-up alone.
+            self._verify_filtering(gate_on=True)
             return
         if attempts > 0:
             QTimer.singleShot(1000, lambda: self._wait_engine_then_arm(attempts - 1))
@@ -1529,20 +1535,29 @@ class MainWindow(QMainWindow):
         self._blocker_arming = False
         self._on_blocker_failed("The blocking engine did not come up.")
 
-    def _verify_filtering(self) -> None:
+    def _verify_filtering(self, *, gate_on: bool = False) -> None:
         """Confirm the proxy really serves the block page for a listed domain.
 
-        The engine answering != the engine filtering. This hits one real
-        blocked domain through the proxy on a worker thread and warns loudly if
-        the block page does not come back.
+        The engine answering != the engine filtering. When gate_on=True this is
+        the arm canary: Shield stays arming until proof, then goes live (or fails).
         """
         import threading
 
         sites, _ = self._effective_block_lists()
         if not sites:
+            if gate_on:
+                # Nothing listed — proxy is up; treat as ready (honest empty list).
+                self._filter_ok = True
+                self._blocker_arming = False
+                self.blocker_active = True
+                self._blocker_on_for_session = True
+                self._update_blocker_status()
+                self._blocker_watchdog.start(15000)
+                self._health_timer.start(60000)
+                self.toasts.show("Shield up", "No sites listed yet — add some on Block.", "success", 2500)
             return
         target = sites[0]
-        self._filter_ok = None
+        result: dict[str, bool | None] = {"ok": None}
 
         def worker() -> None:
             import ssl
@@ -1559,26 +1574,55 @@ class MainWindow(QMainWindow):
                     ok = "Blocked — Fellowship Focus" in resp.read().decode("utf-8", "replace")
             except Exception as e:
                 blocker_log(f"verify: request error {e}")
-            self._filter_ok = ok
+            result["ok"] = ok
 
         def poll(attempts: int) -> None:
-            if self._filter_ok is None:
+            if result["ok"] is None:
                 if attempts > 0:
                     QTimer.singleShot(500, lambda: poll(attempts - 1))
+                elif gate_on:
+                    self._blocker_arming = False
+                    self._filter_ok = False
+                    self._on_blocker_failed(
+                        f"Could not verify blocking for {target} (see ~/.fellowship-focus/proxy.log)."
+                    )
                 return
-            if self._filter_ok:
+            ok = bool(result["ok"])
+            prev = self._filter_ok
+            self._filter_ok = ok
+            if ok:
                 blocker_log(f"verify: filtering confirmed on {target}")
-            else:
-                blocker_log(f"verify: NOT filtering {target}")
+                if gate_on:
+                    self._blocker_arming = False
+                    self.blocker_active = True
+                    self._blocker_on_for_session = True
+                    self._update_blocker_status()
+                    self._blocker_watchdog.start(15000)
+                    self._health_timer.start(60000)
+                    self.toasts.show("Shield up", "Distracting sites are now blocked.", "success", 2500)
+                return
+            blocker_log(f"verify: NOT filtering {target}")
+            if gate_on:
+                self._blocker_arming = False
+                self._on_blocker_failed(
+                    f"Proxy is up but {target} is not being filtered. See ~/.fellowship-focus/proxy.log."
+                )
+            elif prev is not False:
                 self.toasts.show(
-                    "Shield armed but not filtering",
+                    "Shield not filtering",
                     "Sites may still load. See ~/.fellowship-focus/proxy.log.",
                     "warning",
                     7000,
                 )
 
         threading.Thread(target=worker, daemon=True, name="verify-filter").start()
-        QTimer.singleShot(1000, lambda: poll(20))
+        QTimer.singleShot(400, lambda: poll(24))
+
+    def _health_tick(self) -> None:
+        if not self.blocker_active or self._blocker_arming:
+            self._health_timer.stop()
+            return
+        self._verify_filtering(gate_on=False)
 
     def _watchdog_tick(self) -> None:
         """Release the system proxy only if the engine PROCESS actually died.
@@ -1648,7 +1692,9 @@ class MainWindow(QMainWindow):
 
     def _release_blocker_infra(self) -> None:
         self._blocker_arming = False
+        self._filter_ok = None
         self._blocker_watchdog.stop()
+        self._health_timer.stop()
         force_release_blocker()
         self.mitm_process = None
         self.blocker_active = False

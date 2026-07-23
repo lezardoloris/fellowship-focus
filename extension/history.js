@@ -33,6 +33,76 @@ const DOPAMINE_SITES = new Set([
 ]);
 
 /**
+ * Adult / porn apexes — "Back to work?" accountability during focus.
+ * Kept separate from DOPAMINE_SITES so copy stays calm-but-clearer than generic
+ * distractor prompts. Includes common tube sites not always on the default list.
+ */
+const ADULT_SITES = new Set([
+  "pornhub.com",
+  "xvideos.com",
+  "xhamster.com",
+  "xnxx.com",
+  "redtube.com",
+  "youporn.com",
+  "tube8.com",
+  "spankbang.com",
+  "onlyfans.com",
+  "chaturbate.com",
+  "stripchat.com",
+  "livejasmin.com",
+  "bongacams.com",
+  "porntube.com",
+  "porn.com",
+  "xhamster.desi",
+  "xhopen.com",
+  "nhentai.net",
+  "rule34.xxx",
+  "gelbooru.com",
+  "hanime.tv",
+  "brazzers.com",
+  "realitykings.com",
+  "eporner.com",
+  "hqporner.com",
+  "tnaflix.com",
+  "beeg.com",
+  "pornmd.com",
+]);
+
+/** High-precision query tokens for search SERPs (avoid bare "sex"). */
+const ADULT_SEARCH_TERMS = new Set([
+  "porn",
+  "porno",
+  "xxx",
+  "nsfw",
+  "hentai",
+  "pornhub",
+  "xvideos",
+  "xhamster",
+  "xnxx",
+  "onlyfans",
+  "chaturbate",
+  "redtube",
+  "youporn",
+  "rule34",
+  "brazzers",
+  "spankbang",
+  "nhentai",
+]);
+
+/** Obvious NSFW subreddit names only — do not match all of reddit. */
+const ADULT_REDDIT_SUBS = new Set([
+  "porn",
+  "nsfw",
+  "gonewild",
+  "nsfw_gif",
+  "realgirls",
+  "porninfifteenseconds",
+  "rule34",
+  "hentai",
+  "adultgif",
+]);
+
+/**
  * Map a hostname to a canonical dopamine apex, or null.
  * @param {string} host
  * @param {Record<string, string[]>} [aliases] domain → alias list (from background)
@@ -53,6 +123,102 @@ function matchDopamineDomain(host, aliases) {
       }
     }
   }
+  return null;
+}
+
+/**
+ * Map a hostname to a canonical adult apex, or null.
+ * Also treats the .xxx TLD as adult.
+ * @param {string} host
+ */
+function matchAdultDomain(host) {
+  const h = String(host || "")
+    .replace(/^www\./, "")
+    .toLowerCase();
+  if (!h) return null;
+  if (h.endsWith(".xxx") || h === "xxx") return h.endsWith(".xxx") ? h : "xxx";
+  for (const d of ADULT_SITES) {
+    if (h === d || h.endsWith("." + d)) return d;
+  }
+  return null;
+}
+
+function _isGoogleHost(h) {
+  return h === "google.com" || /^google\.[a-z.]+$/.test(h) || /(^|\.)google\.[a-z.]+$/.test(h);
+}
+
+/**
+ * True when a search URL's q= (etc.) contains a high-precision adult term.
+ * @param {string} url
+ */
+function isAdultSearchUrl(url) {
+  try {
+    const u = new URL(url);
+    const h = u.hostname.replace(/^www\./, "").toLowerCase();
+    const path = (u.pathname || "/").toLowerCase();
+    let q = "";
+    if (_isGoogleHost(h) && (path === "/search" || path.startsWith("/search"))) {
+      q = u.searchParams.get("q") || "";
+    } else if ((h === "bing.com" || h.endsWith(".bing.com")) && path.startsWith("/search")) {
+      q = u.searchParams.get("q") || "";
+    } else if (h === "duckduckgo.com") {
+      q = u.searchParams.get("q") || "";
+    } else {
+      return false;
+    }
+    const tokens = String(q)
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean);
+    return tokens.some((t) => ADULT_SEARCH_TERMS.has(t));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Curated reddit NSFW path: /r/porn etc. — not all of reddit.
+ * @param {string} url
+ */
+function isAdultRedditPath(url) {
+  try {
+    const u = new URL(url);
+    const h = u.hostname.replace(/^www\./, "").toLowerCase();
+    if (h !== "reddit.com" && !h.endsWith(".reddit.com") && h !== "redd.it") return false;
+    const m = (u.pathname || "").toLowerCase().match(/^\/r\/([a-z0-9_]+)/);
+    return !!(m && ADULT_REDDIT_SUBS.has(m[1]));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Adult navigation hit for "Back to work?" prompts.
+ * @param {string} url
+ * @returns {{ domain: string, kind: 'site'|'search'|'reddit' } | null}
+ */
+function matchAdultHit(url) {
+  if (!url || !/^https?:/i.test(url)) return null;
+  let host = "";
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return null;
+  }
+  if (!host) return null;
+
+  const apex = matchAdultDomain(host);
+  if (apex) return { domain: apex, kind: "site" };
+
+  if (isAdultSearchUrl(url)) {
+    const key = _isGoogleHost(host) ? "google-search" : host.split(".").slice(-2).join(".") || host;
+    return { domain: key, kind: "search" };
+  }
+
+  if (isAdultRedditPath(url)) {
+    return { domain: "reddit.com", kind: "reddit" };
+  }
+
   return null;
 }
 

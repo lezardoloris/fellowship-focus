@@ -9,8 +9,18 @@ export type DesktopState = {
   /** Engine is booting: proxy not yet switched on, shield not yet ON. */
   arming?: boolean;
   certReady: boolean;
+  /** Verified canary — null unknown, true proven, false failed. */
+  filterOk?: boolean | null;
   sites: string[];
 };
+
+/** True when desktop Shield is live and (if reported) canary-proven. */
+export function isDesktopShieldLive(st: DesktopState | null | undefined): boolean {
+  if (!st?.available) return false;
+  if (!(st.shieldOn && st.active)) return false;
+  if (st.filterOk === false) return false;
+  return true;
+}
 
 type QtSlot = (...args: unknown[]) => void;
 type RawBridge = {

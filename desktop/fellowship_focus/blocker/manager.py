@@ -205,6 +205,39 @@ def set_system_proxy(enable: bool) -> None:
     _broadcast_proxy_change()
 
 
+def disable_browser_quic() -> bool:
+    """Best-effort: disable Chromium QUIC so HTTPS goes through the system proxy.
+
+    QUIC/HTTP3 can bypass WinINET proxy and silently miss the mitm shield.
+    Writes HKCU policy DisableQuic=1 for Chrome and Edge (no admin). Browsers
+    may need a restart to pick up the policy. Returns True if any write landed.
+    """
+    if os.name != "nt":
+        return False
+    try:
+        import winreg
+    except ImportError:
+        return False
+
+    paths = (
+        (winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome"),
+        (winreg.HKEY_CURRENT_USER, r"Software\Policies\Microsoft\Edge"),
+    )
+    wrote = False
+    for root, path in paths:
+        try:
+            key = winreg.CreateKeyEx(root, path, 0, winreg.KEY_SET_VALUE)
+            try:
+                winreg.SetValueEx(key, "DisableQuic", 0, winreg.REG_DWORD, 1)
+                wrote = True
+                blocker_log(f"QUIC disabled via policy: {path}")
+            finally:
+                winreg.CloseKey(key)
+        except OSError as e:
+            blocker_log(f"QUIC policy write failed ({path}): {e}")
+    return wrote
+
+
 def _flush_dns() -> None:
     """Cached DNS answers let apps keep talking to already-resolved IPs for a
     while after arming; flushing costs nothing and needs no admin rights."""

@@ -135,6 +135,9 @@ export type ExtensionState = {
   coveredSites?: number;
   mode: "soft" | "hard";
   blockStyle?: "notify" | "page";
+  /** Verified canary — null/undefined = legacy; true/false when health loop reports. */
+  canaryOk?: boolean | null;
+  lastCanaryAt?: number | null;
   blocksToday: number;
   focusMinutesToday: number;
   version: string;
@@ -169,9 +172,11 @@ export async function getExtensionState(timeoutMs = 2500): Promise<ExtensionStat
   });
 }
 
-/** True when shield is on and enforcement is live (DNR rules, or notify-mode coverage). */
+/** True when shield is on and enforcement is verified (canary) or legacy-coherent. */
 export function isArmed(state: ExtensionState | null): boolean {
   if (!state?.shieldOn) return false;
+  // Prefer verified canary when the extension health loop reports it.
+  if (typeof state.canaryOk === "boolean") return state.canaryOk;
   if (state.ruleCount > 0) return true;
   // Notify mode installs zero DNR redirects; coveredSites is the real enforce list.
   if (state.blockStyle === "notify" && (state.coveredSites ?? state.siteCount) > 0) return true;

@@ -113,12 +113,12 @@ Copy and toasts must match this matrix. Prefer under-claim + prove over over-cla
 
 | ID | Outcome |
 |----|---------|
-| B1-1 | Verified canary before Shield ON toast / `isArmed` green |
-| B1-2 | Arm wait / no OFF flash while rebuilding |
-| B1-3 | Desktop: cert ready + QUIC/VPN conflict surfacing |
-| B1-4 | Dual-engine arm coordinator (extension ↔ desktop) |
-| B1-5 | Timer Start: require armed or explicit unprotected confirm |
-| B1-6 | Continuous health alarm (SW + DNR coherence + last canary) |
+| B1-1 | Verified canary before Shield ON toast / `isArmed` green | **Done (essentials)** — extension `runCanary` + `canaryOk`; desktop gates ON on `_verify_filtering(gate_on=True)` |
+| B1-2 | Arm wait / no OFF flash while rebuilding | **Done** — desktop ~30s boot; web polls 30s; stays `arming` until canary |
+| B1-3 | Desktop: cert ready + QUIC/VPN conflict surfacing | **Partial** — QUIC HKCU DisableQuic on arm; VPN still copy-only |
+| B1-4 | Dual-engine arm coordinator (extension ↔ desktop) | Deferred |
+| B1-5 | Timer Start: require armed or explicit unprotected confirm | Done earlier (Wave 0/1) |
+| B1-6 | Continuous health alarm (SW + DNR coherence + last canary) | **Done (essentials)** — extension `health` alarm 2m; desktop health timer 60s |
 
 ### Wave B2 — Hosts + policies
 
@@ -140,13 +140,13 @@ Copy and toasts must match this matrix. Prefer under-claim + prove over over-cla
 
 ## 6. Acceptance (practical 100%)
 
-- [ ] `node --check extension/background.js` passes; SW registers on install/reload.
-- [ ] Hard mode: YouTube family hosts in DNR (or notify enforce list) without requiring manual add.
-- [ ] YouTube in-site navigation triggers block/notify via `onHistoryStateUpdated`.
-- [ ] Notify mode: `ruleCount === 0` DNR but `coveredSites > 0` and UI still armed when shield on.
-- [ ] Shield ON UI only after canary (B1) — until then, no green lie.
-- [ ] Desktop path documented for non-Chrome; Safari/TV never claimed.
-- [ ] Cross-links stay current with master plan Wave 0 blocker truth items.
+- [x] `node --check extension/background.js` passes; SW registers on install/reload.
+- [x] Hard mode: YouTube family hosts in DNR (or notify enforce list) without requiring manual add.
+- [x] YouTube in-site navigation triggers block/notify via `onHistoryStateUpdated`.
+- [x] Notify mode: `ruleCount === 0` DNR but `coveredSites > 0` and UI still armed when shield on.
+- [x] Shield ON UI only after canary (B1) — until then, no green lie.
+- [x] Desktop path documented for non-Chrome; Safari/TV never claimed.
+- [x] Cross-links stay current with master plan Wave 0 blocker truth items.
 
 ---
 

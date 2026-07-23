@@ -390,7 +390,74 @@ async function rebuildRules() {
     }
   }
   _lastShieldOn = shieldOn;
+  // Prove enforcement after every rebuild — never leave a stale canary green.
+  await runCanary(cfg);
   return addRules.length;
+}
+
+/**
+ * Verified canary: Shield intent alone is not enough — prove enforcement is live.
+ * Page mode: DNR rules installed (+ testMatchOutcome when Chrome supports it).
+ * Notify mode: covered enforce list non-empty (no DNR redirects by design).
+ */
+async function runCanary(cfg) {
+  const shieldOn = effectiveShield(cfg);
+  if (!shieldOn) {
+    await chrome.storage.local.set({ canaryOk: false, lastCanaryAt: Date.now() });
+    return false;
+  }
+  const soft = (cfg.prefs || {}).blocker_mode === "soft";
+  const notifyOnly = (cfg.prefs || {}).block_style === "notify";
+  const siteList = soft
+    ? (cfg.sites || []).filter(Boolean)
+    : [...new Set([...(cfg.sites || []).filter(Boolean), ...HARD_HOSTS_OPTIONAL])];
+
+  // Empty list + shield on = nothing to prove; treat as ready (honest idle arm).
+  if (!siteList.length) {
+    await chrome.storage.local.set({ canaryOk: true, lastCanaryAt: Date.now() });
+    return true;
+  }
+
+  if (notifyOnly) {
+    await chrome.storage.local.set({ canaryOk: true, lastCanaryAt: Date.now() });
+    return true;
+  }
+
+  const rules = await chrome.declarativeNetRequest.getDynamicRules();
+  const dnrCount = rules.filter((r) => r.id < TEMP_ALLOW_ID_BASE).length;
+  let ok = dnrCount > 0;
+
+  if (ok && chrome.declarativeNetRequest.testMatchOutcome) {
+    try {
+      const host = siteList[0];
+      const result = await chrome.declarativeNetRequest.testMatchOutcome({
+        url: `https://${host}/`,
+        type: "main_frame",
+      });
+      const matched = result?.matchedRules;
+      if (Array.isArray(matched)) ok = matched.length > 0;
+      else if (matched && typeof matched === "object") ok = true;
+    } catch {
+      /* API flaky on some builds — fall back to rule count */
+    }
+  }
+
+  await chrome.storage.local.set({ canaryOk: ok, lastCanaryAt: Date.now() });
+  return ok;
+}
+
+async function healthTick() {
+  const cfg = await getConfig();
+  if (!effectiveShield(cfg)) {
+    await chrome.storage.local.set({ canaryOk: false, lastCanaryAt: Date.now() });
+    return;
+  }
+  let ok = await runCanary(cfg);
+  if (!ok) {
+    await rebuildRules();
+    ok = await runCanary(await getConfig());
+  }
+  return ok;
 }
 
 /** Status the web app can trust — reflects real installed rules, not a ping. */
@@ -403,6 +470,7 @@ async function getStatus() {
     ? (cfg.sites || []).filter(Boolean)
     : [...new Set([...(cfg.sites || []).filter(Boolean), ...HARD_HOSTS_OPTIONAL])];
   const dnrCount = rules.filter((r) => r.id < TEMP_ALLOW_ID_BASE).length;
+  const stored = await chrome.storage.local.get(["canaryOk", "lastCanaryAt", "lastSweep"]);
   // ruleCount = real DNR rules only. Notify mode installs zero redirects; coveredSites
   // is the enforce list so UI can still treat shield as armed without faking DNR.
   return {
@@ -416,7 +484,9 @@ async function getStatus() {
     mode: soft ? "soft" : "hard",
     blockStyle: notifyOnly ? "notify" : "page",
     desktopShieldOn: !!cfg.desktopShieldOn,
-    lastSweep: (await chrome.storage.local.get("lastSweep")).lastSweep || null,
+    lastSweep: stored.lastSweep || null,
+    canaryOk: typeof stored.canaryOk === "boolean" ? stored.canaryOk : null,
+    lastCanaryAt: stored.lastCanaryAt || null,
     // Already collected every day and never shown — surface it.
     blocksToday: cfg.stats?.blocks || 0,
     focusMinutesToday: cfg.stats?.focusMinutes || 0,
@@ -879,19 +949,28 @@ async function notifyBlocked(domain) {
 
 let _notifyDebounce = null;
 
-// ── Dopamine "Block this site?" prompt ───────────────────
-// During an active shield, visiting a known distractor that is NOT already
-// blocked → Yes/No notification. Block adds to the list; Not now snoozes.
+// ── Dopamine "Block this site?" + adult "Back to work?" prompts ──
+// During an active shield, visiting a known distractor / adult destination that
+// is NOT already blocked → Yes/No notification. Adult uses stronger copy.
 // When the desktop system proxy is up it owns this prompt (avoids double toast).
 
 const DOPAMINE_PROMPT_PREFIX = "ff-dopamine-";
+const ADULT_PROMPT_PREFIX = "ff-adult-";
 const DOPAMINE_SNOOZE_MS = 30 * 60 * 1000;
+const ADULT_SNOOZE_MS = 5 * 60 * 1000; // short snooze — "Snooze 5m"
+const ADULT_KEEP_WORKING_MS = 30 * 60 * 1000; // dismiss / Keep working
 const DESKTOP_ADD_SITE_URL = "http://add.fellowshipfocus.internal/";
 /** @type {Map<string, { tabId?: number, at: number }>} */
 const _dopaminePending = new Map();
+/** @type {Map<string, { tabId?: number, at: number, kind: string }>} */
+const _adultPending = new Map();
 
 function dopamineNotifId(domain) {
   return DOPAMINE_PROMPT_PREFIX + domain;
+}
+
+function adultNotifId(domain) {
+  return ADULT_PROMPT_PREFIX + domain;
 }
 
 async function getDopamineSnooze() {
@@ -907,6 +986,21 @@ async function snoozeDopamine(domain, ms = DOPAMINE_SNOOZE_MS) {
   }
   map[domain] = now + Math.max(60_000, Number(ms) || DOPAMINE_SNOOZE_MS);
   await chrome.storage.local.set({ dopamineSnooze: map });
+}
+
+async function getAdultSnooze() {
+  const { adultSnooze } = await chrome.storage.local.get("adultSnooze");
+  return adultSnooze && typeof adultSnooze === "object" ? adultSnooze : {};
+}
+
+async function snoozeAdult(domain, ms = ADULT_SNOOZE_MS) {
+  const map = await getAdultSnooze();
+  const now = Date.now();
+  for (const [k, until] of Object.entries(map)) {
+    if (Number(until) <= now) delete map[k];
+  }
+  map[domain] = now + Math.max(60_000, Number(ms) || ADULT_SNOOZE_MS);
+  await chrome.storage.local.set({ adultSnooze: map });
 }
 
 /** Ask the desktop proxy (if up) to add a site to the system blocklist. */
@@ -1013,19 +1107,177 @@ async function maybePromptDopamine(url, tabId, cfg) {
   await showDopaminePrompt(domain, tabId);
 }
 
+function _siteAlreadyListed(domain, host, cfg) {
+  for (const site of cfg.sites || []) {
+    const base = normalizeSite(site);
+    if (!base) continue;
+    for (const d of expandDomains(base)) {
+      if (domain === d || host === d || host.endsWith("." + d)) return true;
+    }
+  }
+  return false;
+}
+
+async function acceptAdultAction(domain) {
+  const pending = _adultPending.get(domain);
+  _adultPending.delete(domain);
+  try {
+    chrome.notifications.clear(adultNotifId(domain));
+  } catch {
+    /* ignore */
+  }
+  const kind = pending?.kind || "site";
+  const tabId = pending?.tabId;
+
+  // Search SERPs: don't block google — close the tab and return to focus.
+  if (kind === "search") {
+    if (typeof tabId === "number") {
+      try {
+        await chrome.tabs.remove(tabId);
+      } catch {
+        try {
+          await chrome.tabs.goBack(tabId);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    notify("Back to work", "Tab closed — the quest continues");
+    return;
+  }
+
+  await addSite(domain);
+  await syncAddToDesktop(domain);
+  // Keep Shield armed after focus ends so the new site stays enforced.
+  await setConfig({ manualShield: true });
+  await rebuildRules();
+  notify("Blocked", `${domain} added to your blocklist`);
+  if (typeof tabId === "number") {
+    try {
+      await chrome.tabs.remove(tabId);
+    } catch {
+      /* tab may already be gone */
+    }
+  }
+}
+
+async function declineAdultAction(domain, ms = ADULT_SNOOZE_MS) {
+  _adultPending.delete(domain);
+  try {
+    chrome.notifications.clear(adultNotifId(domain));
+  } catch {
+    /* ignore */
+  }
+  await snoozeAdult(domain, ms);
+}
+
+async function showAdultPrompt(domain, tabId, kind) {
+  const id = adultNotifId(domain);
+  _adultPending.set(domain, { tabId, at: Date.now(), kind: kind || "site" });
+  const blockLabel = kind === "search" ? "Close tab" : "Block site";
+  const base = {
+    type: "basic",
+    iconUrl: "icons/icon128.png",
+    title: "Back to work?",
+    priority: 2,
+    requireInteraction: true,
+  };
+  try {
+    await chrome.notifications.create(id, {
+      ...base,
+      message: "This won't help the quest.",
+      buttons: [{ title: blockLabel }, { title: "Snooze 5m" }],
+    });
+  } catch {
+    try {
+      await chrome.notifications.create(id, {
+        ...base,
+        message: "This won't help the quest. Click to leave · dismiss to keep working",
+      });
+    } catch {
+      _adultPending.delete(domain);
+    }
+  }
+}
+
+/**
+ * Adult / porn navigation during shield → calm "Back to work?" nudge.
+ * Takes priority over the generic dopamine prompt. Soft: nudges even when the
+ * site is not yet on the blocklist; Block adds + arms.
+ * @returns {Promise<boolean>} true if an adult prompt was shown (or suppressed by snooze)
+ */
+async function maybePromptAdult(url, tabId, cfg) {
+  if (!url || !/^https?:/i.test(url)) return false;
+  if (cfg.desktopShieldOn) return false;
+
+  const hit = typeof matchAdultHit === "function" ? matchAdultHit(url) : null;
+  if (!hit) return false;
+
+  let host = "";
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return false;
+  }
+  if (!host || isAllowlisted(host, cfg.prefs.allowlist || [])) return false;
+
+  const { domain, kind } = hit;
+  const temp = liveTempAllows(cfg);
+  if (temp[host] || temp[domain]) return false;
+
+  // Already listed adult apex — blockDecision should have handled (except search).
+  if (kind === "site" && _siteAlreadyListed(domain, host, cfg)) return false;
+
+  const snooze = await getAdultSnooze();
+  if ((snooze[domain] || 0) > Date.now()) return true;
+
+  const pending = _adultPending.get(domain);
+  if (pending && Date.now() - pending.at < 5 * 60 * 1000) return true;
+
+  await showAdultPrompt(domain, tabId, kind);
+  return true;
+}
+
+/** Soft prompts after an unblocked navigation — adult first, then dopamine. */
+async function maybePromptSoft(url, tabId, cfg) {
+  if (await maybePromptAdult(url, tabId, cfg)) return;
+  await maybePromptDopamine(url, tabId, cfg);
+}
+
 if (chrome.notifications) {
   chrome.notifications.onButtonClicked.addListener((id, buttonIndex) => {
+    if (id.startsWith(ADULT_PROMPT_PREFIX)) {
+      const domain = id.slice(ADULT_PROMPT_PREFIX.length);
+      if (buttonIndex === 0) void acceptAdultAction(domain);
+      else void declineAdultAction(domain, ADULT_SNOOZE_MS);
+      return;
+    }
     if (!id.startsWith(DOPAMINE_PROMPT_PREFIX)) return;
     const domain = id.slice(DOPAMINE_PROMPT_PREFIX.length);
     if (buttonIndex === 0) void acceptDopamineBlock(domain);
     else void declineDopamineBlock(domain);
   });
   chrome.notifications.onClicked.addListener((id) => {
+    if (id.startsWith(ADULT_PROMPT_PREFIX)) {
+      const domain = id.slice(ADULT_PROMPT_PREFIX.length);
+      void acceptAdultAction(domain);
+      return;
+    }
     if (!id.startsWith(DOPAMINE_PROMPT_PREFIX)) return;
     const domain = id.slice(DOPAMINE_PROMPT_PREFIX.length);
     void acceptDopamineBlock(domain);
   });
   chrome.notifications.onClosed.addListener((id, byUser) => {
+    if (id.startsWith(ADULT_PROMPT_PREFIX)) {
+      const domain = id.slice(ADULT_PROMPT_PREFIX.length);
+      if (!_adultPending.has(domain)) return;
+      // Keep working (user dismiss) → longer snooze; auto-timeout → 5m.
+      void declineAdultAction(
+        domain,
+        byUser ? ADULT_KEEP_WORKING_MS : ADULT_SNOOZE_MS,
+      );
+      return;
+    }
     if (!id.startsWith(DOPAMINE_PROMPT_PREFIX)) return;
     const domain = id.slice(DOPAMINE_PROMPT_PREFIX.length);
     if (!_dopaminePending.has(domain)) return;
@@ -1042,7 +1294,7 @@ async function checkActiveTab(tabId) {
     if (!tab || !tab.url) return;
     const hit = blockDecision(tab.url, cfg);
     if (hit) await enforceBlock(tabId, tab.url, cfg, hit);
-    else await maybePromptDopamine(tab.url, tabId, cfg);
+    else await maybePromptSoft(tab.url, tabId, cfg);
   } catch {
     /* tab gone — nothing to do */
   }
@@ -1058,7 +1310,7 @@ async function onTopFrameNavigate(details) {
     if (!effectiveShield(cfg)) return;
     const hit = blockDecision(details.url, cfg);
     if (hit) await enforceBlock(details.tabId, details.url, cfg, hit);
-    else await maybePromptDopamine(details.url, details.tabId, cfg);
+    else await maybePromptSoft(details.url, details.tabId, cfg);
   } catch {
     /* ignore */
   }
@@ -1086,6 +1338,8 @@ function createAlarms() {
   chrome.alarms.create("sync", { periodInMinutes: 15 });
   chrome.alarms.create("scheduleTick", { periodInMinutes: 1 });
   chrome.alarms.create("desktopProbe", { periodInMinutes: 0.5 });
+  // Continuous health: SW alive + DNR/canary coherence while shield claims ON.
+  chrome.alarms.create("health", { periodInMinutes: 2 });
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -1110,6 +1364,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await rebuildRules();
   } else if (alarm.name === "desktopProbe") {
     await probeDesktopShield();
+  } else if (alarm.name === "health") {
+    await healthTick();
   }
 });
 

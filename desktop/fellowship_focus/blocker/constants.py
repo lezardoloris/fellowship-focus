@@ -34,6 +34,76 @@ DOPAMINE_SITES = frozenset(
     }
 )
 
+# Adult / porn — "Back to work?" prompts. Sync with extension/history.js + package constants.
+ADULT_SITES = frozenset(
+    {
+        "pornhub.com",
+        "xvideos.com",
+        "xhamster.com",
+        "xnxx.com",
+        "redtube.com",
+        "youporn.com",
+        "tube8.com",
+        "spankbang.com",
+        "onlyfans.com",
+        "chaturbate.com",
+        "stripchat.com",
+        "livejasmin.com",
+        "bongacams.com",
+        "porntube.com",
+        "porn.com",
+        "xhamster.desi",
+        "xhopen.com",
+        "nhentai.net",
+        "rule34.xxx",
+        "gelbooru.com",
+        "hanime.tv",
+        "brazzers.com",
+        "realitykings.com",
+        "eporner.com",
+        "hqporner.com",
+        "tnaflix.com",
+        "beeg.com",
+        "pornmd.com",
+    }
+)
+
+ADULT_SEARCH_TERMS = frozenset(
+    {
+        "porn",
+        "porno",
+        "xxx",
+        "nsfw",
+        "hentai",
+        "pornhub",
+        "xvideos",
+        "xhamster",
+        "xnxx",
+        "onlyfans",
+        "chaturbate",
+        "redtube",
+        "youporn",
+        "rule34",
+        "brazzers",
+        "spankbang",
+        "nhentai",
+    }
+)
+
+ADULT_REDDIT_SUBS = frozenset(
+    {
+        "porn",
+        "nsfw",
+        "gonewild",
+        "nsfw_gif",
+        "realgirls",
+        "porninfifteenseconds",
+        "rule34",
+        "hentai",
+        "adultgif",
+    }
+)
+
 DOMAIN_ALIASES = {
     "youtube.com": ["youtu.be", "youtube-nocookie.com", "m.youtube.com", "music.youtube.com"],
     "twitter.com": ["x.com", "t.co"],
