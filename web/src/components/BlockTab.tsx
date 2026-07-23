@@ -137,6 +137,7 @@ export function BlockTab({
   // trapping the user with a timer that refuses to run (desktop webview,
   // Firefox, extension not installed…).
   const [armFailed, setArmFailed] = useState(false);
+  const [floatHidden, setFloatHidden] = useState(false);
   const [suggestions, setSuggestions] = useState<HistorySuggestion[]>([]);
   const [scanBusy, setScanBusy] = useState(false);
   const [devices, setDevices] = useState<
@@ -590,6 +591,7 @@ export function BlockTab({
       setExceeded(0);
       setPhase(p);
       setCycle(cyc);
+      if (p !== "idle") setFloatHidden(false);
       const full = p === "focus" ? Math.max(1, focusTotalSec) : Math.max(1, prefs.break_min * 60);
       const secs = resumeSecs ?? full;
       setRemaining(secs);
@@ -884,7 +886,7 @@ export function BlockTab({
 
   return (
     <>
-    {inSession && !isDesktop && (
+    {inSession && !isDesktop && !floatHidden && (
       <div className="fixed bottom-5 right-5 z-[9999]">
         <div className="flex items-center gap-1 rounded-xl border border-white/15 bg-[#141618]/95 px-1.5 py-1.5 shadow-2xl">
           <div className="flex items-center gap-3 rounded-lg px-3.5 py-2">
@@ -898,10 +900,10 @@ export function BlockTab({
           </div>
           <button
             type="button"
-            onClick={() => stop()}
+            onClick={() => setFloatHidden(true)}
             className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-white/75 hover:bg-white/10 hover:text-white"
-            aria-label="Stop timer"
-            title="Stop timer"
+            aria-label="Hide timer"
+            title="Hide timer — session keeps running (use Stop to end)"
           >
             ×
           </button>
