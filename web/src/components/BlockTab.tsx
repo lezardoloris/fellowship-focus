@@ -2030,7 +2030,9 @@ export function BlockTab({
 
           <FocusMusicPanel
             compact={musicCompactFor(blockLayout.layoutId)}
-            className={`w-full min-w-0 ff-block-area-${areaForPanel(blockLayout.areas, "music")}`}
+            className={`w-full min-w-0 ff-block-area-${areaForPanel(blockLayout.areas, "music")}${
+              musicCompactFor(blockLayout.layoutId) ? " self-start" : ""
+            }`}
           />
         </div>
     </div>

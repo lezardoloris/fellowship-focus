@@ -219,9 +219,9 @@ function Shell({
   children?: ReactNode;
 }) {
   const rootClass = [
-    "glass-panel flex h-full min-h-0 w-full min-w-0 flex-col",
-    /* Match Block timer padding so side-rail / session-top edges align. */
-    compact ? "p-4 sm:p-5" : "p-5",
+    "glass-panel flex w-full min-w-0 flex-col",
+    /* Compact: hug content height — never stretch into empty vertical space. */
+    compact ? "h-auto p-3" : "h-full min-h-0 p-5",
     className,
   ]
     .filter(Boolean)
@@ -231,13 +231,13 @@ function Shell({
     return (
       <div className={rootClass} style={style}>
         {children}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onToggle}
             disabled={disabled}
             aria-label={playing ? "Pause" : "Play"}
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white shadow-[0_6px_18px_rgba(184,66,46,0.3)] transition disabled:opacity-40 ${
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white shadow-[0_6px_18px_rgba(184,66,46,0.3)] transition disabled:opacity-40 ${
               playing
                 ? "bg-[#912a1d] hover:bg-[#b8422e]"
                 : "bg-[#b8422e] hover:bg-[#c46551]"
@@ -249,14 +249,14 @@ function Shell({
               <span className="ml-0.5 text-sm">▶</span>
             )}
           </button>
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex items-center gap-1.5">
               <div className="min-w-0 flex-1">{select}</div>
               {count > 0 && (
                 <span className="shrink-0 text-xs tabular-nums text-white/40">{count}</span>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <span className="text-xs text-white/45">Vol</span>
               <input
                 type="range"

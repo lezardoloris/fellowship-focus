@@ -147,7 +147,8 @@ html {
   max-width: 72rem;
   margin-inline: auto;
   gap: 1rem;
-  align-items: stretch;
+  /* Session layouts: hug content so compact music doesn't stretch to timer height. */
+  align-items: start;
 }
 
 .ff-block-layout--session-top {
@@ -169,6 +170,8 @@ html {
 .ff-block-layout--classic-3 {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
   grid-template-areas: "a b c";
+  /* Fuller music column may match neighbor height intentionally. */
+  align-items: stretch;
 }
 
 .ff-block-area-a,
@@ -177,7 +180,6 @@ html {
   width: 100%;
   min-width: 0;
   justify-self: stretch;
-  align-self: stretch;
 }
 
 .ff-block-area-a {
