@@ -1457,6 +1457,14 @@ class MainWindow(QMainWindow):
         return self._web_weekly_stats()
 
     def _web_show_float_timer(self, payload: dict) -> dict:
+        # Respect the user's choice to not see the floating timer card at all.
+        # The session still runs (web timer + tray countdown) — only the
+        # bottom-right card is suppressed. Re-enable anytime in Settings, or
+        # right-click the tray → Show floating timer.
+        if not bool(self.config.get("float_timer_enabled", True)):
+            if self._float_timer.isVisible():
+                self._float_timer.dismiss()
+            return {"ok": True, "suppressed": True}
         try:
             remaining = int(payload.get("remaining", 0))
         except (TypeError, ValueError):
@@ -1972,7 +1980,16 @@ class MainWindow(QMainWindow):
         self.startup_check = QCheckBox("Start with Windows (minimized)")
         self.start_min_check = QCheckBox("Start minimized to tray")
         self.auto_update_check = QCheckBox("Check for updates automatically")
-        for w in [self.tray_check, self.startup_check, self.start_min_check, self.auto_update_check]:
+        self.float_timer_check = QCheckBox("Show floating timer card (bottom-right during sessions)")
+        self.session_nudge_check = QCheckBox("Nudge me to start a session when I'm working untracked")
+        for w in [
+            self.tray_check,
+            self.startup_check,
+            self.start_min_check,
+            self.auto_update_check,
+            self.float_timer_check,
+            self.session_nudge_check,
+        ]:
             system_layout.addWidget(w)
         row = QHBoxLayout()
         save_btn = QPushButton("Save settings")
@@ -2057,8 +2074,21 @@ class MainWindow(QMainWindow):
             "proof_mode": self.proof_mode_combo.currentText(),
             "proof_interval_min": self.proof_interval_spin.value(),
             "proof_webcam": self.proof_webcam_check.isChecked(),
+            "float_timer_enabled": self.float_timer_check.isChecked(),
+            "session_nudge_enabled": self.session_nudge_check.isChecked(),
         })
         save_config(self.config)
+        # Apply the float-timer / nudge toggles immediately.
+        if not self.config.get("float_timer_enabled", True) and self._float_timer.isVisible():
+            self._float_timer.dismiss()
+        elif self.config.get("float_timer_enabled", True) and self._float_timer.is_session_active():
+            self._float_timer.reshow()
+        if hasattr(self, "_nudge_timer"):
+            if self.config.get("session_nudge_enabled", True):
+                if not self._nudge_timer.isActive():
+                    self._nudge_timer.start(30000)
+            else:
+                self._nudge_timer.stop()
         if self.startup_check.isChecked() != is_startup_enabled():
             ok, msg = set_startup_enabled(self.startup_check.isChecked())
             self.toasts.show("Startup", msg, "success" if ok else "warning")
@@ -2135,6 +2165,8 @@ class MainWindow(QMainWindow):
         self.start_min_check.setChecked(c.get("start_minimized", True))
         self.auto_update_check.setChecked(c.get("auto_update", True))
         self.startup_check.setChecked(is_startup_enabled())
+        self.float_timer_check.setChecked(c.get("float_timer_enabled", True))
+        self.session_nudge_check.setChecked(c.get("session_nudge_enabled", True))
         self.okr_focus_spin.setValue(c.get("okr_weekly_focus_hours", 20))
         self.okr_habit_spin.setValue(c.get("okr_habit_rate", 80))
         self.okr_revenue_spin.setValue(c.get("okr_freelance_revenue_eur", 3000))
@@ -2504,7 +2536,7 @@ class MainWindow(QMainWindow):
 
             if self._float_timer.is_dismissed() or not self._float_timer.isVisible():
                 show_float = QAction("Show floating timer", self)
-                show_float.triggered.connect(self._float_timer.reshow)
+                show_float.triggered.connect(self._reshow_float_timer)
                 menu.addAction(show_float)
 
         menu.addSeparator()
@@ -2514,6 +2546,15 @@ class MainWindow(QMainWindow):
         quit_a = QAction("Quit", self)
         quit_a.triggered.connect(self._quit_app)
         menu.addAction(quit_a)
+
+    def _reshow_float_timer(self) -> None:
+        # Manual re-display from the tray. If the card was globally disabled,
+        # asking to show it re-enables it (the user clearly wants it back).
+        if not bool(self.config.get("float_timer_enabled", True)):
+            self.config["float_timer_enabled"] = True
+            save_config(self.config)
+        self._float_timer.reshow()
+        self._refresh_tray_menu()
 
     def _tray_end_session(self) -> None:
         self._float_timer.hide_timer()
