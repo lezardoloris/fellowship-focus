@@ -558,18 +558,7 @@ html {
 .ladder-silver { background: rgba(156, 163, 175, 0.1); }
 .ladder-bronze { background: rgba(205, 127, 50, 0.1); }
 
-/* Habit tracker — today column (current month only) */
-.habit-col-today {
-  background: linear-gradient(
-    180deg,
-    rgba(184, 66, 46, 0.12) 0%,
-    rgba(184, 66, 46, 0.04) 100%
-  );
-  box-shadow:
-    inset 1px 0 0 rgba(184, 66, 46, 0.22),
-    inset -1px 0 0 rgba(184, 66, 46, 0.22);
-}
-
+/* Habit tracker — today: header mark only (no full-column red wash). */
 .habit-col-today-header {
   color: var(--foreground);
   vertical-align: bottom;
@@ -594,24 +583,26 @@ html {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(196, 101, 81, 0.92);
+  color: rgba(214, 140, 122, 0.95);
 }
 
+/* Today is marked once, by the column tint below — the cells themselves stay
+   the same size and colour as any other day. Repeating a red ring on every
+   row stacked into a solid maroon band. */
 .habit-day-btn-today {
-  height: 1.375rem;
-  width: 1.375rem;
+  height: 1.25rem;
+  width: 1.25rem;
   border-radius: 0.25rem;
-  box-shadow:
-    0 0 0 1px rgba(184, 66, 46, 0.48),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  transition: background 0.15s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease;
 }
 
-.habit-day-btn-today:not(:disabled):hover {
-  box-shadow:
-    0 0 0 1px var(--accent-hover),
-    0 0 10px rgba(184, 66, 46, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+/* One continuous, very quiet vertical band across the whole today column. */
+.habit-cell-today {
+  background: rgba(184, 66, 46, 0.07);
+}
+
+.habit-col-today-header {
+  background: rgba(184, 66, 46, 0.1);
 }
 
 /* Habit tracker — row reorder */

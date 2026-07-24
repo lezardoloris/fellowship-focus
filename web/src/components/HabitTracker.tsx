@@ -363,7 +363,7 @@ export function HabitTracker({ token }: Props) {
                       aria-current={isTodayCol ? "date" : undefined}
                       className={`px-0 py-2 font-normal ${
                         isTodayCol
-                          ? "habit-col-today habit-col-today-header"
+                          ? "habit-col-today-header"
                           : isViewingCurrentMonth
                             ? "text-stone-600/70"
                             : ""
@@ -454,8 +454,8 @@ export function HabitTracker({ token }: Props) {
                       return (
                         <td
                           key={d}
-                          className={`px-0.5 py-1 text-center ${isTodayCol ? "habit-col-today" : ""}`}
-                        >
+                          className={`px-0.5 py-1 text-center ${isTodayCol ? "habit-cell-today" : ""}`}
+                          >
                           <button
                             type="button"
                             disabled={isFuture || !isManual}
@@ -467,9 +467,7 @@ export function HabitTracker({ token }: Props) {
                                 : isFuture
                                   ? "bg-white/5"
                                   : isManual
-                                    ? isTodayCol
-                                      ? "bg-[#b8422e]/18 hover:bg-[#b8422e]/28"
-                                      : "bg-white/10 hover:bg-white/20"
+                                    ? "bg-white/10 hover:bg-white/20"
                                     : "bg-white/5"
                             } ${!isManual && done ? "ring-1 ring-green-500/50" : ""}`}
                             title={cell?.verified_by ?? habit.verification}

@@ -2285,16 +2285,32 @@ class MainWindow(QMainWindow):
         if time.monotonic() < self._nudge_snooze_until:
             return
 
-        # Require a genuine stretch of activity (idle < 60s) sustained across a
-        # few ticks, so it fires on real work, not a passing mouse wiggle.
-        if idle_seconds() < 60:
+        # Only once per hour, whatever happens — this card interrupts, so it has
+        # to earn it. (Dismissing snoozes it far longer still.)
+        if time.monotonic() - getattr(self, "_nudge_last_shown", -1e9) < 3600:
+            return
+
+        # "Not away from the keyboard" is not the same as "working". Require
+        # continuous presence (idle < 30s every tick) for a long stretch AND
+        # that the foreground app has settled — someone flicking between windows
+        # is mid-task, and that is exactly the wrong moment to pop a card.
+        from fellowship_focus.usage_tracker import foreground_app
+
+        proc, _title = foreground_app()
+        if proc != getattr(self, "_nudge_last_proc", None):
+            self._nudge_last_proc = proc
+            self._nudge_active_streak = 0
+            return
+
+        if idle_seconds() < 30:
             self._nudge_active_streak += 1
         else:
             self._nudge_active_streak = 0
-        if self._nudge_active_streak < 4:  # ~2 min of continuous activity
+        if self._nudge_active_streak < 20:  # ~10 min in one app, no idle gap
             return
 
         self._nudge_active_streak = 0
+        self._nudge_last_shown = time.monotonic()
         self._nudge.show_nudge()
 
     def _on_nudge_accept(self) -> None:
@@ -2305,7 +2321,9 @@ class MainWindow(QMainWindow):
     def _on_nudge_dismiss(self) -> None:
         import time
 
-        self._nudge_snooze_until = time.monotonic() + 1800
+        # Explicitly declined — stay out of the way for the rest of the work
+        # block, not just half an hour.
+        self._nudge_snooze_until = time.monotonic() + 4 * 3600
 
     def _poll_proxy_sidechannel(self) -> None:
         """Drain mitm side-channel files: pending blocklist adds + dopamine prompts."""
