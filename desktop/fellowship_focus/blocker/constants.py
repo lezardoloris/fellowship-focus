@@ -26,7 +26,6 @@ DOPAMINE_SITES = frozenset(
         "ebay.com",
         "pinterest.com",
         "discord.com",
-        "web.whatsapp.com",
         "primevideo.com",
         "disneyplus.com",
         "hulu.com",
