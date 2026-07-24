@@ -41,6 +41,14 @@ export type BlockerSettings = {
   persona: string;
   /** How a hit is enforced: full "page" or a brief "notify" (-XP) bounce. */
   block_style: BlockStyle;
+  /** Show post-focus session recap card (E1). */
+  session_recap: boolean;
+  /** Opt into weekly digest email (E4). */
+  email_digest_opt_in: boolean;
+  /** Days that count for streak (0=Sun…6=Sat). Default Mon–Fri. */
+  work_days: number[];
+  /** Daily focus target in minutes (E6). */
+  daily_focus_target_min: number;
 };
 
 export type BlockerMode = "soft" | "hard";
@@ -95,6 +103,10 @@ export const DEFAULT_BLOCKER_SETTINGS: BlockerSettings = {
   blocker_mode: "hard",
   persona: "random",
   block_style: "page",
+  session_recap: true,
+  email_digest_opt_in: false,
+  work_days: [1, 2, 3, 4, 5],
+  daily_focus_target_min: 180,
 };
 
 export function mergeBlockerSettings(
@@ -115,6 +127,16 @@ export function mergeBlockerSettings(
   base.blocker_mode = base.blocker_mode === "soft" ? "soft" : "hard";
   base.persona = typeof base.persona === "string" && base.persona ? base.persona : "random";
   base.block_style = base.block_style === "notify" ? "notify" : "page";
+  base.session_recap = base.session_recap !== false;
+  base.email_digest_opt_in = Boolean(base.email_digest_opt_in);
+  base.work_days = Array.isArray(base.work_days)
+    ? [...new Set(base.work_days.map(Number).filter((n) => n >= 0 && n <= 6))]
+    : [1, 2, 3, 4, 5];
+  if (!base.work_days.length) base.work_days = [1, 2, 3, 4, 5];
+  base.daily_focus_target_min = Math.max(
+    15,
+    Math.min(720, Number(base.daily_focus_target_min) || 180)
+  );
   return base;
 }
 

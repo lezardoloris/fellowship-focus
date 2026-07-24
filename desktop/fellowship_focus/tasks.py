@@ -32,6 +32,9 @@ def new_task(title: str, parent_id: str | None = None) -> dict:
         "parent_id": parent_id,
         "time_spent_seconds": 0,
         "estimate_minutes": 0,
+        "client_id": None,
+        "project_id": None,
+        "synced": False,
     }
 
 

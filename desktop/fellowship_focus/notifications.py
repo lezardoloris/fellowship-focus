@@ -203,3 +203,16 @@ def notify_blocker_penalty(penalty: int, tray=None) -> None:
         tray,
         kind=NotifyKind.WARNING,
     )
+
+
+def notify_record(title: str, message: str, tray=None) -> None:
+    notify(title, message, tray, kind=NotifyKind.XP)
+
+
+def notify_streak_danger(streak: int, tray=None) -> None:
+    notify(
+        "Streak in danger",
+        f"Keep your {streak}-day streak — a short focus block still counts.",
+        tray,
+        kind=NotifyKind.WARNING,
+    )

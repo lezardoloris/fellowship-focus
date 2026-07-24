@@ -7,6 +7,13 @@ import { useToast } from "@/components/Toasts";
 import { desktopBridge, type WeeklyStats } from "@/lib/desktop";
 import { parseGithubUsername } from "@/lib/githubActivity";
 import { buildSoloWeeklyStats, saveSoloOkr } from "@/lib/soloStats";
+import { StreakBadge } from "@/components/StreakBadge";
+import { FocusScoreHero } from "@/components/FocusScoreHero";
+import { BillablePanel } from "@/components/BillablePanel";
+import { TaskList } from "@/components/TaskList";
+import { RitualWizard } from "@/components/RitualWizard";
+import { TemptationsPanel } from "@/components/TemptationsPanel";
+import { WeeklyDigestPanel } from "@/components/WeeklyDigestPanel";
 
 const GITHUB_KEY = "ff-github-user";
 
@@ -127,12 +134,22 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="font-display text-2xl font-bold text-white">Your week</h1>
+          <div className="mt-1">
+            <StreakBadge streak={stats.kpis.streak} />
+          </div>
         </div>
       </div>
 
       {empty && (
         <div className="glass-panel border border-[#b8422e]/40 px-5 py-4 text-sm text-white/80">
           Finish a timer on <span className="font-semibold text-white">Block</span> to fill this week.
+        </div>
+      )}
+
+      {token && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <FocusScoreHero token={token} />
+          <WeeklyDigestPanel token={token} />
         </div>
       )}
 
@@ -143,6 +160,15 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
           <GitHubCard token={token} onSynced={onGhSynced} />
         </div>
       </div>
+
+      {token && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <TaskList token={token} />
+          <BillablePanel token={token} />
+          <RitualWizard token={token} kind="morning" />
+          <TemptationsPanel token={token} />
+        </div>
+      )}
 
       <div className="glass-panel p-6">
         <HabitTracker token={token} fellowshipCode={fellowshipCode} />

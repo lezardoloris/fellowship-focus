@@ -335,6 +335,61 @@ export function SettingsPanel({
           </button>
         </section>
 
+        <section className="space-y-3 border-b border-white/10 py-5">
+          <p className="text-xs font-medium uppercase tracking-wider text-white/70">
+            Progress &amp; digests
+          </p>
+          <label className="flex items-center justify-between gap-3 text-sm text-white/75">
+            <span>Session recap after focus</span>
+            <input
+              type="checkbox"
+              checked={settings.session_recap !== false}
+              onChange={(e) =>
+                saveSettings({ ...settings, session_recap: e.target.checked })
+              }
+            />
+          </label>
+          <label className="flex items-center justify-between gap-3 text-sm text-white/75">
+            <span>Weekly digest email</span>
+            <input
+              type="checkbox"
+              checked={Boolean(settings.email_digest_opt_in)}
+              onChange={(e) =>
+                saveSettings({ ...settings, email_digest_opt_in: e.target.checked })
+              }
+            />
+          </label>
+          <div>
+            <p className="mb-1.5 text-[11px] text-white/50">
+              Streak work days (off days never break the chain)
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const).map((label, dow) => {
+                const on = (settings.work_days || [1, 2, 3, 4, 5]).includes(dow);
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => {
+                      const cur = new Set(settings.work_days || [1, 2, 3, 4, 5]);
+                      if (on) cur.delete(dow);
+                      else cur.add(dow);
+                      saveSettings({ ...settings, work_days: [...cur].sort() });
+                    }}
+                    className={`rounded-md border px-2 py-1 text-[11px] ${
+                      on
+                        ? "border-[#b8422e] bg-[#b8422e]/20 text-white"
+                        : "border-white/15 text-white/45"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
         <section className="border-b border-white/10 py-5">
           <p className="mb-1 text-xs font-medium uppercase tracking-wider text-white/70">
             Lock · schedule · allowlist

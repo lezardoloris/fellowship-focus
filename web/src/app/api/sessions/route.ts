@@ -66,7 +66,21 @@ export async function POST(request: Request) {
       minutes,
       completed,
       sessionId,
-      activityScore
+      activityScore,
+      {
+        intention: typeof body.intention === "string" ? body.intention.slice(0, 85) : undefined,
+        reflection: typeof body.reflection === "string" ? body.reflection.slice(0, 280) : undefined,
+        goalDone:
+          body.goalDone === undefined && body.goal_done === undefined
+            ? undefined
+            : Boolean(body.goalDone ?? body.goal_done),
+        clientId: body.clientId || body.client_id || null,
+        projectId: body.projectId || body.project_id || null,
+        plannedMinutes:
+          body.plannedMinutes != null || body.planned_minutes != null
+            ? Number(body.plannedMinutes ?? body.planned_minutes)
+            : null,
+      }
     );
     return NextResponse.json(result, { headers: corsHeaders });
   } catch (error) {

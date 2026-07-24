@@ -80,6 +80,7 @@ from fellowship_focus.ui.toast import ToastManager
 from fellowship_focus.ui.usage_page import UsagePage
 from fellowship_focus.ui.action_nudge import ActionNudge
 from fellowship_focus.ui.session_nudge import SessionNudge
+from fellowship_focus.ui.session_recap import SessionRecap
 from fellowship_focus.ui.web_dashboard import WebDashboardPage
 from fellowship_focus.usage_tracker import UsageTracker, focus_score
 from fellowship_focus.updater import apply_git_update, check_for_updates
@@ -104,6 +105,18 @@ class MainWindow(QMainWindow):
         self._wizard_running = False
         self._cert_ok = is_cert_installed()
         force_release_blocker()
+        # A crash (or a force-quit) can leave the admin layers behind — a hosts
+        # block + QUIC firewall rule that keep filtering with the shield "off".
+        # WhatsApp dying while nothing looked armed is exactly this. On every
+        # launch, if the shield is NOT active, wipe any leftover layers so the
+        # machine is never silently filtered by a previous session.
+        try:
+            from fellowship_focus.blocker.layers import clear_layers, layers_status
+
+            if any(layers_status().values()):
+                clear_layers()
+        except Exception:
+            pass
         self.selected_task_id: str | None = None
         self.task_timer_seconds = 0
         self.task_tick = QTimer()
@@ -266,6 +279,9 @@ class MainWindow(QMainWindow):
         self._nudge.dismissed.connect(self._on_nudge_dismiss)
         self._action_nudge = ActionNudge()
         self._action_nudge.chosen.connect(self._on_action_nudge)
+        self._session_recap = SessionRecap()
+        self._session_recap.chosen.connect(self._on_session_recap)
+        self._last_streak = int(self.config.get("last_streak", 0) or 0)
         self._nudge_snooze_until = 0.0
         self._nudge_active_streak = 0
         self._nudge_timer = QTimer(self)
@@ -732,8 +748,11 @@ class MainWindow(QMainWindow):
             self.toasts.show("Quest interval done", msg, "success", 6000)
             notify_break(msg, getattr(self, "tray", None))
             self.music_player.on_break()
-            # Bottom-right choice: keep momentum without opening the app.
-            self._show_focus_end_nudge()
+            # Bottom-right recap (or plain nudge if recap disabled).
+            if bool(self.config.get("session_recap_enabled", True)):
+                self._show_session_recap(mins)
+            else:
+                self._show_focus_end_nudge()
         elif prev in (PomodoroEngine.PHASE_BREAK, PomodoroEngine.PHASE_LONG_BREAK) and phase == PomodoroEngine.PHASE_WORK:
             msg = "Break over — distractions blocked again."
             self.toasts.show("Back to focus", msg, "info", 5000)
@@ -762,6 +781,84 @@ class MainWindow(QMainWindow):
                     ("stop", "Stop", False),
                 ],
             )
+
+    def _show_session_recap(self, minutes: int) -> None:
+        planned = int(self.config.get("work_duration", 45) or 45)
+        data = {
+            "minutes": minutes,
+            "planned_minutes": planned,
+            "streak": self._last_streak,
+            "xp": 0,
+            "value_line": "Session complete",
+            "focusing_now": 0,
+        }
+        self._session_recap.show_recap(data)
+        # Enrich from API when possible
+        sid = getattr(self, "_active_session_id", None)
+        api_url = (self.config.get("api_url") or "").rstrip("/")
+        token = self.config.get("member_token") or ""
+        if sid and api_url and token:
+            try:
+                import urllib.request
+
+                req = urllib.request.Request(
+                    f"{api_url}/api/sessions/{sid}/recap?token={token}",
+                    headers={"Accept": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=3) as resp:
+                    import json
+
+                    remote = json.loads(resp.read().decode("utf-8"))
+                    data.update(
+                        {
+                            "minutes": remote.get("minutes", minutes),
+                            "planned_minutes": remote.get("planned_minutes") or planned,
+                            "streak": remote.get("streak", self._last_streak),
+                            "xp": remote.get("xp_earned", 0),
+                            "value_line": remote.get("value_line") or data["value_line"],
+                            "focusing_now": remote.get("focusing_now", 0),
+                            "focus_score": remote.get("focus_score", 0),
+                        }
+                    )
+                    self._last_streak = int(data.get("streak") or 0)
+                    self._session_recap.show_recap(data)
+            except Exception:
+                pass
+
+    def _on_session_recap(self, key: str) -> None:
+        if key == "close":
+            return
+        if key == "extend":
+            self._on_action_nudge("extend")
+        elif key == "again":
+            self.pomodoro.start_work()
+            if self.config.get("enable_website_blocker", True):
+                self._enable_blocker()
+            self.music_player.on_focus_start()
+        elif key in ("goal_yes", "goal_no"):
+            sid = getattr(self, "_active_session_id", None) or getattr(
+                self, "_last_finished_session_id", None
+            )
+            api_url = (self.config.get("api_url") or "").rstrip("/")
+            token = self.config.get("member_token") or ""
+            if sid and api_url and token:
+                try:
+                    import json
+                    import urllib.request
+
+                    body = json.dumps(
+                        {"token": token, "goalDone": key == "goal_yes"}
+                    ).encode("utf-8")
+                    req = urllib.request.Request(
+                        f"{api_url}/api/sessions/{sid}/notes",
+                        data=body,
+                        headers={"Content-Type": "application/json"},
+                        method="PATCH",
+                    )
+                    urllib.request.urlopen(req, timeout=3)
+                except Exception:
+                    pass
+        # "break" keeps the engine's own break phase
 
     def _show_break_end_nudge(self) -> None:
         if not self.isVisible() or self.isMinimized():
@@ -794,11 +891,24 @@ class MainWindow(QMainWindow):
         if work_minutes > 0:
             api = FellowshipApi(self.config.get("api_url", ""), self.config.get("member_token", ""))
             result = api.log_session(work_minutes, completed, self._active_session_id, activity_score)
+            self._last_finished_session_id = self._active_session_id
             self._active_session_id = None
             xp = result.get("xpEarned", 0) if result else 0
+            if result and result.get("streak") is not None:
+                self._last_streak = int(result.get("streak") or 0)
+                self.config["last_streak"] = self._last_streak
             if completed and xp:
                 self.toasts.show("Quest complete!", f"+{xp} XP earned", "success")
                 notify_xp(xp, getattr(self, "tray", None), self._dashboard_url())
+            new_records = (result or {}).get("newRecords") or []
+            if new_records:
+                from fellowship_focus.notifications import notify_record
+
+                notify_record(
+                    "New personal record",
+                    ", ".join(new_records).replace("_", " "),
+                    getattr(self, "tray", None),
+                )
         self._refresh_journey()
 
     # ── Website Blocker ────────────────────────────────────
@@ -1981,6 +2091,7 @@ class MainWindow(QMainWindow):
         self.start_min_check = QCheckBox("Start minimized to tray")
         self.auto_update_check = QCheckBox("Check for updates automatically")
         self.float_timer_check = QCheckBox("Show floating timer card (bottom-right during sessions)")
+        self.session_recap_check = QCheckBox("Show session recap after each focus block")
         self.session_nudge_check = QCheckBox("Nudge me to start a session when I'm working untracked")
         for w in [
             self.tray_check,
@@ -1988,6 +2099,7 @@ class MainWindow(QMainWindow):
             self.start_min_check,
             self.auto_update_check,
             self.float_timer_check,
+            self.session_recap_check,
             self.session_nudge_check,
         ]:
             system_layout.addWidget(w)
@@ -2075,6 +2187,7 @@ class MainWindow(QMainWindow):
             "proof_interval_min": self.proof_interval_spin.value(),
             "proof_webcam": self.proof_webcam_check.isChecked(),
             "float_timer_enabled": self.float_timer_check.isChecked(),
+            "session_recap_enabled": self.session_recap_check.isChecked(),
             "session_nudge_enabled": self.session_nudge_check.isChecked(),
         })
         save_config(self.config)
@@ -2166,6 +2279,7 @@ class MainWindow(QMainWindow):
         self.auto_update_check.setChecked(c.get("auto_update", True))
         self.startup_check.setChecked(is_startup_enabled())
         self.float_timer_check.setChecked(c.get("float_timer_enabled", True))
+        self.session_recap_check.setChecked(c.get("session_recap_enabled", True))
         self.session_nudge_check.setChecked(c.get("session_nudge_enabled", True))
         self.okr_focus_spin.setValue(c.get("okr_weekly_focus_hours", 20))
         self.okr_habit_spin.setValue(c.get("okr_habit_rate", 80))

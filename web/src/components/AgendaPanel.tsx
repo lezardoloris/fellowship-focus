@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { PremiumLoader } from "@/components/PremiumLoader";
+import { WeeklyDigestPanel } from "@/components/WeeklyDigestPanel";
+import { TemptationsPanel } from "@/components/TemptationsPanel";
 
 type Day = {
   date: string;
@@ -241,6 +243,11 @@ export function AgendaPanel({ token }: { token: string }) {
             </div>
           }
         />
+      </div>
+
+      <WeeklyDigestPanel token={token} />
+      <div className="mt-4">
+        <TemptationsPanel token={token} />
       </div>
     </div>
   );

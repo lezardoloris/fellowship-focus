@@ -1,4 +1,5 @@
 import type { WeeklyStats, WeeklyStatsDay } from "@/lib/desktop";
+import { countWorkDayStreak, DEFAULT_WORK_DAYS } from "@/lib/streaks";
 
 const OKR_KEY = "ff-solo-okr";
 const SESSIONS_KEY = "ff-solo-sessions"; // [{ date: "YYYY-MM-DD", minutes: number }]
@@ -134,18 +135,8 @@ export function buildSoloWeeklyStats(): WeeklyStats {
     });
   }
 
-  // Streak
-  let streak = 0;
-  const cursor = new Date(today);
-  for (let i = 0; i < 400; i++) {
-    const key = iso(cursor);
-    if ((byDay[key] || 0) >= 25) {
-      streak += 1;
-      cursor.setDate(cursor.getDate() - 1);
-    } else if (key === iso(today)) {
-      cursor.setDate(cursor.getDate() - 1);
-    } else break;
-  }
+  // Work-day streak (weekends / off days don't break the chain)
+  const streak = countWorkDayStreak(byDay, iso(today), [...DEFAULT_WORK_DAYS], 25);
 
   // 8-week history
   const history = [];

@@ -25,6 +25,13 @@ import {
   openToken,
   sealToken,
 } from "./tokens";
+import {
+  computeStreakAdvance,
+  normalizeWorkDays,
+  streakMilestoneReached,
+  DEFAULT_WORK_DAYS,
+} from "./streaks";
+import { computeFocusScore } from "./focusScore";
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "fellowship.db");
@@ -191,7 +198,8 @@ export type StakeEntry = {
 
 let db: Database.Database | null = null;
 
-function getDb(): Database.Database {
+/** Shared SQLite handle — used by backlog feature modules. */
+export function getDb(): Database.Database {
   if (db) return db;
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   db = new Database(DB_PATH);
@@ -558,6 +566,163 @@ function initSchema(database: Database.Database) {
       FOREIGN KEY (member_id) REFERENCES members(id)
     );
   `);
+
+  // ── Product backlog tables (E1–E12) ─────────────────────
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS member_records (
+      member_id TEXT PRIMARY KEY,
+      longest_streak INTEGER NOT NULL DEFAULT 0,
+      longest_session_min INTEGER NOT NULL DEFAULT 0,
+      best_focus_score INTEGER NOT NULL DEFAULT 0,
+      most_focus_minutes_day INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS clients (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      hourly_rate_cents INTEGER NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'EUR',
+      color TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      client_id TEXT,
+      name TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id),
+      FOREIGN KEY (client_id) REFERENCES clients(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      parent_id TEXT,
+      project_id TEXT,
+      client_id TEXT,
+      title TEXT NOT NULL,
+      completed INTEGER NOT NULL DEFAULT 0,
+      estimate_minutes INTEGER NOT NULL DEFAULT 0,
+      time_spent_seconds INTEGER NOT NULL DEFAULT 0,
+      due_date TEXT,
+      priority INTEGER NOT NULL DEFAULT 0,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS client_rules (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      client_id TEXT NOT NULL,
+      match_type TEXT NOT NULL,
+      pattern TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id),
+      FOREIGN KEY (client_id) REFERENCES clients(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS offline_time (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      client_id TEXT,
+      project_id TEXT,
+      date TEXT NOT NULL,
+      minutes INTEGER NOT NULL,
+      label TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS daily_rituals (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(member_id, date, kind),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS daily_highlights (
+      id TEXT PRIMARY KEY,
+      member_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS focus_matches (
+      id TEXT PRIMARY KEY,
+      fellowship_id TEXT,
+      host_member_id TEXT NOT NULL,
+      guest_member_id TEXT,
+      duration_min INTEGER NOT NULL DEFAULT 50,
+      status TEXT NOT NULL DEFAULT 'open',
+      starts_at TEXT,
+      intention TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_clients_member ON clients(member_id);
+    CREATE INDEX IF NOT EXISTS idx_projects_member ON projects(member_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_member ON tasks(member_id);
+    CREATE INDEX IF NOT EXISTS idx_offline_member ON offline_time(member_id);
+    CREATE INDEX IF NOT EXISTS idx_rituals_member ON daily_rituals(member_id);
+    CREATE INDEX IF NOT EXISTS idx_highlights_member ON daily_highlights(member_id);
+  `);
+  try {
+    database.exec(`ALTER TABLE focus_sessions ADD COLUMN intention TEXT`);
+  } catch {
+    /* exists */
+  }
+  try {
+    database.exec(`ALTER TABLE focus_sessions ADD COLUMN reflection TEXT`);
+  } catch {
+    /* exists */
+  }
+  try {
+    database.exec(`ALTER TABLE focus_sessions ADD COLUMN goal_done INTEGER`);
+  } catch {
+    /* exists */
+  }
+  try {
+    database.exec(`ALTER TABLE focus_sessions ADD COLUMN client_id TEXT`);
+  } catch {
+    /* exists */
+  }
+  try {
+    database.exec(`ALTER TABLE focus_sessions ADD COLUMN project_id TEXT`);
+  } catch {
+    /* exists */
+  }
+  try {
+    database.exec(`ALTER TABLE focus_sessions ADD COLUMN planned_minutes INTEGER`);
+  } catch {
+    /* exists */
+  }
+  try {
+    database.exec(`ALTER TABLE app_usage ADD COLUMN hourly_json TEXT NOT NULL DEFAULT '{}'`);
+  } catch {
+    /* exists */
+  }
+  try {
+    database.exec(`ALTER TABLE app_usage ADD COLUMN apps_json TEXT NOT NULL DEFAULT '[]'`);
+  } catch {
+    /* exists */
+  }
+
   purgeOldProofs(database);
   seedPublicGuilds(database);
 }
@@ -886,8 +1051,24 @@ export function logSession(
   minutes: number,
   completed: boolean,
   existingSessionId?: string,
-  activityScore = 0
-): { session: FocusSession; member: Member; xpEarned: number } {
+  activityScore = 0,
+  extras?: {
+    intention?: string;
+    reflection?: string;
+    goalDone?: boolean | null;
+    clientId?: string | null;
+    projectId?: string | null;
+    plannedMinutes?: number | null;
+  }
+): {
+  session: FocusSession;
+  member: Member;
+  xpEarned: number;
+  streak: number;
+  milestone: number | null;
+  records: MemberRecords | null;
+  newRecords: string[];
+} {
   const database = getDb();
   const sessionId = existingSessionId || nanoid();
 
@@ -914,37 +1095,85 @@ export function logSession(
   if (existingSessionId) {
     database
       .prepare(
-        `UPDATE focus_sessions SET minutes = ?, xp_earned = ?, completed = ?, activity_score = ?
+        `UPDATE focus_sessions SET minutes = ?, xp_earned = ?, completed = ?, activity_score = ?,
+           intention = COALESCE(?, intention),
+           reflection = COALESCE(?, reflection),
+           goal_done = COALESCE(?, goal_done),
+           client_id = COALESCE(?, client_id),
+           project_id = COALESCE(?, project_id),
+           planned_minutes = COALESCE(?, planned_minutes)
          WHERE id = ? AND member_id = ?`
       )
-      .run(minutes, xpEarned, completed ? 1 : 0, activityScore, sessionId, memberId);
+      .run(
+        minutes,
+        xpEarned,
+        completed ? 1 : 0,
+        activityScore,
+        extras?.intention ?? null,
+        extras?.reflection ?? null,
+        extras?.goalDone === undefined || extras?.goalDone === null
+          ? null
+          : extras.goalDone
+            ? 1
+            : 0,
+        extras?.clientId ?? null,
+        extras?.projectId ?? null,
+        extras?.plannedMinutes ?? null,
+        sessionId,
+        memberId
+      );
   } else {
     database
       .prepare(
-        "INSERT INTO focus_sessions (id, member_id, fellowship_id, minutes, xp_earned, completed) VALUES (?, ?, ?, ?, ?, ?)"
+        `INSERT INTO focus_sessions
+           (id, member_id, fellowship_id, minutes, xp_earned, completed, activity_score,
+            intention, reflection, goal_done, client_id, project_id, planned_minutes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(sessionId, memberId, fellowshipId, minutes, xpEarned, completed ? 1 : 0);
+      .run(
+        sessionId,
+        memberId,
+        fellowshipId,
+        minutes,
+        xpEarned,
+        completed ? 1 : 0,
+        activityScore,
+        extras?.intention ?? null,
+        extras?.reflection ?? null,
+        extras?.goalDone === undefined || extras?.goalDone === null
+          ? null
+          : extras.goalDone
+            ? 1
+            : 0,
+        extras?.clientId ?? null,
+        extras?.projectId ?? null,
+        extras?.plannedMinutes ?? null
+      );
   }
 
   const member = database.prepare("SELECT * FROM members WHERE id = ?").get(memberId) as Member;
   const today = new Date().toISOString().slice(0, 10);
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const workDays = getMemberWorkDays(memberId);
+  const prevStreak = member.streak;
 
   let newStreak = member.streak;
   if (completed && minutes >= 25) {
-    if (member.last_quest_date === today) {
-      newStreak = member.streak;
-    } else if (member.last_quest_date === yesterday) {
-      newStreak = member.streak + 1;
-    } else {
-      newStreak = 1;
-    }
+    newStreak = computeStreakAdvance({
+      currentStreak: member.streak,
+      lastQuestDate: member.last_quest_date,
+      today,
+      qualifying: true,
+      workDays,
+    });
   }
 
   let bonusXp = 0;
   if (newStreak > 0 && newStreak % 7 === 0 && member.last_quest_date !== today) {
     bonusXp = POINTS.STREAK_BONUS_EVERY_7_DAYS;
   }
+  const milestone = streakMilestoneReached(prevStreak, newStreak);
+  if (milestone === 30) bonusXp += 100;
+  if (milestone === 100) bonusXp += 250;
 
   const totalXpGain = xpEarned + bonusXp;
   database
@@ -955,6 +1184,11 @@ export function logSession(
 
   const updatedMember = database.prepare("SELECT * FROM members WHERE id = ?").get(memberId) as Member;
   const session = database.prepare("SELECT * FROM focus_sessions WHERE id = ?").get(sessionId) as FocusSession;
+
+  const { records, newRecords } = updateMemberRecords(memberId, {
+    streak: newStreak,
+    sessionMinutes: minutes,
+  });
 
   if (completed) {
     addFeedEvent(
@@ -967,7 +1201,112 @@ export function logSession(
 
   syncAutoHabits(memberId, fellowshipId);
 
-  return { session, member: updatedMember, xpEarned: totalXpGain };
+  return {
+    session,
+    member: updatedMember,
+    xpEarned: totalXpGain,
+    streak: newStreak,
+    milestone,
+    records,
+    newRecords,
+  };
+}
+
+export type MemberRecords = {
+  member_id: string;
+  longest_streak: number;
+  longest_session_min: number;
+  best_focus_score: number;
+  most_focus_minutes_day: number;
+  updated_at: string;
+};
+
+export function getMemberWorkDays(memberId: string): number[] {
+  try {
+    const row = getMemberPrefs(memberId);
+    const parsed = JSON.parse(row.settings_json || "{}") as { work_days?: unknown };
+    return normalizeWorkDays(parsed.work_days);
+  } catch {
+    return [...DEFAULT_WORK_DAYS];
+  }
+}
+
+export function getMemberRecords(memberId: string): MemberRecords {
+  const database = getDb();
+  let row = database
+    .prepare("SELECT * FROM member_records WHERE member_id = ?")
+    .get(memberId) as MemberRecords | undefined;
+  if (!row) {
+    const streak =
+      (
+        database.prepare("SELECT streak FROM members WHERE id = ?").get(memberId) as
+          | { streak: number }
+          | undefined
+      )?.streak ?? 0;
+    database
+      .prepare(`INSERT INTO member_records (member_id, longest_streak) VALUES (?, ?)`)
+      .run(memberId, streak);
+    row = database
+      .prepare("SELECT * FROM member_records WHERE member_id = ?")
+      .get(memberId) as MemberRecords;
+  }
+  return row;
+}
+
+function updateMemberRecords(
+  memberId: string,
+  patch: { streak?: number; sessionMinutes?: number; focusScore?: number }
+): { records: MemberRecords; newRecords: string[] } {
+  const database = getDb();
+  const current = getMemberRecords(memberId);
+  const newRecords: string[] = [];
+  let longest_streak = current.longest_streak;
+  let longest_session_min = current.longest_session_min;
+  let best_focus_score = current.best_focus_score;
+  let most_focus_minutes_day = current.most_focus_minutes_day;
+
+  if (patch.streak != null && patch.streak > longest_streak) {
+    longest_streak = patch.streak;
+    newRecords.push("longest_streak");
+  }
+  if (patch.sessionMinutes != null && patch.sessionMinutes > longest_session_min) {
+    longest_session_min = patch.sessionMinutes;
+    newRecords.push("longest_session");
+  }
+  if (patch.focusScore != null && patch.focusScore > best_focus_score) {
+    best_focus_score = patch.focusScore;
+    newRecords.push("best_focus_score");
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const dayMins = (
+    database
+      .prepare(
+        `SELECT COALESCE(SUM(minutes), 0) as m FROM focus_sessions
+         WHERE member_id = ? AND completed = 1 AND date(created_at) = ?`
+      )
+      .get(memberId, today) as { m: number }
+  ).m;
+  if (dayMins > most_focus_minutes_day) {
+    most_focus_minutes_day = dayMins;
+    newRecords.push("most_focus_day");
+  }
+
+  database
+    .prepare(
+      `UPDATE member_records SET longest_streak = ?, longest_session_min = ?,
+         best_focus_score = ?, most_focus_minutes_day = ?, updated_at = datetime('now')
+       WHERE member_id = ?`
+    )
+    .run(
+      longest_streak,
+      longest_session_min,
+      best_focus_score,
+      most_focus_minutes_day,
+      memberId
+    );
+
+  return { records: getMemberRecords(memberId), newRecords };
 }
 
 export function logBlockerBypass(

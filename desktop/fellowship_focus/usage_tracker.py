@@ -151,14 +151,24 @@ def _empty_day() -> dict:
 
 
 def focus_score(day_data: dict) -> int:
-    """Productive share: work / (work + distraction), 0–100."""
+    """Pulse-style 0–100: Focus=100, Work=75, Neutral=50, Personal=25, Distraction=0."""
     cats = day_data.get("categories", {})
-    work = cats.get("work", 0)
-    distraction = cats.get("distraction", 0)
-    denom = work + distraction
-    if denom <= 0:
+    focus = int(day_data.get("focus_seconds", 0) or cats.get("focus", 0) or 0)
+    work = int(cats.get("work", 0) or 0)
+    neutral = int(cats.get("neutral", 0) or 0)
+    personal = int(cats.get("personal", 0) or 0)
+    distraction = int(cats.get("distraction", 0) or 0)
+    total = focus + work + neutral + personal + distraction
+    if total <= 0:
         return 0
-    return round(100 * work / denom)
+    weighted = (
+        focus * 100
+        + work * 75
+        + neutral * 50
+        + personal * 25
+        + distraction * 0
+    )
+    return round(weighted / total)
 
 
 class UsageTracker(QObject):

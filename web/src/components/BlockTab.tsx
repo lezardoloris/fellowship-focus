@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { desktopBridge, isDesktopShell, isDesktopShieldLive, type DesktopState } from "@/lib/desktop";
 import { playAlarm } from "@/lib/alarm";
 import { logSoloSession } from "@/lib/soloStats";
+import { SessionRecapCard, type SessionRecapData } from "@/components/SessionRecapCard";
 import {
   connectExtension,
   extensionCommand,
@@ -194,6 +195,7 @@ export function BlockTab({
   const [floatHidden, setFloatHidden] = useState(false);
   const [floatExpanded, setFloatExpanded] = useState(false);
   const [awaitingBreak, setAwaitingBreak] = useState(false);
+  const [sessionRecap, setSessionRecap] = useState<SessionRecapData | null>(null);
   const [siteQuery, setSiteQuery] = useState("");
   const [, setSuggestions] = useState<HistorySuggestion[]>([]);
   const [, setDevices] = useState<
@@ -734,15 +736,55 @@ export function BlockTab({
     const mins = Math.max(1, Math.round(elapsedSec / 60));
     segmentLoggedRef.current = true;
     logSoloSession(mins);
+    const localRecap: SessionRecapData = {
+      minutes: mins,
+      planned_minutes: prefs.focus_min,
+      value_line: "Session logged",
+      streak: undefined,
+    };
+    setSessionRecap(localRecap);
+    // Honour session_recap setting (default on)
+    if (prefs.session_recap === false) {
+      setSessionRecap(null);
+    }
     if (token) {
       fetch(`/api/sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, minutes: mins, completed: true }),
-      }).catch(() => {});
+        body: JSON.stringify({
+          token,
+          minutes: mins,
+          completed: true,
+          plannedMinutes: prefs.focus_min,
+        }),
+      })
+        .then(async (res) => {
+          if (!res.ok) return;
+          const j = (await res.json()) as {
+            session?: { id: string };
+            xpEarned?: number;
+            streak?: number;
+          };
+          if (j.session?.id) {
+            const rr = await fetch(
+              `/api/sessions/${j.session.id}/recap?token=${encodeURIComponent(token)}`
+            );
+            if (rr.ok) {
+              setSessionRecap((await rr.json()) as SessionRecapData);
+              return;
+            }
+          }
+          setSessionRecap({
+            ...localRecap,
+            xp_earned: j.xpEarned,
+            streak: j.streak,
+            value_line: "Session logged",
+          });
+        })
+        .catch(() => {});
     }
     return mins;
-  }, [token]);
+  }, [token, prefs.focus_min, prefs.session_recap]);
 
   const syncExtensionPhase = useCallback(
     (p: Phase, cyc: number, secs: number) => {
@@ -1467,6 +1509,35 @@ export function BlockTab({
           </div>
         </div>
       </div>
+    )}
+    {sessionRecap && (
+      <SessionRecapCard
+        recap={sessionRecap}
+        onClose={() => setSessionRecap(null)}
+        onBreak={() => {
+          setSessionRecap(null);
+          takeBreakNow();
+        }}
+        onExtend={() => {
+          setSessionRecap(null);
+          extendFocusBy(10);
+        }}
+        onAgain={() => {
+          setSessionRecap(null);
+          startPhase("focus", cycle);
+        }}
+        onGoalDone={
+          token && sessionRecap.session_id
+            ? (yes) => {
+                fetch(`/api/sessions/${sessionRecap.session_id}/notes`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ token, goalDone: yes }),
+                }).catch(() => {});
+              }
+            : undefined
+        }
+      />
     )}
     {awaitingBreak && (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 p-4">
