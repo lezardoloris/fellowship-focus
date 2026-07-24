@@ -211,6 +211,7 @@ class MainWindow(QMainWindow):
         self._float_timer.add_time_requested.connect(self._on_float_add_time)
         self._float_timer.break_now_requested.connect(self._on_float_break_now)
         self._float_timer.snooze_requested.connect(self._on_float_snooze)
+        self._float_timer.restart_requested.connect(self._on_float_restart)
         self._float_timer.pause_requested.connect(self._on_float_pause)
         self._float_timer.resume_requested.connect(self._on_float_resume)
         self._float_timer.music_toggle_requested.connect(self._on_float_music_toggle)
@@ -1514,6 +1515,16 @@ class MainWindow(QMainWindow):
     def _on_float_snooze(self) -> None:
         self._dispatch_float_js("ff-float-snooze")
 
+    def _on_float_restart(self) -> None:
+        # Went AFK — the running clock is meaningless. Restart the current focus
+        # session from the top (native engine + web timer both reset).
+        self._dispatch_float_js("ff-float-restart")
+        try:
+            if self.pomodoro.is_running:
+                self.pomodoro.start_work()
+        except Exception:
+            pass
+
     def _on_float_pause(self) -> None:
         self._dispatch_float_js("ff-float-pause")
 
@@ -2571,6 +2582,15 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_block_prompt"):
             self._block_prompt.hide()
         self._release_blocker_infra()
+        # Tell the elevated agent to exit now (it also self-exits on our death,
+        # but a clean quit removes it immediately and unblocks the machine).
+        try:
+            from fellowship_focus.blocker import elevate
+
+            if elevate.agent_alive():
+                elevate.send_agent_command("quit")
+        except Exception:
+            pass
         self.tray.hide()
         QApplication.quit()
 

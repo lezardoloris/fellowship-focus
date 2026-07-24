@@ -12,9 +12,11 @@ block is added/removed as a whole, never half-written.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HOSTS_PATH = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "drivers" / "etc" / "hosts"
@@ -23,6 +25,13 @@ END = "# <<< Fellowship Focus"
 FIREWALL_RULE = "FellowshipFocusQUIC"
 
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
+
+# Persistent-agent IPC. The elevated agent (started by ONE UAC prompt) watches
+# this file for commands, so later arm/disarm toggles never prompt again.
+AGENT_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "FellowshipFocus"
+AGENT_CMD = AGENT_DIR / "agent-cmd.json"
+AGENT_ACK = AGENT_DIR / "agent-ack.json"
+AGENT_HEARTBEAT = AGENT_DIR / "agent-alive"
 
 
 # ── hosts file ───────────────────────────────────────────
@@ -151,10 +160,144 @@ def _pkg_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+# ── Persistent elevated agent ────────────────────────────
+#
+# The old model raised a UAC prompt on EVERY arm and EVERY disarm — exhausting.
+# Instead we elevate ONCE to launch a long-lived admin agent that watches a
+# command file. After that, turning the shield on/off is a plain file write with
+# no prompt at all. The agent exits (and cleans up) when the app closes.
+
+def agent_alive(max_age: float = 8.0) -> bool:
+    """True if an elevated agent has touched its heartbeat recently."""
+    try:
+        return (time.time() - AGENT_HEARTBEAT.stat().st_mtime) < max_age
+    except Exception:
+        return False
+
+
+def send_agent_command(action: str, domains: list[str] | None = None) -> bool:
+    """Queue a command for the running elevated agent. No UAC. False if no agent."""
+    if not agent_alive():
+        return False
+    try:
+        AGENT_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {"seq": time.time(), "action": action, "domains": domains or []}
+        AGENT_CMD.write_text(json.dumps(payload), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def start_agent_elevated() -> bool:
+    """One UAC prompt: launch the persistent elevated agent. Returns launched."""
+    if os.name != "nt":
+        return False
+    if agent_alive():
+        return True
+    try:
+        import ctypes
+
+        AGENT_DIR.mkdir(parents=True, exist_ok=True)
+        # Frozen exe has no `python -m`; it re-runs itself with a hidden flag
+        # that main.py routes back into elevate._main (see --elevate-blocker).
+        if getattr(sys, "frozen", False):
+            args = f"--elevate-blocker agent {os.getpid()}"
+            cwd = None
+        else:
+            args = f"-m fellowship_focus.blocker.elevate agent {os.getpid()}"
+            cwd = str(_pkg_root())
+        rc = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", sys.executable, args, cwd, 0
+        )
+        if int(rc) <= 32:
+            return False
+        # Wait briefly for the agent to come up (it writes the heartbeat first).
+        for _ in range(40):
+            if agent_alive():
+                return True
+            time.sleep(0.1)
+        return agent_alive()
+    except Exception:
+        return False
+
+
+def _parent_alive(pid: int) -> bool:
+    if pid <= 0:
+        return True
+    try:
+        import ctypes
+
+        PROCESS_QUERY_LIMITED = 0x1000
+        h = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED, False, pid)
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        ok = ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(code))
+        ctypes.windll.kernel32.CloseHandle(h)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
+    except Exception:
+        return True
+
+
+def _run_agent(parent_pid: int) -> int:
+    """Elevated loop: apply/clear on command, die with the parent, self-clean."""
+    AGENT_DIR.mkdir(parents=True, exist_ok=True)
+    last_seq = 0.0
+    try:
+        AGENT_HEARTBEAT.write_text(str(time.time()), encoding="utf-8")
+    except Exception:
+        pass
+    try:
+        while True:
+            try:
+                AGENT_HEARTBEAT.write_text(str(time.time()), encoding="utf-8")
+            except Exception:
+                pass
+            if not _parent_alive(parent_pid):
+                break
+            try:
+                if AGENT_CMD.exists():
+                    cmd = json.loads(AGENT_CMD.read_text(encoding="utf-8"))
+                    if float(cmd.get("seq", 0)) > last_seq:
+                        last_seq = float(cmd.get("seq", 0))
+                        action = cmd.get("action")
+                        if action == "apply":
+                            apply_hosts(list(cmd.get("domains") or []))
+                            apply_quic_block()
+                        elif action == "clear":
+                            clear_hosts()
+                            clear_quic_block()
+                        elif action == "quit":
+                            break
+                        try:
+                            AGENT_ACK.write_text(
+                                json.dumps({"seq": last_seq, "action": action}),
+                                encoding="utf-8",
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            time.sleep(0.4)
+    finally:
+        # Never leave the machine filtered after the agent stops.
+        clear_hosts()
+        clear_quic_block()
+        for p in (AGENT_HEARTBEAT, AGENT_CMD, AGENT_ACK):
+            try:
+                p.unlink()
+            except Exception:
+                pass
+    return 0
+
+
 def _main(argv: list[str]) -> int:
     if not argv:
         return 2
     action = argv[0]
+    if action == "agent":
+        parent_pid = int(argv[1]) if len(argv) > 1 and argv[1].isdigit() else 0
+        return _run_agent(parent_pid)
     if action == "clear":
         clear_hosts()
         clear_quic_block()

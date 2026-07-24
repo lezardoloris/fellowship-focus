@@ -50,16 +50,37 @@ def apply_layers(domains: list[str]) -> dict:
         return result
 
     if elevate.is_admin():
+        # Already elevated — just do it.
         result["hosts"] = elevate.apply_hosts(domains)
         result["quic"] = elevate.apply_quic_block()
+        _applied = result["hosts"] or result["quic"]
+        if _applied:
+            atexit.register(clear_layers)
+        blocker_log(f"layers apply (admin): {result}")
+        return result
+
+    # Not elevated. Prefer the persistent agent: it prompts for UAC ONCE, then
+    # every later arm/disarm is a silent file write. This is the whole point —
+    # the user should not face a yes/no every single time they toggle.
+    if not elevate.agent_alive():
+        elevate.start_agent_elevated()  # one UAC prompt, if the user accepts
+
+    if elevate.agent_alive() and elevate.send_agent_command("apply", domains):
+        import time
+
+        for _ in range(24):
+            if _hosts_block_present():
+                result["hosts"] = True
+                break
+            time.sleep(0.25)
+        result["quic"] = _quic_rule_present()
     else:
-        # One UAC prompt runs the elevated helper with the domain list.
+        # Agent unavailable (UAC declined) — one-shot fallback, no persistence.
         df = _write_domains_file(domains)
         if _frozen():
             launched = _run_frozen_elevated("apply", df)
         else:
             launched = elevate.run_elevated("apply", df)
-        # We can't await the elevated process; verify the effect landed.
         if launched:
             import time
 
@@ -89,6 +110,9 @@ def clear_layers() -> None:
         if elevate.is_admin():
             elevate.clear_hosts()
             elevate.clear_quic_block()
+        elif elevate.agent_alive():
+            # Silent — the running agent clears without any prompt.
+            elevate.send_agent_command("clear")
         elif _applied:
             if _frozen():
                 _run_frozen_elevated("clear", None)

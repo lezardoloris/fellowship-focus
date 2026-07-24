@@ -1232,12 +1232,14 @@ export function BlockTab({
     };
     const onBreak = () => takeBreakNow();
     const onSnooze = () => snoozeBreak();
+    const onRestart = () => beginFocusSession();
     const onPause = () => pause();
     const onResume = () => resume();
     window.addEventListener("ff-float-closed", onClosed);
     window.addEventListener("ff-float-add-time", onAdd);
     window.addEventListener("ff-float-break-now", onBreak);
     window.addEventListener("ff-float-snooze", onSnooze);
+    window.addEventListener("ff-float-restart", onRestart);
     window.addEventListener("ff-float-pause", onPause);
     window.addEventListener("ff-float-resume", onResume);
     return () => {
@@ -1245,10 +1247,11 @@ export function BlockTab({
       window.removeEventListener("ff-float-add-time", onAdd);
       window.removeEventListener("ff-float-break-now", onBreak);
       window.removeEventListener("ff-float-snooze", onSnooze);
+      window.removeEventListener("ff-float-restart", onRestart);
       window.removeEventListener("ff-float-pause", onPause);
       window.removeEventListener("ff-float-resume", onResume);
     };
-  }, [stopTimer, stopAlarm, clearSession, extendFocusBy, takeBreakNow, snoozeBreak, pause, resume]);
+  }, [stopTimer, stopAlarm, clearSession, extendFocusBy, takeBreakNow, snoozeBreak, beginFocusSession, pause, resume]);
   useEffect(() => {
     // No extension can exist in the desktop webview — don't poll for one.
     if (isDesktop || isDesktopShell()) return;

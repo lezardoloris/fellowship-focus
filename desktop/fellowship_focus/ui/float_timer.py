@@ -47,6 +47,7 @@ class FloatTimerWindow(QWidget):
     add_time_requested = Signal(int)  # minutes
     break_now_requested = Signal()
     snooze_requested = Signal()
+    restart_requested = Signal()
     pause_requested = Signal()
     resume_requested = Signal()
     music_toggle_requested = Signal()
@@ -106,11 +107,13 @@ class FloatTimerWindow(QWidget):
         self._time.setObjectName("timeLabel")
         self._time.setFont(font_timer(30))
         head.addWidget(self._time)
+        head.addStretch(1)
 
+        # Kept for state (REST?/PAUSED logic) but no longer shown — the dot
+        # colour already tells focus vs break, and the label read as clutter.
         self._phase = QLabel("FOCUS")
         self._phase.setObjectName("phaseLabel")
-        head.addWidget(self._phase)
-        head.addStretch(1)
+        self._phase.setVisible(False)
 
         self._expand_btn = QPushButton("⌄")
         self._expand_btn.setObjectName("iconBtn")
@@ -136,16 +139,26 @@ class FloatTimerWindow(QWidget):
         pcol.setContentsMargins(0, 0, 0, 0)
         pcol.setSpacing(10)
 
-        # add-time row
+        # add-time row — compact chips (+5 / +10) plus a Restart for when you
+        # stepped away and the running session no longer means anything.
         add_row = QHBoxLayout()
-        add_row.setSpacing(10)
+        add_row.setSpacing(8)
         for mins in (5, 10):
-            b = QPushButton(f"+{mins} min")
-            b.setObjectName("chunkBtn")
-            b.setMinimumHeight(40)
+            b = QPushButton(f"+{mins}")
+            b.setObjectName("timeChip")
+            b.setMinimumHeight(34)
+            b.setFixedWidth(52)
             b.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            b.setToolTip(f"Add {mins} minutes")
             b.clicked.connect(lambda _=False, m=mins: self.add_time_requested.emit(m))
             add_row.addWidget(b)
+        self._restart_btn = QPushButton("↻  Restart")
+        self._restart_btn.setObjectName("chunkBtn")
+        self._restart_btn.setMinimumHeight(34)
+        self._restart_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._restart_btn.setToolTip("Went AFK? Start this session over from the top")
+        self._restart_btn.clicked.connect(self.restart_requested.emit)
+        add_row.addWidget(self._restart_btn, 1)
         pcol.addLayout(add_row)
 
         # break / pause row
@@ -161,9 +174,11 @@ class FloatTimerWindow(QWidget):
         self._snooze_btn.setMinimumHeight(40)
         self._snooze_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._snooze_btn.clicked.connect(self.snooze_requested.emit)
-        self._pause_btn = QPushButton("Pause")
-        self._pause_btn.setObjectName("chunkBtn")
+        self._pause_btn = QPushButton("⏸")
+        self._pause_btn.setObjectName("glyphBtn")
         self._pause_btn.setMinimumHeight(40)
+        self._pause_btn.setFixedWidth(46)
+        self._pause_btn.setToolTip("Pause")
         self._pause_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._pause_btn.clicked.connect(self._on_pause_resume)
         act_row.addWidget(self._break_btn)
@@ -178,10 +193,11 @@ class FloatTimerWindow(QWidget):
         self._track.setMinimumHeight(38)
         self._track.currentIndexChanged.connect(self._on_track_changed)
         music_row.addWidget(self._track, 1)
-        self._play_btn = QPushButton("Play")
-        self._play_btn.setObjectName("chunkBtn")
+        self._play_btn = QPushButton("▶")
+        self._play_btn.setObjectName("glyphBtn")
         self._play_btn.setMinimumHeight(38)
-        self._play_btn.setFixedWidth(74)
+        self._play_btn.setFixedWidth(46)
+        self._play_btn.setToolTip("Play")
         self._play_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._play_btn.clicked.connect(self.music_toggle_requested.emit)
         music_row.addWidget(self._play_btn)
@@ -213,6 +229,19 @@ class FloatTimerWindow(QWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._context_menu)
 
+        # Media/transport glyphs (▶ ⏸ ↻ ⌃ ⌄ ✕) live in the Unicode symbol
+        # block — pin a font that carries them so they never fall back to tofu.
+        if sys.platform == "win32":
+            glyph_font = QFont("Segoe UI Symbol")
+            for b in (
+                self._expand_btn,
+                close,
+                self._pause_btn,
+                self._play_btn,
+                self._restart_btn,
+            ):
+                b.setFont(glyph_font)
+
         self._render()
 
     # ── Styling ──────────────────────────────────────────────
@@ -242,6 +271,18 @@ class FloatTimerWindow(QWidget):
             font-size: 13px; font-weight: 600; padding: 0 10px;
         }}
         QPushButton#chunkBtn:hover {{ background: {BTN_BG_HOVER}; border-color: {ACCENT}; }}
+        QPushButton#timeChip {{
+            background: {BTN_BG}; color: {MUTED};
+            border: 1px solid {CARD_BORDER}; border-radius: 10px;
+            font-size: 13px; font-weight: 700;
+        }}
+        QPushButton#timeChip:hover {{ background: {BTN_BG_HOVER}; color: {FG}; border-color: {ACCENT}; }}
+        QPushButton#glyphBtn {{
+            background: {BTN_BG}; color: {FG};
+            border: 1px solid {CARD_BORDER}; border-radius: 11px;
+            font-size: 15px; font-weight: 400;
+        }}
+        QPushButton#glyphBtn:hover {{ background: {BTN_BG_HOVER}; border-color: {ACCENT}; }}
         QPushButton#primaryBtn {{
             background: {ACCENT}; color: #fff;
             border: none; border-radius: 11px;
@@ -333,7 +374,8 @@ class FloatTimerWindow(QWidget):
             if 0 <= self._music_index < len(self._music_tracks):
                 self._track.setCurrentIndex(self._music_index)
         self._track.blockSignals(False)
-        self._play_btn.setText("Pause" if self._music_playing else "Play")
+        self._play_btn.setText("⏸" if self._music_playing else "▶")
+        self._play_btn.setToolTip("Pause" if self._music_playing else "Play")
         self._vol.blockSignals(True)
         self._vol.setValue(int(self._music_volume * 100))
         self._vol.blockSignals(False)
@@ -408,7 +450,8 @@ class FloatTimerWindow(QWidget):
             self._break_btn.setVisible(not is_break)
             self._snooze_btn.setVisible(False)
             self._pause_btn.setVisible(True)
-            self._pause_btn.setText("Resume")
+            self._pause_btn.setText("▶")
+            self._pause_btn.setToolTip("Resume")
         else:
             self._phase.setText("BREAK" if is_break else "FOCUS")
             dot = BREAK_BLUE if is_break else ACCENT
@@ -416,7 +459,8 @@ class FloatTimerWindow(QWidget):
             self._break_btn.setVisible(not is_break)
             self._snooze_btn.setVisible(False)
             self._pause_btn.setVisible(True)
-            self._pause_btn.setText("Pause")
+            self._pause_btn.setText("⏸")
+            self._pause_btn.setToolTip("Pause")
 
         self._dot.setStyleSheet(f"color: {dot}; background: transparent; font-size: 13px;")
         self._time.setStyleSheet(f"color: {time_color}; background: transparent;")
