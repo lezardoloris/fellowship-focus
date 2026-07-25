@@ -95,6 +95,12 @@ export const DEFAULT_BLOCKER_SETTINGS: BlockerSettings = {
     "stackoverflow.com",
     "notion.so",
     "up.railway.app",
+    // Never let a focus session cut off the tools a dev works IN.
+    "anthropic.com",
+    "claude.ai",
+    "claude.com",
+    "openai.com",
+    "cursor.com",
   ],
   schedules: [],
   quick_lock_until: null,
