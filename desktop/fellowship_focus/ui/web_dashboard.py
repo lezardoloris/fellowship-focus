@@ -231,7 +231,9 @@ class WebDashboardPage(QWidget):
 
         self._refresh_btn = QPushButton("Refresh")
         self._refresh_btn.setObjectName("ghostBtn")
-        self._refresh_btn.clicked.connect(self.reload_dashboard)
+        # Refresh must actually refresh: bypass the disk cache so a new deploy
+        # is picked up instead of replaying the cached bundle.
+        self._refresh_btn.clicked.connect(self.hard_reload)
         connected_layout.addWidget(self._refresh_btn)
 
         self._connected_bar.setVisible(False)
@@ -306,6 +308,11 @@ class WebDashboardPage(QWidget):
                 QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
             )
             profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
+            # Drop the HTTP cache once per launch so a new web deploy is always
+            # picked up. This only clears cached responses — localStorage and
+            # cookies (the onboarding "dismissed" flag) are untouched, which is
+            # why the persistent storage path above still does its job.
+            profile.clearHttpCache()
         except Exception:
             pass
         self._view.loadFinished.connect(self._on_load_finished)
@@ -381,6 +388,33 @@ class WebDashboardPage(QWidget):
         if not (self._view and self._bridge and self._qwebchannel_js):
             return
         self._view.page().runJavaScript(self._qwebchannel_js + _BRIDGE_INIT_JS)
+
+    def hard_reload(self) -> None:
+        """Force-refresh the web app, bypassing the HTTP disk cache.
+
+        The webview keeps a persistent disk cache (so localStorage and the
+        onboarding state survive restarts), and reload_dashboard() deliberately
+        does NOT re-navigate when it is already on the target URL. Together
+        that meant a freshly deployed web build could keep showing the old
+        bundle until the cache expired — "the app didn't update". This clears
+        the cache and reloads for real.
+        """
+        try:
+            if self._view is None:
+                return
+            page = self._view.page()
+            profile = page.profile() if page else None
+            if profile is not None:
+                profile.clearHttpCache()
+            from PySide6.QtWebEngineCore import QWebEnginePage
+
+            page.triggerAction(QWebEnginePage.WebAction.ReloadAndBypassCache)
+        except Exception:
+            # Never let a refresh attempt take the window down.
+            try:
+                self._view.reload()
+            except Exception:
+                pass
 
     def reload_dashboard(self) -> None:
         cfg = self._get_config()
