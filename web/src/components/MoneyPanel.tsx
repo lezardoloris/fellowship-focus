@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { SkeletonTiles } from "@/components/Skeleton";
+import { StatTile } from "@/components/Panel";
 
 type MoneyRow = {
   key: string;
@@ -54,7 +55,7 @@ function Delta({ now, prev, money, cur }: { now: number; prev: number; money?: b
   if (d === 0) return <span className="pp-faint text-xs">= prev</span>;
   const up = d > 0;
   return (
-    <span className={`text-xs font-medium ${up ? "text-emerald-400" : "text-[#e0674a]"}`}>
+    <span className={`text-xs font-medium ${up ? "text-success" : "text-danger"}`}>
       {up ? "+" : ""}
       {money ? eur(d, cur) : d}
       {money ? "" : " pts"} vs prev
@@ -104,27 +105,26 @@ export function MoneyPanel({ token }: { token: string }) {
 
       {/* Headline tiles — everything in euros, never raw minutes alone */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div>
-          <p className="text-2xl font-bold tabular-nums pp-strong">{eur(data.total_cents, cur)}</p>
-          <p className="text-xs pp-faint">earned</p>
-          <Delta now={data.total_cents} prev={data.prev.total_cents} money cur={cur} />
-        </div>
-        <div>
-          <p className="text-2xl font-bold tabular-nums pp-strong">
-            {eur(data.effective_rate_cents, cur)}
-            <span className="text-sm font-normal pp-muted">/h</span>
-          </p>
-          <p className="text-xs pp-faint">effective rate</p>
-        </div>
-        <div>
-          <p className="text-2xl font-bold tabular-nums pp-strong">{hrs(data.tracked_minutes)}</p>
-          <p className="text-xs pp-faint">tracked</p>
-        </div>
-        <div>
-          <p className="text-2xl font-bold tabular-nums pp-strong">{data.billable_pct}%</p>
-          <p className="text-xs pp-faint">billable</p>
-          <Delta now={data.billable_pct} prev={data.prev.billable_pct} />
-        </div>
+        <StatTile
+          label="earned"
+          value={eur(data.total_cents, cur)}
+          sub={<Delta now={data.total_cents} prev={data.prev.total_cents} money cur={cur} />}
+        />
+        <StatTile
+          label="effective rate"
+          value={
+            <>
+              {eur(data.effective_rate_cents, cur)}
+              <span className="text-sm font-normal pp-muted">/h</span>
+            </>
+          }
+        />
+        <StatTile label="tracked" value={hrs(data.tracked_minutes)} />
+        <StatTile
+          label="billable"
+          value={`${data.billable_pct}%`}
+          sub={<Delta now={data.billable_pct} prev={data.prev.billable_pct} />}
+        />
       </div>
 
       {/* Day bars — the journey: billable (accent) vs rest (grey) per day */}
@@ -145,7 +145,7 @@ export function MoneyPanel({ token }: { token: string }) {
                   title={`${d.date} — ${hrs(d.tracked_minutes)} tracked · ${eur(d.value_cents, cur)}`}
                 >
                   <div
-                    className="absolute bottom-0 left-0 right-0 bg-[#c4653a] transition-[height] duration-300 ease-out"
+                    className="absolute bottom-0 left-0 right-0 bg-accent-soft transition-[height] duration-300 ease-out"
                     style={{ height: `${d.tracked_minutes ? (d.billable_minutes / d.tracked_minutes) * 100 : 0}%` }}
                   />
                 </div>
@@ -198,13 +198,13 @@ export function MoneyPanel({ token }: { token: string }) {
                       {p.name}
                       {p.client && <span className="pp-faint"> · {p.client}</span>}
                     </span>
-                    <span className="text-xs text-[#e0674a]">
+                    <span className="text-xs text-danger">
                       eff. {eur(p.effective_rate_cents, p.currency)}/h
                     </span>
                   </div>
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
                     <div
-                      className="h-full rounded-full bg-[#e0674a]"
+                      className="h-full rounded-full bg-danger"
                       style={{ width: `${burn}%` }}
                     />
                   </div>

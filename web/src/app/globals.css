@@ -1,17 +1,39 @@
 @import "tailwindcss";
 
+/* ── Design tokens [UX-E4] ────────────────────────────────────────────────
+   Single source of truth. The audit found 41 hard-coded hex values in TSX
+   (12 near-duplicate accent oranges alone), 13 text-opacity tiers and 6 panel
+   styles — because these vars existed but were never exposed to Tailwind, so
+   every component wrote arbitrary values. They are exposed in @theme below,
+   so components can use `text-muted` / `bg-surface` / `border-hairline`
+   instead of inventing a new hex.                                          */
 :root {
+  /* Grounds */
   --background: #0c0e10;
-  --foreground: #f4f4f5;
   --surface: #242628;
   --surface-elevated: #2e3134;
+  --panel: rgba(16, 17, 20, 0.92); /* the one panel ground */
   --border: #3a3d40;
-  --muted: #9ca3af;
+  --hairline: rgba(255, 255, 255, 0.1);
+
+  /* Text tiers — the ONLY four. All clear WCAG AA on --panel over video. */
+  --foreground: #f4f4f5; /* strong  */
+  --text-body: rgba(232, 230, 226, 0.9);
+  --text-muted: rgba(197, 199, 204, 0.72);
+  --text-faint: rgba(178, 181, 188, 0.82);
+  --muted: #9ca3af; /* legacy alias, kept for existing call sites */
+
+  /* Accent — one colour, one hover, one active. */
   --accent: #b8422e;
-  --accent-hover: #c46551;
+  --accent-hover: #c9563d;
   --accent-active: #912a1d;
-  --success: #2d6a4f;
-  --warning: #ca8a04;
+  --accent-soft: #e08a6a; /* readable accent text on dark */
+
+  /* Semantic — use these instead of raw emerald/amber/red utilities. */
+  --success: #4ade80;
+  --warning: #facc15;
+  --danger: #e0674a;
+
   /* legacy aliases */
   --gold: var(--accent);
   --gold-light: var(--accent-hover);
@@ -26,6 +48,18 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-hairline: var(--hairline);
+  --color-body: var(--text-body);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
   --font-sans: var(--font-public-sans);
   --font-display: var(--font-cinzel);
 }
@@ -141,8 +175,8 @@ html {
 .premium-panel {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 120px),
-    rgba(16, 17, 20, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+    var(--panel);
+  border: 1px solid var(--hairline);
   border-radius: 16px;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.05) inset,
@@ -160,21 +194,22 @@ html {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   /* Lightened to clear AA at 11px (was ~4.3:1). [UX-E5] */
-  color: rgba(233, 156, 126, 1);
+  color: var(--accent-soft);
 }
+/* The four text tiers — all read from the tokens, never re-declared. [UX-E4] */
 .pp-strong {
-  color: #f4f2ef;
+  color: var(--foreground);
 }
 .pp-body {
-  color: rgba(232, 230, 226, 0.9);
+  color: var(--text-body);
 }
 .pp-muted {
-  color: rgba(197, 199, 204, 0.72);
+  color: var(--text-muted);
 }
 /* Raised from .62 → .82: at .62 this sat at ~3.4:1, under WCAG AA, and it is
    used for 11px labels all over the money/task panels. [UX-E5] */
 .pp-faint {
-  color: rgba(178, 181, 188, 0.82);
+  color: var(--text-faint);
 }
 /* Inputs inside premium panels — solid enough to read the text typed. */
 .pp-input {
