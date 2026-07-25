@@ -239,11 +239,18 @@ class ShieldHeroCard(GlassCard):
         self.setting_changed.emit(on)
 
     def _sync_switch_visual(self) -> None:
-        show_on = self._ready and (self._active if self._in_focus else self._enabled)
+        # While arming, hold the switch ON so it never springs back to OFF and
+        # look like the click was ignored. [UX-E1.3]
+        show_on = getattr(self, "_arming", False) or (
+            self._ready and (self._active if self._in_focus else self._enabled)
+        )
         self._switch.blockSignals(True)
         self._switch.setChecked(show_on, animate=False)
         self._switch.blockSignals(False)
-        self._switch_label.setText("ON" if show_on else "OFF")
+        if getattr(self, "_arming", False):
+            self._switch_label.setText("···")
+        else:
+            self._switch_label.setText("ON" if show_on else "OFF")
         self._switch_label.setStyleSheet(
             f"color: {ACCENT}; letter-spacing: 1px;" if show_on else f"color: {MUTED}; letter-spacing: 1px;"
         )
@@ -256,14 +263,24 @@ class ShieldHeroCard(GlassCard):
         in_focus: bool,
         ready: bool = True,
         strength: dict | None = None,
+        arming: bool = False,
     ) -> None:
         self._enabled = enabled
         self._active = active
         self._in_focus = in_focus
         self._ready = ready
+        self._arming = arming
         self._sync_switch_visual()
 
-        if not ready:
+        if arming and not active:
+            # Distinct third state: the click WAS registered, work is running.
+            self._status.setText("● Arming shield…")
+            self._status.setStyleSheet(f"color: {ACCENT};")
+            self._hint.setText("Starting the engine and installing the filters — a few seconds.")
+            self._quick_off.setVisible(False)
+            self._pause_row.setVisible(False)
+            self.setStyleSheet(f"#shieldHeroCard {{ border-color: rgba(196, 101, 58, 0.5); }}")
+        elif not ready:
             self._status.setText("Setup required")
             self._status.setStyleSheet(f"color: {ACCENT_HOVER};")
             self._hint.setText("One click below arms the shield — takes about 15 seconds, once.")
@@ -366,18 +383,32 @@ class MiniShieldToggle(QWidget):
         self.setting_changed.emit(on)
 
     def _sync_switch_visual(self) -> None:
-        show_on = self._ready and (self._active if self._in_focus else self._enabled)
+        show_on = getattr(self, "_arming", False) or (
+            self._ready and (self._active if self._in_focus else self._enabled)
+        )
         self._switch.blockSignals(True)
         self._switch.setChecked(show_on, animate=False)
         self._switch.blockSignals(False)
 
-    def sync_state(self, *, enabled: bool, active: bool, in_focus: bool, ready: bool = True) -> None:
+    def sync_state(
+        self,
+        *,
+        enabled: bool,
+        active: bool,
+        in_focus: bool,
+        ready: bool = True,
+        arming: bool = False,
+    ) -> None:
         self._enabled = enabled
         self._active = active
         self._in_focus = in_focus
         self._ready = ready
+        self._arming = arming
         self._sync_switch_visual()
-        if not ready:
+        if arming and not active:
+            self._status.setText("● arming…")
+            self._status.setStyleSheet(f"color: {ACCENT};")
+        elif not ready:
             self._status.setText("setup needed — see Blocker tab")
             self._status.setStyleSheet(f"color: {ACCENT_HOVER};")
         elif in_focus and active:

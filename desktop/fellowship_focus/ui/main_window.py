@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 
 from fellowship_focus.activity_tracker import ActivityTracker
 from fellowship_focus.api_client import FellowshipApi
+from fellowship_focus.async_jobs import run_in_thread
 from fellowship_focus.blocker.manager import (
     blocker_log,
     disable_browser_quic,
@@ -40,7 +41,7 @@ from fellowship_focus.blocker.manager import (
     start_mitmdump,
 )
 from fellowship_focus.cert_setup import install_cert_windows, is_cert_installed, is_cert_generated
-from fellowship_focus.config import load_config, save_config
+from fellowship_focus.config import flush_config, load_config, save_config
 from fellowship_focus.invite import apply_parsed_config, parse_invite_or_sync
 from fellowship_focus.constants import DEFAULT_BLOCKED_SITES, DEFAULT_REDIRECTS, PROXY_PORT, effective_block_lists
 from fellowship_focus.notifications import (
@@ -104,23 +105,11 @@ class MainWindow(QMainWindow):
         self._health_timer = QTimer(self)
         self._health_timer.timeout.connect(self._health_tick)
         self._wizard_running = False
-        self._cert_ok = is_cert_installed()
-        force_release_blocker()
-        # A crash (or a force-quit) can leave the admin layers behind — a hosts
-        # block + QUIC firewall rule that keep filtering with the shield "off".
-        # WhatsApp dying while nothing looked armed is exactly this. On every
-        # launch, if the shield is NOT active, wipe any leftover layers so the
-        # machine is never silently filtered by a previous session.
-        try:
-            from fellowship_focus.blocker.layers import clear_layers, layers_status
-
-            if any(layers_status().values()):
-                clear_layers()
-        except Exception:
-            pass
+        # Assume cert OK from last session; verify async after first paint.
+        self._cert_ok = bool(self.config.get("cert_setup_done", False))
         self.selected_task_id: str | None = None
         self.task_timer_seconds = 0
-        self.task_tick = QTimer()
+        self.task_tick = QTimer(self)
         self.task_tick.timeout.connect(self._on_task_tick)
 
         self.pomodoro = PomodoroEngine()
@@ -255,8 +244,7 @@ class MainWindow(QMainWindow):
                 ),
             )
         else:
-            self.config["cert_setup_done"] = True
-            save_config(self.config)
+            # Don't rewrite config during startup — cert already marked done.
             QTimer.singleShot(
                 600,
                 lambda: self.toasts.show(
@@ -267,7 +255,8 @@ class MainWindow(QMainWindow):
                 ),
             )
 
-        self._refresh_journey()
+        # Journey / cert / leftover-blocker cleanup after first paint (never in __init__).
+        QTimer.singleShot(0, self._post_show_bootstrap)
         self._sync_timer = QTimer(self)
         self._sync_timer.timeout.connect(self._refresh_journey)
         self._sync_timer.start(30000)
@@ -307,7 +296,48 @@ class MainWindow(QMainWindow):
         self._usage_sync_timer.start(300000)
 
         QTimer.singleShot(2000, self._check_updates_silent)
-        QTimer.singleShot(500, self.web_dashboard.reload_dashboard)
+        # WebEngine is lazy — first paint of Fellowship tab creates it.
+        self.web_dashboard.set_pull_active(False)
+        QTimer.singleShot(0, self._post_show_bootstrap)
+
+    def _post_show_bootstrap(self) -> None:
+        """Heavy startup work after first paint: cert check, leftover cleanup, journey."""
+
+        def work() -> dict:
+            cert_ok = False
+            try:
+                cert_ok = is_cert_installed()
+            except Exception:
+                cert_ok = False
+            try:
+                force_release_blocker()
+            except Exception:
+                pass
+            try:
+                from fellowship_focus.blocker.layers import clear_layers, layers_status
+
+                if any(layers_status().values()):
+                    clear_layers()
+            except Exception:
+                pass
+            return {"cert_ok": cert_ok}
+
+        def on_ok(result: object) -> None:
+            data = result if isinstance(result, dict) else {}
+            self._cert_ok = bool(data.get("cert_ok"))
+            if self._cert_ok and not self.config.get("cert_setup_done"):
+                self.config["cert_setup_done"] = True
+                save_config(self.config)
+            elif not self._cert_ok:
+                self.sidebar.set_current(4)
+            self._update_chrome_status()
+            self._refresh_journey()
+            # Default tab is Fellowship — create WebEngine after paint.
+            if self.sidebar.current_index() == 0:
+                self.web_dashboard.set_pull_active(True)
+                self.web_dashboard.reload_dashboard()
+
+        run_in_thread(work, on_success=on_ok, parent=self)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -664,11 +694,20 @@ class MainWindow(QMainWindow):
         self.task_tick.start(1000)
         self.pomodoro.start_work()
         self._set_pomo_buttons(running=True)
-        api = FellowshipApi(self.config.get("api_url", ""), self.config.get("member_token", ""))
-        self._active_session_id = api.start_session()
         self._blocker_on_for_session = False
-        if self._active_session_id:
-            self.proof_worker.start(self._active_session_id)
+        api_url = self.config.get("api_url", "")
+        token = self.config.get("member_token", "")
+
+        def start_remote() -> str | None:
+            return FellowshipApi(api_url, token).start_session()
+
+        def on_started(session_id: object) -> None:
+            sid = session_id if isinstance(session_id, str) else None
+            self._active_session_id = sid
+            if sid:
+                self.proof_worker.start(sid)
+
+        run_in_thread(start_remote, on_success=on_started, parent=self)
         self.activity.start()
         self.music_player.on_focus_start()
 
@@ -794,37 +833,42 @@ class MainWindow(QMainWindow):
             "focusing_now": 0,
         }
         self._session_recap.show_recap(data)
-        # Enrich from API when possible
+        # Enrich from API off the GUI thread
         sid = getattr(self, "_active_session_id", None)
         api_url = (self.config.get("api_url") or "").rstrip("/")
         token = self.config.get("member_token") or ""
-        if sid and api_url and token:
-            try:
-                import urllib.request
+        if not (sid and api_url and token):
+            return
 
-                req = urllib.request.Request(
-                    f"{api_url}/api/sessions/{sid}/recap?token={token}",
-                    headers={"Accept": "application/json"},
-                )
-                with urllib.request.urlopen(req, timeout=3) as resp:
-                    import json
+        def fetch_recap() -> dict | None:
+            import json
+            import urllib.request
 
-                    remote = json.loads(resp.read().decode("utf-8"))
-                    data.update(
-                        {
-                            "minutes": remote.get("minutes", minutes),
-                            "planned_minutes": remote.get("planned_minutes") or planned,
-                            "streak": remote.get("streak", self._last_streak),
-                            "xp": remote.get("xp_earned", 0),
-                            "value_line": remote.get("value_line") or data["value_line"],
-                            "focusing_now": remote.get("focusing_now", 0),
-                            "focus_score": remote.get("focus_score", 0),
-                        }
-                    )
-                    self._last_streak = int(data.get("streak") or 0)
-                    self._session_recap.show_recap(data)
-            except Exception:
-                pass
+            req = urllib.request.Request(
+                f"{api_url}/api/sessions/{sid}/recap?token={token}",
+                headers={"Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+
+        def on_recap(remote: object) -> None:
+            if not isinstance(remote, dict):
+                return
+            data.update(
+                {
+                    "minutes": remote.get("minutes", minutes),
+                    "planned_minutes": remote.get("planned_minutes") or planned,
+                    "streak": remote.get("streak", self._last_streak),
+                    "xp": remote.get("xp_earned", 0),
+                    "value_line": remote.get("value_line") or data["value_line"],
+                    "focusing_now": remote.get("focusing_now", 0),
+                    "focus_score": remote.get("focus_score", 0),
+                }
+            )
+            self._last_streak = int(data.get("streak") or 0)
+            self._session_recap.show_recap(data)
+
+        run_in_thread(fetch_recap, on_success=on_recap, parent=self)
 
     def _on_session_recap(self, key: str) -> None:
         if key == "close":
@@ -843,13 +887,13 @@ class MainWindow(QMainWindow):
             api_url = (self.config.get("api_url") or "").rstrip("/")
             token = self.config.get("member_token") or ""
             if sid and api_url and token:
-                try:
+                goal_yes = key == "goal_yes"
+
+                def patch_notes() -> None:
                     import json
                     import urllib.request
 
-                    body = json.dumps(
-                        {"token": token, "goalDone": key == "goal_yes"}
-                    ).encode("utf-8")
+                    body = json.dumps({"token": token, "goalDone": goal_yes}).encode("utf-8")
                     req = urllib.request.Request(
                         f"{api_url}/api/sessions/{sid}/notes",
                         data=body,
@@ -857,8 +901,8 @@ class MainWindow(QMainWindow):
                         method="PATCH",
                     )
                     urllib.request.urlopen(req, timeout=3)
-                except Exception:
-                    pass
+
+                run_in_thread(patch_notes, parent=self)
         # "break" keeps the engine's own break phase
 
     def _show_break_end_nudge(self) -> None:
@@ -890,27 +934,40 @@ class MainWindow(QMainWindow):
         self._set_pomo_buttons(running=False)
         self._blocker_on_for_session = False
         if work_minutes > 0:
-            api = FellowshipApi(self.config.get("api_url", ""), self.config.get("member_token", ""))
-            result = api.log_session(work_minutes, completed, self._active_session_id, activity_score)
-            self._last_finished_session_id = self._active_session_id
+            api_url = self.config.get("api_url", "")
+            token = self.config.get("member_token", "")
+            session_id = self._active_session_id
+            self._last_finished_session_id = session_id
             self._active_session_id = None
-            xp = result.get("xpEarned", 0) if result else 0
-            if result and result.get("streak") is not None:
-                self._last_streak = int(result.get("streak") or 0)
-                self.config["last_streak"] = self._last_streak
-            if completed and xp:
-                self.toasts.show("Quest complete!", f"+{xp} XP earned", "success")
-                notify_xp(xp, getattr(self, "tray", None), self._dashboard_url())
-            new_records = (result or {}).get("newRecords") or []
-            if new_records:
-                from fellowship_focus.notifications import notify_record
 
-                notify_record(
-                    "New personal record",
-                    ", ".join(new_records).replace("_", " "),
-                    getattr(self, "tray", None),
+            def log_remote() -> dict | None:
+                return FellowshipApi(api_url, token).log_session(
+                    work_minutes, completed, session_id, activity_score
                 )
-        self._refresh_journey()
+
+            def on_logged(result: object) -> None:
+                data = result if isinstance(result, dict) else None
+                xp = data.get("xpEarned", 0) if data else 0
+                if data and data.get("streak") is not None:
+                    self._last_streak = int(data.get("streak") or 0)
+                    self.config["last_streak"] = self._last_streak
+                if completed and xp:
+                    self.toasts.show("Quest complete!", f"+{xp} XP earned", "success")
+                    notify_xp(xp, getattr(self, "tray", None), self._dashboard_url())
+                new_records = (data or {}).get("newRecords") or []
+                if new_records:
+                    from fellowship_focus.notifications import notify_record
+
+                    notify_record(
+                        "New personal record",
+                        ", ".join(new_records).replace("_", " "),
+                        getattr(self, "tray", None),
+                    )
+                self._refresh_journey()
+
+            run_in_thread(log_remote, on_success=on_logged, parent=self)
+        else:
+            self._refresh_journey()
 
     # ── Website Blocker ────────────────────────────────────
 
@@ -1139,25 +1196,65 @@ class MainWindow(QMainWindow):
             active=self.blocker_active,
             in_focus=in_focus,
             ready=bool(self._cert_ok and proxy_engine_available()),
+            # [UX-E1.3] The backend already tracked this; the widgets ignored
+            # it, so the switch sprang back to OFF for the whole arming window.
+            arming=bool(self._blocker_arming),
         )
         if hasattr(self, "shield_hero"):
             self.shield_hero.sync_state(**state, strength=self._shield_strength())
         if hasattr(self, "focus_shield"):
             self.focus_shield.sync_state(**state)
 
+    def _invalidate_layer_cache(self) -> None:
+        """Force the next strength read to refresh (after arm/disarm)."""
+        self._layer_cache = None
+        self._layer_cache_at = 0.0
+
     def _shield_strength(self) -> dict | None:
-        """E0-S2: real state of the four blocking layers, or None if off."""
+        """E0-S2: state of the four blocking layers, or None if off.
+
+        [UX-E1.4] Reads a cache. The uncached path shells out to `netsh`
+        (timeout=10) and reads the hosts file — it used to run on the GUI
+        thread on EVERY UI refresh. The refresh now happens on a worker and
+        the UI always renders instantly from the last known value.
+        """
         if not self.blocker_active:
             return None
-        try:
+        import time as _time
+
+        cached = getattr(self, "_layer_cache", None)
+        age = _time.monotonic() - getattr(self, "_layer_cache_at", 0.0)
+        if cached is None or age > 30.0:
+            self._refresh_layer_cache_async()
+        return cached
+
+    def _refresh_layer_cache_async(self) -> None:
+        """Recompute shield strength off the GUI thread, then repaint."""
+        if getattr(self, "_layer_cache_busy", False):
+            return
+        self._layer_cache_busy = True
+        import time as _time
+
+        proxy_up = bool(self.mitm_process is not None)
+        sysproxy_ok = bool(getattr(self, "_sysproxy_ok", True))
+
+        def compute() -> object:
             from fellowship_focus.blocker.layers import shield_strength
 
-            return shield_strength(
-                proxy_up=bool(self.mitm_process is not None),
-                sysproxy_ok=bool(getattr(self, "_sysproxy_ok", True)),
-            )
-        except Exception:
-            return None
+            return shield_strength(proxy_up=proxy_up, sysproxy_ok=sysproxy_ok)
+
+        def done(value: object) -> None:
+            self._layer_cache = value if isinstance(value, dict) else None
+            self._layer_cache_at = _time.monotonic()
+            self._layer_cache_busy = False
+            if self._layer_cache is not None:
+                self._sync_shield_toggle()
+
+        def failed(_msg: str) -> None:
+            self._layer_cache_at = _time.monotonic()
+            self._layer_cache_busy = False
+
+        run_in_thread(compute, on_success=done, on_error=failed, parent=self)
 
     def _on_shield_setting_changed(self, enabled: bool) -> None:
         was_enabled = self.config.get("enable_website_blocker", True)
@@ -1395,9 +1492,12 @@ class MainWindow(QMainWindow):
 
     def _web_set_shield(self, on: bool) -> dict:
         try:
-            if on and not self.blocker_active:
+            if on and not self.blocker_active and not self._blocker_arming:
                 self._on_shield_arm()
-            elif not on and self.blocker_active:
+            # [UX-E1.6] Also allow cancelling a shield that is still ARMING —
+            # this used to check blocker_active only, so a slow arm could not
+            # be stopped from the web at all.
+            elif not on and (self.blocker_active or self._blocker_arming):
                 self._on_shield_disarm()
         except Exception:
             pass
@@ -1774,13 +1874,21 @@ class MainWindow(QMainWindow):
         # left it stranded if the engine never came up.
         self._blocker_arming = True
         self._filter_ok = None
+        # [UX-E1.6] Every arm gets an epoch. A later disarm/arm bumps it, so
+        # stale timer chains from a previous attempt abort instead of racing.
+        self._arm_epoch = getattr(self, "_arm_epoch", 0) + 1
+        epoch = self._arm_epoch
+        self._invalidate_layer_cache()
         self._update_blocker_status()
-        # ~30s boot window — web UI polls the same budget.
-        QTimer.singleShot(1000, lambda: self._wait_engine_then_arm(attempts=30))
+        # [UX-E1.5] Poll immediately (the engine can answer in ~300 ms when
+        # warm) and back off, instead of burning a flat 1 s before even trying.
+        QTimer.singleShot(0, lambda: self._wait_engine_then_arm(attempts=30, epoch=epoch, delay=100))
 
-    def _wait_engine_then_arm(self, attempts: int) -> None:
+    def _wait_engine_then_arm(self, attempts: int, epoch: int | None = None, delay: int = 100) -> None:
         if not self._blocker_arming:
             return
+        if epoch is not None and epoch != getattr(self, "_arm_epoch", 0):
+            return  # a newer arm/disarm superseded this chain
         if self.mitm_process and self.mitm_process.poll() is not None:
             self._blocker_arming = False
             blocker_log("arm FAILED: engine process died during boot")
@@ -1811,7 +1919,11 @@ class MainWindow(QMainWindow):
             self._verify_filtering(gate_on=True)
             return
         if attempts > 0:
-            QTimer.singleShot(1000, lambda: self._wait_engine_then_arm(attempts - 1))
+            # Exponential backoff, capped at 1 s: 100, 200, 400, 800, 1000…
+            nxt = min(1000, max(100, delay * 2))
+            QTimer.singleShot(
+                delay, lambda: self._wait_engine_then_arm(attempts - 1, epoch, nxt)
+            )
             return
         self._blocker_arming = False
         self._on_blocker_failed("The blocking engine did not come up.")
@@ -1971,21 +2083,38 @@ class MainWindow(QMainWindow):
                     )
                     if ans != QMessageBox.StandardButton.Yes:
                         return
-                    api = FellowshipApi(self.config.get("api_url", ""), self.config.get("member_token", ""))
-                    result = api.bypass_blocker(self._active_session_id)
-                    if result and result.get("penalty"):
-                        self.toasts.show(
-                            "Blocker off",
-                            f"−{result['penalty']} XP · guild accountability",
-                            "warning",
-                            5000,
-                        )
-                        notify_blocker_penalty(int(result["penalty"]), getattr(self, "tray", None))
-                    self._refresh_journey()
+                    # Fire-and-forget: guild bookkeeping must NEVER gate the
+                    # button. On a dead network this used to block the GUI
+                    # thread on a socket timeout (0-75 s). [UX-E1.2]
+                    self._report_bypass_async(self._active_session_id, notify=True)
                 elif self._active_session_id:
-                    api = FellowshipApi(self.config.get("api_url", ""), self.config.get("member_token", ""))
-                    api.bypass_blocker(self._active_session_id)
+                    self._report_bypass_async(self._active_session_id, notify=False)
         self._release_blocker_infra()
+
+    def _report_bypass_async(self, session_id: str, *, notify: bool) -> None:
+        """POST the blocker bypass on a worker; surface the penalty when it lands."""
+        api_url = self.config.get("api_url", "")
+        token = self.config.get("member_token", "")
+
+        def post() -> object:
+            return FellowshipApi(api_url, token).bypass_blocker(session_id)
+
+        def on_ok(result: object) -> None:
+            if not (notify and isinstance(result, dict) and result.get("penalty")):
+                return
+            self._on_bypass_penalty(int(result["penalty"]))
+
+        run_in_thread(post, on_success=on_ok, parent=self)
+
+    def _on_bypass_penalty(self, penalty: int) -> None:
+        self.toasts.show(
+            "Blocker off",
+            f"−{penalty} XP · guild accountability",
+            "warning",
+            5000,
+        )
+        notify_blocker_penalty(penalty, getattr(self, "tray", None))
+        self._refresh_journey()
 
     def _apply_blocker_layers(self) -> None:
         """Apply the admin layers (hosts + QUIC firewall) off the UI thread.
@@ -2019,15 +2148,29 @@ class MainWindow(QMainWindow):
         threading.Thread(target=clear_layers, daemon=True, name="blocker-layers-clear").start()
 
     def _release_blocker_infra(self) -> None:
+        """Optimistic disarm: flip the state and repaint FIRST, tear down after.
+
+        The teardown (graceful proxy shutdown with a 5 s timeout, a psutil sweep
+        over every process, registry writes) used to run synchronously on the Qt
+        GUI thread — 1.2-8 s of frozen window, up to 19 s worst case. The user
+        sees OFF in <100 ms now; the slow part happens on a worker. [UX-E1.1]
+        """
+        import threading
+
+        # 1. State + UI, immediately.
         self._blocker_arming = False
+        self._arm_epoch = getattr(self, "_arm_epoch", 0) + 1  # cancels stale arm chains
         self._filter_ok = None
         self._blocker_watchdog.stop()
         self._health_timer.stop()
-        self._clear_blocker_layers()
-        force_release_blocker()
         self.mitm_process = None
         self.blocker_active = False
+        self._invalidate_layer_cache()
         self._update_blocker_status()
+
+        # 2. The slow teardown, off the GUI thread.
+        self._clear_blocker_layers()
+        run_in_thread(force_release_blocker, parent=self)
 
     # ── Fellowship ─────────────────────────────────────────
 
@@ -2240,19 +2383,26 @@ class MainWindow(QMainWindow):
         if not code or not api_url:
             self.waypoint_label.setText("")
             return
-        data = FellowshipApi(api_url, self.config.get("member_token", "")).get_fellowship(code)
-        if not data:
-            self.waypoint_label.setText("Could not reach Fellowship API.")
-            return
-        self._fellowship_cache = data
-        wp = data["journey"]["currentWaypoint"]
-        self.waypoint_label.setText(
-            f"{wp['name']} — {data['totalXp']:,} XP · {data['journey']['progress']}% to next waypoint"
-        )
-        self.dashboard_page.update_data(data, self.config)
-        self._update_chrome_status()
+        token = self.config.get("member_token", "")
 
-    def _sync_usage(self) -> None:
+        def fetch() -> dict | None:
+            return FellowshipApi(api_url, token).get_fellowship(code)
+
+        def on_ok(data: object) -> None:
+            if not isinstance(data, dict):
+                self.waypoint_label.setText("Could not reach Fellowship API.")
+                return
+            self._fellowship_cache = data
+            wp = data["journey"]["currentWaypoint"]
+            self.waypoint_label.setText(
+                f"{wp['name']} — {data['totalXp']:,} XP · {data['journey']['progress']}% to next waypoint"
+            )
+            self.dashboard_page.update_data(data, self.config)
+            self._update_chrome_status()
+
+        run_in_thread(fetch, on_success=on_ok, parent=self)
+
+    def _sync_usage(self, *, blocking: bool = False) -> None:
         tracker = getattr(self, "usage_tracker", None)
         if tracker is None:
             return
@@ -2265,16 +2415,24 @@ class MainWindow(QMainWindow):
         total = sum(int(v) for v in cats.values())
         if total <= 0:
             return
-        try:
-            FellowshipApi(api_url, token).sync_usage(
-                work_seconds=int(cats.get("work", 0)),
-                distraction_seconds=int(cats.get("distraction", 0)),
-                personal_seconds=int(cats.get("personal", 0)),
-                neutral_seconds=int(cats.get("neutral", 0)),
-                focus_score=focus_score(data),
-            )
-        except Exception:
-            pass
+        payload = {
+            "work_seconds": int(cats.get("work", 0)),
+            "distraction_seconds": int(cats.get("distraction", 0)),
+            "personal_seconds": int(cats.get("personal", 0)),
+            "neutral_seconds": int(cats.get("neutral", 0)),
+            "focus_score": focus_score(data),
+        }
+
+        def post() -> bool:
+            return FellowshipApi(api_url, token).sync_usage(**payload)
+
+        if blocking:
+            try:
+                post()
+            except Exception:
+                pass
+            return
+        run_in_thread(post, parent=self)
 
     def _dashboard_url(self) -> str | None:
         code = self.config.get("fellowship_code", "")
@@ -2326,7 +2484,7 @@ class MainWindow(QMainWindow):
             self.long_break_spin.value(), self.intervals_spin.value(),
         )
         self._sync_focus_ring(f"{self.work_spin.value():02d}:00", "Ready", 1.0, False)
-        self._refresh_journey()
+        # Journey refresh is deferred to _post_show_bootstrap / timers — not here.
         self._sync_shield_toggle()
 
     def _on_nav(self, index: int) -> None:
@@ -2338,6 +2496,8 @@ class MainWindow(QMainWindow):
         immersive = index == 0
         self.sidebar.setVisible(not immersive)
         self.top_bar.setVisible(not immersive)
+        if hasattr(self, "web_dashboard"):
+            self.web_dashboard.set_pull_active(immersive)
         if immersive:
             self._enter_immersive_window()
             self.web_dashboard.reload_dashboard()
@@ -2451,7 +2611,12 @@ class MainWindow(QMainWindow):
         """Offer to start a session when the user is working untracked."""
         import time
 
-        from fellowship_focus.usage_tracker import idle_seconds
+        from fellowship_focus.usage_tracker import (
+            foreground_app,
+            idle_seconds,
+            last_foreground_sample,
+            last_idle_sample,
+        )
 
         # Never over an already-running session, a visible main window, or a
         # still-showing nudge; respect a snooze after a dismissal.
@@ -2476,15 +2641,20 @@ class MainWindow(QMainWindow):
         # continuous presence (idle < 30s every tick) for a long stretch AND
         # that the foreground app has settled — someone flicking between windows
         # is mid-task, and that is exactly the wrong moment to pop a card.
-        from fellowship_focus.usage_tracker import foreground_app
-
-        proc, _title = foreground_app()
+        cached = last_foreground_sample(max_age_s=6.0)
+        if cached is not None:
+            proc, _title = cached
+        else:
+            proc, _title = foreground_app()
         if proc != getattr(self, "_nudge_last_proc", None):
             self._nudge_last_proc = proc
             self._nudge_active_streak = 0
             return
 
-        if idle_seconds() < 30:
+        idle = last_idle_sample(max_age_s=6.0)
+        if idle is None:
+            idle = idle_seconds()
+        if idle < 30:
             self._nudge_active_streak += 1
         else:
             self._nudge_active_streak = 0
@@ -2509,6 +2679,9 @@ class MainWindow(QMainWindow):
 
     def _poll_proxy_sidechannel(self) -> None:
         """Drain mitm side-channel files: pending blocklist adds + dopamine prompts."""
+        # Idle machines have no side-channel traffic — skip the 2.5s Path.exists tax.
+        if not (self.blocker_active or self._blocker_arming):
+            return
         from pathlib import Path
 
         ff = Path.home() / ".fellowship-focus"
@@ -2745,12 +2918,13 @@ class MainWindow(QMainWindow):
 
     def _quit_app(self) -> None:
         self._save_window_geometry()
+        flush_config()
         self.task_tick.stop()
         if hasattr(self, "music_player"):
             self.music_player.on_session_end()
         if hasattr(self, "usage_tracker"):
             self.usage_tracker.stop()
-            self._sync_usage()
+            self._sync_usage(blocking=True)
         if self.pomodoro.is_running:
             self._stop_pomodoro()
         if hasattr(self, "_float_timer"):
@@ -2762,6 +2936,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_block_prompt"):
             self._block_prompt.hide()
         self._release_blocker_infra()
+        flush_config()
         # Tell the elevated agent to exit now (it also self-exits on our death,
         # but a clean quit removes it immediately and unblocks the machine).
         try:
