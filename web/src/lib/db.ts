@@ -31,7 +31,6 @@ import {
   streakMilestoneReached,
   DEFAULT_WORK_DAYS,
 } from "./streaks";
-import { computeFocusScore } from "./focusScore";
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "fellowship.db");
@@ -123,6 +122,15 @@ export type FocusSession = {
   xp_earned: number;
   completed: number;
   created_at: string;
+  intention?: string | null;
+  reflection?: string | null;
+  goal_done?: number | null;
+  client_id?: string | null;
+  project_id?: string | null;
+  planned_minutes?: number | null;
+  activity_score?: number;
+  blocker_bypassed?: number;
+  activity?: string;
 };
 
 export type BlockEvent = {
@@ -596,6 +604,7 @@ function initSchema(database: Database.Database) {
       member_id TEXT NOT NULL,
       client_id TEXT,
       name TEXT NOT NULL,
+      estimate_minutes INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (member_id) REFERENCES members(id),
@@ -719,6 +728,13 @@ function initSchema(database: Database.Database) {
   }
   try {
     database.exec(`ALTER TABLE app_usage ADD COLUMN apps_json TEXT NOT NULL DEFAULT '[]'`);
+  } catch {
+    /* exists */
+  }
+  // E5-S6 profitability: per-project time budget. Runs AFTER the projects
+  // CREATE TABLE so it lands on existing DBs; fresh DBs get it from the CREATE.
+  try {
+    database.exec(`ALTER TABLE projects ADD COLUMN estimate_minutes INTEGER NOT NULL DEFAULT 0`);
   } catch {
     /* exists */
   }

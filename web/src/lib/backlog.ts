@@ -346,6 +346,7 @@ export type Project = {
   member_id: string;
   client_id: string | null;
   name: string;
+  estimate_minutes: number;
   active: number;
   created_at: string;
 };
@@ -419,15 +420,155 @@ export function listProjects(memberId: string, clientId?: string): Project[] {
 
 export function createProject(
   memberId: string,
-  input: { name: string; client_id?: string | null }
+  input: { name: string; client_id?: string | null; estimate_minutes?: number }
 ): Project {
   const id = nanoid();
   getDb()
     .prepare(
-      `INSERT INTO projects (id, member_id, client_id, name) VALUES (?, ?, ?, ?)`
+      `INSERT INTO projects (id, member_id, client_id, name, estimate_minutes) VALUES (?, ?, ?, ?, ?)`
     )
-    .run(id, memberId, input.client_id || null, input.name.trim().slice(0, 80));
+    .run(
+      id,
+      memberId,
+      input.client_id || null,
+      input.name.trim().slice(0, 80),
+      Math.max(0, Math.round(input.estimate_minutes ?? 0))
+    );
   return getDb().prepare("SELECT * FROM projects WHERE id = ?").get(id) as Project;
+}
+
+export function updateProject(
+  memberId: string,
+  id: string,
+  patch: Partial<{ name: string; client_id: string | null; estimate_minutes: number; active: number }>
+): Project | null {
+  const database = getDb();
+  const cur = database
+    .prepare("SELECT * FROM projects WHERE id = ? AND member_id = ?")
+    .get(id, memberId) as Project | undefined;
+  if (!cur) return null;
+  database
+    .prepare(
+      `UPDATE projects SET name = ?, client_id = ?, estimate_minutes = ?, active = ? WHERE id = ?`
+    )
+    .run(
+      (patch.name ?? cur.name).trim().slice(0, 80),
+      patch.client_id === undefined ? cur.client_id : patch.client_id,
+      Math.max(0, Math.round(patch.estimate_minutes ?? cur.estimate_minutes)),
+      patch.active ?? cur.active,
+      id
+    );
+  return database.prepare("SELECT * FROM projects WHERE id = ?").get(id) as Project;
+}
+
+/**
+ * E5-S6 — Profitability: estimated vs actual per project. Actual = focus-session
+ * minutes attributed to the project + task time booked to it. Flags projects
+ * that ran over their time budget ("this client eats your margin").
+ */
+export function projectProfitability(memberId: string) {
+  const database = getDb();
+  const projects = listProjects(memberId);
+  const clients = new Map(listClients(memberId).map((c) => [c.id, c]));
+
+  const sessionMin = new Map<string, number>();
+  for (const r of database
+    .prepare(
+      `SELECT project_id, COALESCE(SUM(minutes),0) AS m FROM focus_sessions
+       WHERE member_id = ? AND completed = 1 AND project_id IS NOT NULL
+       GROUP BY project_id`
+    )
+    .all(memberId) as Array<{ project_id: string; m: number }>) {
+    sessionMin.set(r.project_id, r.m);
+  }
+  const taskSec = new Map<string, number>();
+  for (const r of database
+    .prepare(
+      `SELECT project_id, COALESCE(SUM(time_spent_seconds),0) AS s FROM tasks
+       WHERE member_id = ? AND project_id IS NOT NULL GROUP BY project_id`
+    )
+    .all(memberId) as Array<{ project_id: string; s: number }>) {
+    taskSec.set(r.project_id, r.s);
+  }
+
+  const rows = projects.map((p) => {
+    const actualMin = (sessionMin.get(p.id) || 0) + Math.round((taskSec.get(p.id) || 0) / 60);
+    const client = p.client_id ? clients.get(p.client_id) : undefined;
+    const rate = client?.hourly_rate_cents ?? 0;
+    const estimate = p.estimate_minutes || 0;
+    const overMin = estimate > 0 ? actualMin - estimate : 0;
+    return {
+      project_id: p.id,
+      name: p.name,
+      client: client?.name || null,
+      currency: client?.currency || "EUR",
+      estimate_minutes: estimate,
+      actual_minutes: actualMin,
+      over_minutes: overMin, // >0 = over budget
+      over_budget: estimate > 0 && actualMin > estimate,
+      // Value already earned vs. what the estimate implied you'd bill.
+      actual_cents: Math.round((actualMin / 60) * rate),
+      estimate_cents: Math.round((estimate / 60) * rate),
+      // Effective rate erodes as you overrun a fixed-price project.
+      effective_rate_cents: actualMin > 0 && rate > 0
+        ? Math.round((estimate > 0 ? (estimate / 60) * rate : (actualMin / 60) * rate) / (actualMin / 60))
+        : rate,
+    };
+  });
+  return { rows: rows.filter((r) => r.actual_minutes > 0 || r.estimate_minutes > 0) };
+}
+
+export function deleteClientRule(memberId: string, id: string): boolean {
+  const info = getDb()
+    .prepare("DELETE FROM client_rules WHERE id = ? AND member_id = ?")
+    .run(id, memberId);
+  return info.changes > 0;
+}
+
+/**
+ * E5-S5 — Shared reconciled timesheet rows: the single source both CSV and the
+ * invoice PDF read from, so their totals always match to the cent.
+ */
+export function timesheetRows(memberId: string, from: string, to: string, clientId?: string) {
+  const database = getDb();
+  let sql = `SELECT date(created_at) as d, minutes, client_id, project_id, intention, activity
+             FROM focus_sessions
+             WHERE member_id = ? AND completed = 1 AND date(created_at) >= ? AND date(created_at) <= ?`;
+  const params: string[] = [memberId, from, to];
+  if (clientId) {
+    sql += ` AND client_id = ?`;
+    params.push(clientId);
+  }
+  sql += ` ORDER BY created_at`;
+  const rows = database.prepare(sql).all(...params) as Array<{
+    d: string;
+    minutes: number;
+    client_id: string | null;
+    project_id: string | null;
+    intention: string | null;
+    activity: string;
+  }>;
+  const clients = new Map(listClients(memberId).map((c) => [c.id, c]));
+  const projects = new Map(listProjects(memberId).map((p) => [p.id, p]));
+  const lines = rows.map((r) => {
+    const c = r.client_id ? clients.get(r.client_id) : undefined;
+    const hours = r.minutes / 60;
+    const rate = c?.hourly_rate_cents || 0;
+    return {
+      date: r.d,
+      minutes: r.minutes,
+      hours,
+      client: c?.name || "",
+      project: (r.project_id && projects.get(r.project_id)?.name) || "",
+      rate_cents: rate,
+      amount_cents: Math.round(hours * rate),
+      note: (r.intention || r.activity || "").replace(/"/g, "'"),
+      currency: c?.currency || "EUR",
+    };
+  });
+  const total_cents = lines.reduce((a, l) => a + l.amount_cents, 0);
+  const total_minutes = lines.reduce((a, l) => a + l.minutes, 0);
+  return { from, to, lines, total_cents, total_minutes };
 }
 
 export function listClientRules(memberId: string) {
@@ -532,36 +673,15 @@ export function billableSummary(memberId: string, from: string, to: string) {
 }
 
 export function exportTimesheetCsv(memberId: string, from: string, to: string, clientId?: string) {
-  const database = getDb();
-  let sql = `SELECT date(created_at) as d, minutes, client_id, project_id, intention, activity
-             FROM focus_sessions
-             WHERE member_id = ? AND completed = 1 AND date(created_at) >= ? AND date(created_at) <= ?`;
-  const params: string[] = [memberId, from, to];
-  if (clientId) {
-    sql += ` AND client_id = ?`;
-    params.push(clientId);
-  }
-  sql += ` ORDER BY created_at`;
-  const rows = database.prepare(sql).all(...params) as Array<{
-    d: string;
-    minutes: number;
-    client_id: string | null;
-    project_id: string | null;
-    intention: string | null;
-    activity: string;
-  }>;
-  const clients = new Map(listClients(memberId).map((c) => [c.id, c]));
-  const lines = ["date,minutes,hours,client,rate_cents,amount_cents,note"];
-  for (const r of rows) {
-    const c = r.client_id ? clients.get(r.client_id) : undefined;
-    const hours = r.minutes / 60;
-    const amount = c ? Math.round(hours * c.hourly_rate_cents) : 0;
-    const note = (r.intention || r.activity || "").replace(/"/g, "'");
-    lines.push(
-      `${r.d},${r.minutes},${hours.toFixed(2)},"${c?.name || ""}",${c?.hourly_rate_cents || 0},${amount},"${note}"`
+  // Reads the same reconciled rows the PDF uses, so totals never diverge.
+  const { lines } = timesheetRows(memberId, from, to, clientId);
+  const out = ["date,minutes,hours,client,project,rate_cents,amount_cents,note"];
+  for (const l of lines) {
+    out.push(
+      `${l.date},${l.minutes},${l.hours.toFixed(2)},"${l.client}","${l.project}",${l.rate_cents},${l.amount_cents},"${l.note}"`
     );
   }
-  return lines.join("\n");
+  return out.join("\n");
 }
 
 export function addOfflineTime(

@@ -1,5 +1,5 @@
 import { memberFromRequest, optionsOk, jsonOk, jsonErr } from "@/lib/apiAuth";
-import { listProjects, createProject } from "@/lib/backlog";
+import { listProjects, createProject, projectProfitability } from "@/lib/backlog";
 
 export async function OPTIONS() {
   return optionsOk();
@@ -9,6 +9,10 @@ export async function GET(request: Request) {
   const member = await memberFromRequest(request);
   if (!member) return jsonErr("Token required", 401);
   const url = new URL(request.url);
+  // ?view=profitability → estimate-vs-actual per project (E5-S6)
+  if (url.searchParams.get("view") === "profitability") {
+    return jsonOk(projectProfitability(member.id));
+  }
   const clientId = url.searchParams.get("client_id") || undefined;
   return jsonOk({ projects: listProjects(member.id, clientId) });
 }
@@ -19,7 +23,11 @@ export async function POST(request: Request) {
   const body = await request.json();
   if (!body.name) return jsonErr("name required", 400);
   return jsonOk(
-    createProject(member.id, { name: body.name, client_id: body.client_id }),
+    createProject(member.id, {
+      name: body.name,
+      client_id: body.client_id,
+      estimate_minutes: body.estimate_minutes,
+    }),
     201
   );
 }
