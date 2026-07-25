@@ -407,6 +407,18 @@ function initSchema(database: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_usage_fellowship ON app_usage(fellowship_id);
     CREATE INDEX IF NOT EXISTS idx_usage_member ON app_usage(member_id);
 
+    -- E0-S3: activation funnel. One row per (member, event) — first occurrence
+    -- wins (idempotent), so we can measure who reached each step and when.
+    CREATE TABLE IF NOT EXISTS activation_events (
+      member_id TEXT NOT NULL,
+      event TEXT NOT NULL,
+      first_at TEXT NOT NULL DEFAULT (datetime('now')),
+      meta TEXT,
+      PRIMARY KEY (member_id, event),
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_activation_event ON activation_events(event);
+
     CREATE TABLE IF NOT EXISTS member_blocklist (
       id TEXT PRIMARY KEY,
       member_id TEXT NOT NULL,
@@ -2448,6 +2460,72 @@ export function setBlockerSettings(
   return getBlockerSettings(memberId);
 }
 
+// ── E0-S3 · Activation funnel ────────────────────────────
+//
+// The ordered steps a new user crosses to become active. Measuring drop-off
+// between them tells us what to fix instead of guessing.
+export const ACTIVATION_STEPS = [
+  "install", // first heartbeat from any surface (desktop/extension)
+  "cert_installed", // certificate installed (the scary technical step)
+  "first_arm", // shield armed for the first time
+  "first_recap", // finished a focus session and saw the recap (retention loop starts)
+  "second_surface", // connected a 2nd surface (web+desktop, or +extension)
+] as const;
+export type ActivationEvent = (typeof ACTIVATION_STEPS)[number];
+
+/** Idempotent: records the FIRST time a member reaches an activation step. */
+export function recordActivation(memberId: string, event: ActivationEvent, meta?: string): void {
+  if (!memberId) return;
+  try {
+    getDb()
+      .prepare(
+        `INSERT OR IGNORE INTO activation_events (member_id, event, meta) VALUES (?, ?, ?)`
+      )
+      .run(memberId, event, meta ?? null);
+  } catch {
+    /* never let telemetry break a request */
+  }
+}
+
+/** Funnel: per-step count of members who reached it, + step-to-step conversion. */
+export function getActivationFunnel(): {
+  total_members: number;
+  steps: Array<{ event: ActivationEvent; reached: number; pct_of_total: number; pct_of_prev: number }>;
+  armed_within_24h: number;
+} {
+  const database = getDb();
+  const total = (database.prepare("SELECT COUNT(*) AS n FROM members").get() as { n: number }).n || 0;
+  const counts = new Map<string, number>();
+  for (const r of database
+    .prepare("SELECT event, COUNT(*) AS n FROM activation_events GROUP BY event")
+    .all() as Array<{ event: string; n: number }>) {
+    counts.set(r.event, r.n);
+  }
+  let prev = total;
+  const steps = ACTIVATION_STEPS.map((event) => {
+    const reached = counts.get(event) || 0;
+    const row = {
+      event,
+      reached,
+      pct_of_total: total ? Math.round((reached / total) * 1000) / 10 : 0,
+      pct_of_prev: prev ? Math.round((reached / prev) * 1000) / 10 : 0,
+    };
+    prev = reached;
+    return row;
+  });
+  // % who armed the shield within 24h of install (the "aha" speed).
+  const armed_within_24h =
+    (database
+      .prepare(
+        `SELECT COUNT(*) AS n FROM activation_events a
+         JOIN activation_events i ON i.member_id = a.member_id AND i.event = 'install'
+         WHERE a.event = 'first_arm'
+           AND julianday(a.first_at) - julianday(i.first_at) <= 1.0`
+      )
+      .get() as { n: number }).n || 0;
+  return { total_members: total, steps, armed_within_24h };
+}
+
 export function upsertBlockerDevice(input: {
   memberId: string;
   kind: string;
@@ -2455,6 +2533,7 @@ export function upsertBlockerDevice(input: {
   shieldOn?: boolean;
   meta?: string;
   deviceId?: string;
+  certInstalled?: boolean;
 }): { id: string; kind: string; label: string; last_seen: string; shield_on: number } {
   const database = getDb();
   const id = input.deviceId || `${input.kind}-${nanoid(8)}`;
@@ -2476,6 +2555,17 @@ export function upsertBlockerDevice(input: {
       )
       .run(id, input.memberId, input.kind, input.label, input.shieldOn ? 1 : 0, input.meta ?? null);
   }
+
+  // Activation funnel emit points (all idempotent).
+  recordActivation(input.memberId, "install", input.kind);
+  if (input.certInstalled) recordActivation(input.memberId, "cert_installed");
+  if (input.shieldOn) recordActivation(input.memberId, "first_arm");
+  // A distinct 2nd surface kind = second_surface reached.
+  const kinds = database
+    .prepare("SELECT COUNT(DISTINCT kind) AS n FROM blocker_devices WHERE member_id = ?")
+    .get(input.memberId) as { n: number };
+  if ((kinds?.n || 0) >= 2) recordActivation(input.memberId, "second_surface");
+
   return database.prepare("SELECT * FROM blocker_devices WHERE id = ?").get(id) as {
     id: string;
     kind: string;

@@ -1,5 +1,6 @@
 import { memberFromRequest, optionsOk, jsonOk, jsonErr } from "@/lib/apiAuth";
 import { getSessionRecap } from "@/lib/backlog";
+import { recordActivation } from "@/lib/db";
 
 export async function OPTIONS() {
   return optionsOk();
@@ -14,5 +15,6 @@ export async function GET(
   const { id } = await ctx.params;
   const recap = getSessionRecap(member.id, id);
   if (!recap) return jsonErr("Session not found", 404);
+  recordActivation(member.id, "first_recap"); // E0-S3 (idempotent)
   return jsonOk(recap);
 }

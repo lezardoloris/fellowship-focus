@@ -68,6 +68,7 @@ export async function POST(request: Request) {
         kind: String(body.kind || "extension"),
         label: String(body.label || "Chrome"),
         shieldOn: Boolean(body.shieldOn),
+        certInstalled: Boolean(body.certInstalled),
         deviceId: body.deviceId ? String(body.deviceId) : undefined,
         meta: body.meta ? JSON.stringify(body.meta) : undefined,
       });
