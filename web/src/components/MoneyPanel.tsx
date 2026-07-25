@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { SkeletonTiles } from "@/components/Skeleton";
 import { StatTile, ErrorState } from "@/components/Panel";
+import { BarSeries } from "@/components/Charts";
 
 type MoneyRow = {
   key: string;
@@ -90,7 +91,6 @@ export function MoneyPanel({ token }: { token: string }) {
   // to pop into the layout, shoving everything below it down.
   if (!data) return <SkeletonTiles count={4} minHeight={380} />;
   const cur = data.currency;
-  const maxDay = Math.max(1, ...data.days.map((d) => d.tracked_minutes));
   const overProjects = data.profitability.filter((p) => p.over_budget);
 
   return (
@@ -137,31 +137,23 @@ export function MoneyPanel({ token }: { token: string }) {
         />
       </div>
 
-      {/* Day bars — the journey: billable (accent) vs rest (grey) per day */}
+      {/* Day bars — billable (accent) inside total tracked (grey), per day.
+          [UX-E6.5] Was hand-rolled divs with their own scaling maths and only a
+          title= tooltip; now the shared chart layer, with a real tooltip. */}
       {data.days.length > 0 && (
         <div className="mt-4">
-          <div className="flex h-14 items-end gap-1">
-            {data.days.map((d) => {
-              const total = Math.max(2, (d.tracked_minutes / maxDay) * 100);
-              const billable = d.tracked_minutes
-                ? (d.billable_minutes / d.tracked_minutes) * total
-                : 0;
-              return (
-                <div
-                  key={d.date}
-                  // [UX-DR12] Animate height only — these bars used to teleport.
-                  className="relative flex-1 overflow-hidden rounded-sm bg-white/10 transition-[height] duration-300 ease-out"
-                  style={{ height: `${total}%` }}
-                  title={`${d.date} — ${hrs(d.tracked_minutes)} tracked · ${eur(d.value_cents, cur)}`}
-                >
-                  <div
-                    className="absolute bottom-0 left-0 right-0 bg-accent-soft transition-[height] duration-300 ease-out"
-                    style={{ height: `${d.tracked_minutes ? (d.billable_minutes / d.tracked_minutes) * 100 : 0}%` }}
-                  />
-                </div>
-              );
-            })}
-          </div>
+          <BarSeries
+            height={92}
+            data={data.days.map((d) => ({
+              label: new Date(`${d.date}T00:00:00`).toLocaleDateString(undefined, {
+                weekday: "short",
+              }),
+              value: d.tracked_minutes,
+              accent: d.billable_minutes,
+            }))}
+            formatter={(v) => `${(v / 60).toFixed(1)}h`}
+            emptyLabel="No tracked time in this window yet."
+          />
           <p className="mt-1 text-[11px] pp-faint">
             Each bar is a day — orange is paid time, grey is everything else.
           </p>
