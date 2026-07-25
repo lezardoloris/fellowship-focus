@@ -129,6 +129,59 @@ def _show_tray(title: str, message: str, tray, kind: NotifyKind) -> bool:
             return False
 
 
+def _in_quiet_hours(cfg: dict) -> bool:
+    """True inside the user's quiet window (supports windows crossing midnight)."""
+    start = str(cfg.get("quiet_hours_start") or "").strip()
+    end = str(cfg.get("quiet_hours_end") or "").strip()
+    if not start or not end:
+        return False
+    try:
+        from datetime import datetime
+
+        now = datetime.now().strftime("%H:%M")
+        if start == end:
+            return False
+        if start < end:  # e.g. 09:00 → 18:00
+            return start <= now < end
+        return now >= start or now < end  # e.g. 22:00 → 07:00
+    except Exception:
+        return False
+
+
+# Set once at startup so every notify() call inherits the user's policy
+# without threading config through ~15 call sites.
+_policy_config: dict | None = None
+
+
+def set_policy_config(cfg: dict | None) -> None:
+    """Register the live app config used to enforce mute / quiet hours."""
+    global _policy_config
+    _policy_config = cfg
+
+
+def notifications_suppressed(cfg: dict, kind: NotifyKind) -> bool:
+    """Central notification policy.
+
+    One place decides whether a notification may fire, instead of every call
+    site inventing its own guard — which is how the same event ended up firing
+    from three surfaces with three different wordings.
+
+    BLOCK is *critical* and always shows: quiet hours mean "don't nag me", not
+    "let me doomscroll through a session I started myself". Everything else
+    (focus/break/XP/records/warnings) respects the global mute and quiet hours.
+    """
+    if kind is NotifyKind.BLOCK:
+        return False
+    try:
+        import time as _t
+
+        if float(cfg.get("notifications_muted_until") or 0) > _t.time():
+            return True
+    except Exception:
+        pass
+    return _in_quiet_hours(cfg)
+
+
 def notify(
     title: str,
     message: str,
@@ -137,18 +190,24 @@ def notify(
     kind: NotifyKind | str = NotifyKind.INFO,
     actions: list[tuple[str, str]] | None = None,
     dashboard_url: str | None = None,
+    config: dict | None = None,
 ) -> None:
     """
     Show a native Windows toast when possible.
 
     actions: optional list of (label, launch_url_or_path)
     dashboard_url: if set, adds an "Open dashboard" action
+    config: app config — enforces global mute / quiet hours when provided.
     """
     if isinstance(kind, str):
         try:
             kind = NotifyKind(kind)
         except ValueError:
             kind = NotifyKind.INFO
+
+    policy = config if config is not None else _policy_config
+    if policy is not None and notifications_suppressed(policy, kind):
+        return
 
     action_list = list(actions or [])
     if dashboard_url:

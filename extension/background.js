@@ -687,6 +687,12 @@ async function reportBlock(domain) {
     ? { ...cfg.stats, blocks: cfg.stats.blocks + 1 }
     : { date: today(), blocks: 1, focusMinutes: 0 };
   await setConfig({ stats });
+  // The desktop mitm proxy reports the same hit through its own side-channel.
+  // Posting from here too charged the user TWO XP penalties for one block.
+  // The desktop owns the penalty whenever its shield is detected; the block
+  // itself (page/redirect) still happens here. Mirrors the guard already used
+  // for the soft nudges.
+  if (cfg.desktopShieldOn) return;
   if (cfg.apiUrl && cfg.token && domain) {
     try {
       await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/api/blocks`, {
@@ -916,6 +922,7 @@ async function notifyBlocked(domain) {
   _notifyDebounce.set(key, now);
 
   let penalty = 10;
+  let desktopOwnsPenalty = false;
   try {
     const cfg = await getConfig();
     // Local stats only once here — do not also call reportBlock (would double-count).
@@ -924,7 +931,10 @@ async function notifyBlocked(domain) {
         ? { ...cfg.stats, blocks: cfg.stats.blocks + 1 }
         : { date: today(), blocks: 1, focusMinutes: 0 };
     await setConfig({ stats });
-    if (cfg.apiUrl && cfg.token) {
+    // Same double-penalty guard as reportBlock: when the desktop shield is up,
+    // its mitm proxy already reported this hit and charged the XP.
+    desktopOwnsPenalty = Boolean(cfg.desktopShieldOn);
+    if (!desktopOwnsPenalty && cfg.apiUrl && cfg.token) {
       const res = await fetch(`${cfg.apiUrl.replace(/\/$/, "")}/api/blocks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -938,6 +948,9 @@ async function notifyBlocked(domain) {
   } catch {
     /* offline — default penalty */
   }
+  // The desktop already toasts this hit — don't stack a second OS notification
+  // on top of it for the same block.
+  if (desktopOwnsPenalty) return;
   try {
     chrome.notifications.create(`ff-block-${Date.now()}`, {
       type: "basic",

@@ -170,4 +170,10 @@ def default_config() -> dict:
         "float_timer_enabled": True,
         "session_recap_enabled": True,
         "session_nudge_enabled": True,
+        # Notification policy. Empty quiet hours = disabled; muted_until is an
+        # epoch seconds value written by the tray "Snooze notifications" action.
+        "notifications_muted_until": 0,
+        "quiet_hours_start": "",
+        "quiet_hours_end": "",
+        "streak_danger_enabled": True,
     }

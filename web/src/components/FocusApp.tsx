@@ -16,11 +16,18 @@ import { useToast } from "@/components/Toasts";
 import { type SceneId } from "@/lib/scenes";
 import type { BackgroundQuality } from "@/lib/backgroundPrefs";
 
+/**
+ * Tab ids are historical: "block" is the DOING surface (timer + shield + music)
+ * and "focus" is the REVIEWING surface (score, money, habits). The labels used
+ * to be inverted — clicking "Focus" landed you on retrospective charts while
+ * the timer hid behind "Block". The ids stay for stored state; the labels now
+ * say what each surface is actually for. [UX-E9]
+ */
 type Tab = "block" | "focus" | "guild";
 
 const TABS: Array<{ id: Tab; label: string; hint: string }> = [
-  { id: "block", label: "Block", hint: "Your shield" },
-  { id: "focus", label: "Focus", hint: "Ladder, calendar & tracking — no guild needed" },
+  { id: "block", label: "Focus", hint: "Timer, shield & music — start here" },
+  { id: "focus", label: "Progress", hint: "Score, money & habits — how the week went" },
   { id: "guild", label: "Guild", hint: "Optional social layer" },
 ];
 

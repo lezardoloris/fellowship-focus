@@ -92,6 +92,14 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.config = load_config()
+        # One policy for every notification: global mute + quiet hours are
+        # enforced inside notify(), so no call site has to remember to check.
+        try:
+            from fellowship_focus.notifications import set_policy_config
+
+            set_policy_config(self.config)
+        except Exception:
+            pass
         self.mitm_process = None
         self.blocker_active = False
         self._blocker_arming = False
@@ -275,9 +283,10 @@ class MainWindow(QMainWindow):
         self._nudge_snooze_until = 0.0
         self._nudge_active_streak = 0
         self._nudge_timer = QTimer(self)
-        self._nudge_timer.timeout.connect(self._maybe_nudge_session)
-        if bool(self.config.get("session_nudge_enabled", True)):
-            self._nudge_timer.start(30000)
+        self._nudge_timer.timeout.connect(self._on_nudge_tick)
+        # Always runs: the tick also drives the streak-danger reminder, which
+        # has its own toggle. The session nudge is gated inside the handler.
+        self._nudge_timer.start(30000)
 
         # During an armed shield: mitm queues dopamine/adult visits → Yes/No
         # prompt card. Also drains extension-requested adds.
@@ -951,6 +960,11 @@ class MainWindow(QMainWindow):
                 if data and data.get("streak") is not None:
                     self._last_streak = int(data.get("streak") or 0)
                     self.config["last_streak"] = self._last_streak
+                if completed:
+                    # Marks the day as covered so the streak-danger nudge stays quiet.
+                    from datetime import date as _date
+
+                    self.config["last_session_date"] = _date.today().isoformat()
                 if completed and xp:
                     self.toasts.show("Quest complete!", f"+{xp} XP earned", "success")
                     notify_xp(xp, getattr(self, "tray", None), self._dashboard_url())
@@ -2364,12 +2378,10 @@ class MainWindow(QMainWindow):
             self._float_timer.dismiss()
         elif self.config.get("float_timer_enabled", True) and self._float_timer.is_session_active():
             self._float_timer.reshow()
-        if hasattr(self, "_nudge_timer"):
-            if self.config.get("session_nudge_enabled", True):
-                if not self._nudge_timer.isActive():
-                    self._nudge_timer.start(30000)
-            else:
-                self._nudge_timer.stop()
+        # The tick itself always runs (it also drives the streak reminder); the
+        # session nudge is gated inside _on_nudge_tick by its own setting.
+        if hasattr(self, "_nudge_timer") and not self._nudge_timer.isActive():
+            self._nudge_timer.start(30000)
         if self.startup_check.isChecked() != is_startup_enabled():
             ok, msg = set_startup_enabled(self.startup_check.isChecked())
             self.toasts.show("Startup", msg, "success" if ok else "warning")
@@ -2606,6 +2618,41 @@ class MainWindow(QMainWindow):
             QSystemTrayIcon.ActivationReason.DoubleClick,
         ):
             self._toggle_from_tray()
+
+    def _maybe_streak_danger(self) -> None:
+        """Evening reminder when today would break an active streak.
+
+        notify_streak_danger() shipped months ago but was never called from
+        anywhere — this wires it up. Fires at most once a day, only late in the
+        day, only when a real streak is at stake and today has no session yet.
+        """
+        from datetime import date, datetime
+
+        if not bool(self.config.get("streak_danger_enabled", True)):
+            return
+        streak = int(self.config.get("last_streak", 0) or 0)
+        if streak < 2:
+            return  # nothing meaningful to protect yet
+        today = date.today().isoformat()
+        if self.config.get("last_session_date") == today:
+            return  # already covered today
+        if self.config.get("streak_danger_shown_on") == today:
+            return  # one reminder a day, no more
+        if datetime.now().hour < 20:
+            return  # only once the day is genuinely running out
+        if self.pomodoro.is_running:
+            return
+        self.config["streak_danger_shown_on"] = today
+        save_config(self.config)
+        from fellowship_focus.notifications import notify_streak_danger
+
+        notify_streak_danger(streak, getattr(self, "tray", None))
+
+    def _on_nudge_tick(self) -> None:
+        """One 30s tick drives both periodic nudges, each with its own toggle."""
+        self._maybe_streak_danger()
+        if bool(self.config.get("session_nudge_enabled", True)):
+            self._maybe_nudge_session()
 
     def _maybe_nudge_session(self) -> None:
         """Offer to start a session when the user is working untracked."""
@@ -2852,12 +2899,56 @@ class MainWindow(QMainWindow):
                 menu.addAction(show_float)
 
         menu.addSeparator()
+        # Global mute — one place to silence everything, instead of the four
+        # independent per-nudge snoozes that existed before.
+        import time as _time
+
+        muted_until = float(self.config.get("notifications_muted_until") or 0)
+        if muted_until > _time.time():
+            unmute = QAction("Un-mute notifications", self)
+            unmute.triggered.connect(lambda: self._set_notification_mute(0))
+            menu.addAction(unmute)
+        else:
+            snooze = menu.addMenu("Snooze notifications")
+            for label, hours in (("For 1 hour", 1), ("For 8 hours", 8), ("Until tomorrow", 0)):
+                act = QAction(label, self)
+                act.triggered.connect(lambda _=False, h=hours: self._snooze_notifications(h))
+                snooze.addAction(act)
+
         update_a = QAction("Check for updates", self)
         update_a.triggered.connect(self._check_updates_manual)
         menu.addAction(update_a)
         quit_a = QAction("Quit", self)
         quit_a.triggered.connect(self._quit_app)
         menu.addAction(quit_a)
+
+    def _snooze_notifications(self, hours: int) -> None:
+        """hours=0 means 'until tomorrow morning'."""
+        import time as _time
+        from datetime import datetime, timedelta
+
+        if hours > 0:
+            until = _time.time() + hours * 3600
+            label = f"{hours}h"
+        else:
+            tomorrow = (datetime.now() + timedelta(days=1)).replace(
+                hour=7, minute=0, second=0, microsecond=0
+            )
+            until = tomorrow.timestamp()
+            label = "tomorrow 07:00"
+        self._set_notification_mute(until)
+        self.toasts.show("Notifications muted", f"Quiet until {label}.", "info", 3000)
+
+    def _set_notification_mute(self, until: float) -> None:
+        self.config["notifications_muted_until"] = float(until)
+        save_config(self.config)
+        try:
+            from fellowship_focus.notifications import set_policy_config
+
+            set_policy_config(self.config)
+        except Exception:
+            pass
+        self._refresh_tray_menu()
 
     def _reshow_float_timer(self) -> None:
         # Manual re-display from the tray. If the card was globally disabled,
