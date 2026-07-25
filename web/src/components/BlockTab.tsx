@@ -1387,11 +1387,11 @@ export function BlockTab({
     />
     {unprotectedPrompt && (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4">
-        <div className="glass-panel max-w-md space-y-4 p-6" role="dialog" aria-labelledby="ff-unprotected-title">
+        <div className="premium-panel max-w-md space-y-4 p-6" role="dialog" aria-labelledby="ff-unprotected-title">
           <h2 id="ff-unprotected-title" className="font-display text-xl text-white">
             {useDesktopUi ? "Shield is OFF" : "Shield not connected"}
           </h2>
-          <p className="text-sm text-white/70">
+          <p className="text-sm pp-body">
             {useDesktopUi
               ? "You’re already in Fellowship Focus. Arm the Shield first, or start an unprotected timer."
               : "Start without blocking, or connect a Shield first. Unprotected sessions do not enforce your block list."}
@@ -1421,7 +1421,7 @@ export function BlockTab({
               </button>
               <button
                 type="button"
-                className="w-full text-xs text-white/40"
+                className="w-full text-xs pp-faint"
                 onClick={() => setUnprotectedPrompt(false)}
               >
                 Cancel
@@ -1446,7 +1446,7 @@ export function BlockTab({
               </div>
               <button
                 type="button"
-                className="w-full text-sm text-white/50 underline-offset-2 hover:text-white/80 hover:underline"
+                className="w-full text-sm pp-muted underline-offset-2 hover:text-white hover:underline"
                 onClick={() => {
                   setUnprotectedPrompt(false);
                   toast.info("Timer started — unprotected");
@@ -1457,7 +1457,7 @@ export function BlockTab({
               </button>
               <button
                 type="button"
-                className="w-full text-xs text-white/40"
+                className="w-full text-xs pp-faint"
                 onClick={() => setUnprotectedPrompt(false)}
               >
                 Cancel
@@ -1469,11 +1469,11 @@ export function BlockTab({
     )}
     {creditPrompt && (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4">
-        <div className="glass-panel max-w-md space-y-4 p-6" role="dialog" aria-labelledby="ff-credit-title">
+        <div className="premium-panel max-w-md space-y-4 p-6" role="dialog" aria-labelledby="ff-credit-title">
           <h2 id="ff-credit-title" className="font-display text-xl text-white">
             Session finished while away
           </h2>
-          <p className="text-sm text-white/70">
+          <p className="text-sm pp-body">
             Credit {creditPrompt.minutes} focus minutes to your guild, or discard.
           </p>
           <div className="flex gap-2">
@@ -1539,7 +1539,7 @@ export function BlockTab({
     {awaitingBreak && (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/65 p-4">
         <div
-          className="glass-panel max-w-md space-y-5 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
+          className="premium-panel max-w-md space-y-5 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
           role="dialog"
           aria-labelledby="ff-break-title"
           aria-describedby="ff-break-desc"
@@ -1551,7 +1551,7 @@ export function BlockTab({
             <h2 id="ff-break-title" className="font-display text-2xl text-white">
               The hour ends
             </h2>
-            <p id="ff-break-desc" className="text-sm leading-relaxed text-white/70">
+            <p id="ff-break-desc" className="text-sm leading-relaxed pp-body">
               Rest, or continue the quest?
             </p>
           </div>
@@ -1580,13 +1580,13 @@ export function BlockTab({
             </div>
             <button
               type="button"
-              className="w-full py-2 text-sm text-white/50 underline-offset-2 hover:text-white/80 hover:underline"
+              className="w-full py-2 text-sm pp-muted underline-offset-2 hover:text-white hover:underline"
               onClick={stop}
             >
               End session
             </button>
           </div>
-          <p className="text-center text-[11px] text-white/40">
+          <p className="text-center text-[11px] pp-faint">
             Shield stays armed until you stop the session
           </p>
         </div>
@@ -1594,11 +1594,11 @@ export function BlockTab({
     )}
     {connectChooser && (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4">
-        <div className="glass-panel max-w-sm space-y-4 p-6" role="dialog" aria-labelledby="ff-connect-title">
+        <div className="premium-panel max-w-sm space-y-4 p-6" role="dialog" aria-labelledby="ff-connect-title">
           <h2 id="ff-connect-title" className="font-display text-xl text-white">
             {useDesktopUi ? "Arm Shield" : "Connect Shield"}
           </h2>
-          <p className="text-sm text-white/70">
+          <p className="text-sm pp-body">
             {useDesktopUi
               ? "You’re in the desktop app. Turn Shield ON to block distraction sites."
               : "Pick how you want to block distracting sites."}
@@ -1617,7 +1617,7 @@ export function BlockTab({
               </button>
               <button
                 type="button"
-                className="w-full text-xs text-white/40"
+                className="w-full text-xs pp-faint"
                 onClick={() => setConnectChooser(false)}
               >
                 Cancel
@@ -1644,7 +1644,7 @@ export function BlockTab({
               </button>
               <button
                 type="button"
-                className="w-full text-xs text-white/40"
+                className="w-full text-xs pp-faint"
                 onClick={() => setConnectChooser(false)}
               >
                 Cancel
@@ -1675,7 +1675,7 @@ export function BlockTab({
             />
             <span
               className={`min-w-0 flex-1 font-sans text-[15px] font-semibold tabular-nums tracking-wide ${
-                paused || awaitingBreak ? "text-white/55" : "text-[#f4f4f5]"
+                paused || awaitingBreak ? "pp-muted" : "text-[#f4f4f5]"
               }`}
             >
               {mm}:{ss}
@@ -1688,7 +1688,7 @@ export function BlockTab({
             <button
               type="button"
               onClick={() => setFloatExpanded((v) => !v)}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-xs text-white/70 hover:bg-[#3a3d40] hover:text-white"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-xs pp-body hover:bg-[#3a3d40] hover:text-white"
               aria-expanded={floatExpanded}
               aria-label={floatExpanded ? "Collapse timer" : "Expand timer"}
               title={floatExpanded ? "Collapse" : "Expand"}
@@ -1698,7 +1698,7 @@ export function BlockTab({
             <button
               type="button"
               onClick={() => setFloatHidden(true)}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-base leading-none text-white/70 hover:bg-[#3a3d40] hover:text-white"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-base leading-none pp-body hover:bg-[#3a3d40] hover:text-white"
               aria-label="Hide timer"
               title="Hide timer — session keeps running (use Stop to end)"
             >
@@ -1770,15 +1770,15 @@ export function BlockTab({
         {/* Nothing can block: say exactly how to fix it, and keep saying it.
             A toast vanishes and leaves the app looking simply broken. */}
         {!useDesktopUi && !extReady && (
-          <div className="glass-panel flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-xs">
+          <div className="premium-panel flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-xs">
             <span className="font-semibold text-white">No blocker connected</span>
-            <span className="text-white/70">
+            <span className="pp-body">
               A web page cannot block other tabs on its own.
             </span>
             <a href="/download" className="font-semibold text-[#e07a63] hover:underline">
               Get the app (blocks everything)
             </a>
-            <span className="text-white/40">or</span>
+            <span className="pp-faint">or</span>
             <a href="/extension" className="font-semibold text-[#e07a63] hover:underline">
               add the Chrome extension
             </a>
@@ -1796,11 +1796,11 @@ export function BlockTab({
                 aria-expanded={layoutMenuOpen}
                 aria-haspopup="menu"
                 onClick={() => setLayoutMenuOpen((o) => !o)}
-                className="inline-flex items-center gap-1 rounded border border-transparent px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-white/40 transition hover:border-white/10 hover:text-white/55"
+                className="inline-flex items-center gap-1 rounded border border-transparent px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] pp-faint transition hover:border-white/10 hover:text-white"
                 title="Rearrange Block panels"
               >
                 Layout
-                <span aria-hidden className="text-white/30">
+                <span aria-hidden className="pp-faint">
                   {layoutMenuOpen ? "▴" : "▾"}
                 </span>
               </button>
@@ -1824,8 +1824,8 @@ export function BlockTab({
                         }}
                         className={`flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] transition ${
                           selected
-                            ? "text-white/65"
-                            : "text-white/45 hover:bg-white/[0.04] hover:text-white/60"
+                            ? "pp-muted"
+                            : "pp-faint hover:bg-white/[0.06] hover:text-white"
                         }`}
                       >
                         {LAYOUT_LABELS[id]}
@@ -1843,7 +1843,7 @@ export function BlockTab({
                       });
                       setLayoutMenuOpen(false);
                     }}
-                    className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-white/45 transition hover:bg-white/[0.04] hover:text-white/60"
+                    className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] pp-faint transition hover:bg-white/[0.06] hover:text-white"
                   >
                     Swap timer / music
                   </button>
@@ -1854,7 +1854,7 @@ export function BlockTab({
                       persistLayout(DEFAULT_BLOCK_LAYOUT);
                       setLayoutMenuOpen(false);
                     }}
-                    className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] text-white/45 transition hover:bg-white/[0.04] hover:text-white/60"
+                    className="flex w-full items-center rounded px-2 py-1.5 text-left text-[10px] pp-faint transition hover:bg-white/[0.06] hover:text-white"
                   >
                     Reset
                   </button>
@@ -1868,14 +1868,14 @@ export function BlockTab({
           className={`ff-block-layout ff-block-layout--${blockLayout.layoutId}`}
         >
           <div
-            className={`glass-panel flex w-full min-w-0 flex-col p-4 sm:p-5 ff-block-area-${areaForPanel(blockLayout.areas, "timer")}`}
+            className={`premium-panel flex w-full min-w-0 flex-col p-4 sm:p-5 ff-block-area-${areaForPanel(blockLayout.areas, "timer")}`}
           >
             <div
               className={`text-center ${
                 inSession && remaining === 0
-                  ? "text-[#f87171]"
+                  ? "text-danger"
                   : paused
-                    ? "text-white/45"
+                    ? "pp-faint"
                     : "text-white"
               }`}
             >
@@ -1885,13 +1885,13 @@ export function BlockTab({
                   : `${String(prefs.focus_min).padStart(2, "0")}:00`}
               </div>
               {inSession ? (
-                <p className="mt-2 text-xs tabular-nums tracking-[0.2em] text-white/50">
+                <p className="mt-2 text-xs tabular-nums tracking-[0.2em] pp-muted">
                   {paused ? "Paused · " : ""}
                   {cycle} / {prefs.cycles}
                   {phase === "break" ? " · break" : ""}
                 </p>
               ) : (
-                <p className="mt-2 text-xs text-white/45">
+                <p className="mt-2 text-xs pp-faint">
                   {prefs.focus_min}m · {prefs.break_min}m · ×{prefs.cycles}
                 </p>
               )}
@@ -1919,7 +1919,7 @@ export function BlockTab({
                         className={`min-h-8 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
                           active
                             ? "border-[#b8422e] bg-[#b8422e]/25 text-white"
-                            : "border-white/12 bg-white/[0.03] text-white/75 hover:border-white/25 hover:text-white"
+                            : "border-white/12 bg-white/[0.06] pp-body hover:border-white/25 hover:text-white"
                         }`}
                       >
                         {tp.label}
@@ -1956,7 +1956,7 @@ export function BlockTab({
                   />
                 </div>
                 {paused ? (
-                  <p className="text-center text-xs text-white/40">
+                  <p className="text-center text-xs pp-faint">
                     Next phase uses these · Resume keeps remaining time
                   </p>
                 ) : null}
@@ -2028,18 +2028,18 @@ export function BlockTab({
           </div>
 
           <div
-            className={`glass-panel flex max-h-[min(70vh,34rem)] min-h-[12rem] flex-col overflow-hidden p-4 sm:p-5 ff-block-area-${areaForPanel(blockLayout.areas, "block")}`}
+            className={`premium-panel flex max-h-[min(70vh,34rem)] min-h-[12rem] flex-col overflow-hidden p-4 sm:p-5 ff-block-area-${areaForPanel(blockLayout.areas, "block")}`}
           >
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <button
                 type="button"
                 onClick={toggleListCollapsed}
-                className="inline-flex items-center gap-1.5 text-sm font-semibold text-white transition hover:text-white/80"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-white transition hover:text-white"
                 title={listCollapsed ? "Show the list" : "Hide the list"}
               >
-                <span className={`text-[10px] text-white/40 transition-transform ${listCollapsed ? "" : "rotate-90"}`} aria-hidden>▶</span>
+                <span className={`text-[10px] pp-faint transition-transform ${listCollapsed ? "" : "rotate-90"}`} aria-hidden>▶</span>
                 Block list
-                <span className="font-normal tabular-nums text-white/45">{sites.length}</span>
+                <span className="font-normal tabular-nums pp-faint">{sites.length}</span>
               </button>
               <div className="flex flex-wrap items-center gap-2">
                 <div
@@ -2066,7 +2066,7 @@ export function BlockTab({
                       className={`min-h-8 rounded-full px-2.5 py-1 text-xs font-medium transition ${
                         prefs.blocker_mode === m.id
                           ? "bg-[#b8422e] text-white"
-                          : "text-white/65 hover:text-white"
+                          : "pp-muted hover:text-white"
                       }`}
                     >
                       {m.label}
@@ -2098,7 +2098,7 @@ export function BlockTab({
                       className={`min-h-8 rounded-full px-2.5 py-1 text-xs font-medium transition ${
                         prefs.block_style === s.id
                           ? "bg-[#b8422e] text-white"
-                          : "text-white/65 hover:text-white"
+                          : "pp-muted hover:text-white"
                       }`}
                     >
                       {s.label}
@@ -2109,7 +2109,7 @@ export function BlockTab({
             </div>
 
             {listCollapsed ? (
-              <p className="mt-1 text-xs text-white/45">
+              <p className="mt-1 text-xs pp-faint">
                 {sites.length} site{sites.length === 1 ? "" : "s"} blocked. Tap “Block list” to edit.
               </p>
             ) : (
@@ -2126,7 +2126,7 @@ export function BlockTab({
                     className={`min-h-8 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
                       active
                         ? "border-[#b8422e] bg-[#b8422e]/25 text-white"
-                        : "border-white/12 bg-white/[0.03] text-white/75 hover:border-white/25 hover:text-white"
+                        : "border-white/12 bg-white/[0.06] pp-body hover:border-white/25 hover:text-white"
                     }`}
                   >
                     {p.label}
@@ -2143,7 +2143,7 @@ export function BlockTab({
                     className={`min-h-8 rounded-full border px-2.5 py-1 text-xs transition ${
                       active
                         ? "border-[#b8422e]/80 bg-[#b8422e]/15 text-white"
-                        : "border-transparent text-white/55 hover:bg-white/5 hover:text-white/85"
+                        : "border-transparent pp-muted hover:bg-white/5 hover:text-white"
                     }`}
                   >
                     {c.label}
@@ -2175,7 +2175,7 @@ export function BlockTab({
                 : sites;
               if (sites.length === 0) {
                 return (
-                  <div className="mt-3 flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/12 px-3 py-8 text-center text-xs text-white/45">
+                  <div className="mt-3 flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/12 px-3 py-8 text-center text-xs pp-faint">
                     Pick a preset or add a site
                   </div>
                 );
@@ -2189,16 +2189,16 @@ export function BlockTab({
                         type="button"
                         onClick={() => removeSite(s.site)}
                         title={`Remove ${s.site}`}
-                        className="group inline-flex max-w-full items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] py-1 pl-2 pr-1.5 text-xs text-white/80 transition hover:border-[#b8422e]/50 hover:bg-[#b8422e]/15 hover:text-white"
+                        className="group inline-flex max-w-full items-center gap-1 rounded-md border border-white/10 bg-white/[0.06] py-1 pl-2 pr-1.5 text-xs pp-body transition hover:border-[#b8422e]/50 hover:bg-[#b8422e]/15 hover:text-white"
                       >
                         <span className="truncate">{s.site}</span>
-                        <span className="shrink-0 text-white/35 group-hover:text-[#fca5a5]" aria-hidden>
+                        <span className="shrink-0 pp-faint group-hover:text-[#fca5a5]" aria-hidden>
                           ×
                         </span>
                       </button>
                     ))}
                     {visible.length === 0 ? (
-                      <span className="px-1 py-2 text-xs text-white/45">No match</span>
+                      <span className="px-1 py-2 text-xs pp-faint">No match</span>
                     ) : null}
                   </div>
                 </div>
@@ -2267,7 +2267,7 @@ function Stepper({
     <div className={compact ? "flex flex-col gap-1" : "flex flex-col gap-1.5"}>
       {label ? (
         <span
-          className={`text-center font-medium uppercase tracking-wider text-white/55 text-xs`}
+          className={`text-center font-medium uppercase tracking-wider pp-muted text-xs`}
         >
           {label}
         </span>
@@ -2281,7 +2281,7 @@ function Stepper({
           type="button"
           disabled={disabled || value <= min}
           onClick={dec}
-          className={`flex items-center justify-center font-medium text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30 ${
+          className={`flex items-center justify-center font-medium pp-body transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30 ${
             compact ? "h-8 w-7 text-base" : "h-10 w-9 text-lg"
           }`}
           aria-label={`Decrease ${label || "value"}`}
@@ -2328,13 +2328,13 @@ function Stepper({
               compact ? "text-sm" : "text-lg"
             }`}
           />
-          {suffix ? <span className="mt-0.5 text-xs text-white/55">{suffix}</span> : null}
+          {suffix ? <span className="mt-0.5 text-xs pp-muted">{suffix}</span> : null}
         </div>
         <button
           type="button"
           disabled={disabled || value >= max}
           onClick={inc}
-          className={`flex items-center justify-center font-medium text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30 ${
+          className={`flex items-center justify-center font-medium pp-body transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30 ${
             compact ? "h-8 w-7 text-base" : "h-10 w-9 text-lg"
           }`}
           aria-label={`Increase ${label || "value"}`}

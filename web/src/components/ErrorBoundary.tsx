@@ -20,11 +20,11 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div className="glass-panel p-6 text-center">
-          <p className="font-display text-lg text-white">
+        <div className="premium-panel p-6 text-center">
+          <p className="font-display text-lg pp-strong">
             {this.props.fallbackTitle || "This panel crashed"}
           </p>
-          <p className="mt-2 text-sm text-white/60">{this.state.error.message}</p>
+          <p className="mt-2 text-sm pp-muted">{this.state.error.message}</p>
           <button
             type="button"
             className="btn-secondary mt-4"

@@ -15,9 +15,9 @@ type TrustMember = {
 export function TrustPanel({ members, myId }: { members: TrustMember[]; myId?: string }) {
   if (members.length === 0) {
     return (
-      <div className="glass-panel p-5 md:p-6">
-        <h3 className="text-sm font-semibold text-white">Guild Trust</h3>
-        <p className="mt-3 text-sm text-white/45">
+      <div className="premium-panel p-5 md:p-6">
+        <h3 className="text-sm font-semibold pp-strong">Guild Trust</h3>
+        <p className="mt-3 text-sm pp-faint">
           Proofs appear when members run focus with Guild Trust enabled.
         </p>
       </div>
@@ -25,9 +25,9 @@ export function TrustPanel({ members, myId }: { members: TrustMember[]; myId?: s
   }
 
   return (
-    <div className="glass-panel p-5 md:p-6">
-      <h3 className="text-sm font-semibold text-white">Guild Trust</h3>
-      <p className="mt-1 text-[11px] text-white/45">
+    <div className="premium-panel p-5 md:p-6">
+      <h3 className="text-sm font-semibold pp-strong">Guild Trust</h3>
+      <p className="mt-1 text-[11px] pp-faint">
         Signal mode · app name + activity · no keylogging
       </p>
       <ul className="mt-4 space-y-2">
@@ -37,15 +37,15 @@ export function TrustPanel({ members, myId }: { members: TrustMember[]; myId?: s
             className={`flex items-center justify-between rounded-lg px-3 py-2.5 ${
               m.member_id === myId
                 ? "bg-[#b8422e]/12 ring-1 ring-[#b8422e]/30"
-                : "bg-white/[0.04]"
+                : "bg-white/[0.06]"
             }`}
           >
             <div className="min-w-0">
-              <p className="truncate font-medium text-white/90">
+              <p className="truncate font-medium pp-strong">
                 {m.name}
                 {m.member_id === myId ? <span className="ml-2 text-xs accent-text">you</span> : null}
               </p>
-              <p className="text-[11px] text-white/45">
+              <p className="text-[11px] pp-faint">
                 {m.proof_count_7d} proofs · {m.screen_count_7d} screens
                 {m.webcam_count_7d > 0 ? ` · ${m.webcam_count_7d} presence` : ""}
                 {m.last_app ? ` · ${m.last_app}` : ""}

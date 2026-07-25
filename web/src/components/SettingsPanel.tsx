@@ -220,20 +220,20 @@ export function SettingsPanel({
     >
       <div
         ref={panelRef}
-        className="glass-panel relative w-full max-w-lg p-5"
+        className="premium-panel relative w-full max-w-lg p-5"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="ff-settings-title"
       >
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 id="ff-settings-title" className="font-display text-xl font-bold text-white">
+          <h2 id="ff-settings-title" className="font-display text-xl font-bold pp-strong">
             Settings
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-white/15 px-3 py-1 text-sm text-white/70 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/50"
+            className="rounded-full border border-white/15 px-3 py-1 text-sm pp-body hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/50"
             aria-label="Close settings"
           >
             ✕
@@ -241,16 +241,16 @@ export function SettingsPanel({
         </div>
 
         {(name || code) && (
-          <p className="mb-4 text-[11px] text-white/55">
-            {name ? <span className="text-white/75">{name}</span> : null}
+          <p className="mb-4 text-[11px] pp-muted">
+            {name ? <span className="pp-body">{name}</span> : null}
             {name && code ? " · " : null}
             {code ? <span>Guild {code}</span> : null}
           </p>
         )}
 
         <section className="space-y-3 border-b border-white/10 pb-5">
-          <p className="text-xs font-medium uppercase tracking-wider text-white/70">Background</p>
-          <p className="text-[11px] leading-relaxed text-white/60">
+          <p className="text-xs font-medium uppercase tracking-wider pp-body">Background</p>
+          <p className="text-[11px] leading-relaxed pp-muted">
             One loop for the whole app — tabs won’t change it. Poster shows first; the loop fades in
             when ready.
           </p>
@@ -276,8 +276,8 @@ export function SettingsPanel({
                   onClick={() => patchBg({ quality: q.id })}
                   className={`min-h-9 rounded-md border px-3 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/50 ${
                     selected
-                      ? "border-[#b8422e] bg-[#b8422e]/20 text-white"
-                      : "border-white/15 text-white/70 hover:border-white/35 hover:text-white"
+                      ? "border-[#b8422e] bg-[#b8422e]/20 pp-strong"
+                      : "border-white/15 pp-body hover:border-white/35 hover:text-white"
                   }`}
                 >
                   {q.label}
@@ -306,11 +306,11 @@ export function SettingsPanel({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={s.poster} alt="" className="h-full w-full object-cover" />
                   {s.video && (
-                    <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[9px] text-white/80">
+                    <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[9px] pp-body">
                       ▶
                     </span>
                   )}
-                  <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-[9px] text-white/85">
+                  <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-[9px] pp-body">
                     {s.label}
                   </span>
                 </button>
@@ -329,17 +329,17 @@ export function SettingsPanel({
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={SCENES.map.poster} alt="" className="h-full w-full object-cover" />
-            <span className="absolute inset-x-0 bottom-0 bg-black/55 px-2 py-1 text-[10px] text-white/85">
+            <span className="absolute inset-x-0 bottom-0 bg-black/55 px-2 py-1 text-[10px] pp-body">
               Middle-earth map · still image
             </span>
           </button>
         </section>
 
         <section className="space-y-3 border-b border-white/10 py-5">
-          <p className="text-xs font-medium uppercase tracking-wider text-white/70">
+          <p className="text-xs font-medium uppercase tracking-wider pp-body">
             Progress &amp; digests
           </p>
-          <label className="flex items-center justify-between gap-3 text-sm text-white/75">
+          <label className="flex items-center justify-between gap-3 text-sm pp-body">
             <span>Session recap after focus</span>
             <input
               type="checkbox"
@@ -349,7 +349,7 @@ export function SettingsPanel({
               }
             />
           </label>
-          <label className="flex items-center justify-between gap-3 text-sm text-white/75">
+          <label className="flex items-center justify-between gap-3 text-sm pp-body">
             <span>Weekly digest email</span>
             <input
               type="checkbox"
@@ -360,7 +360,7 @@ export function SettingsPanel({
             />
           </label>
           <div>
-            <p className="mb-1.5 text-[11px] text-white/50">
+            <p className="mb-1.5 text-[11px] pp-muted">
               Streak work days (off days never break the chain)
             </p>
             <div className="flex flex-wrap gap-1">
@@ -378,8 +378,8 @@ export function SettingsPanel({
                     }}
                     className={`rounded-md border px-2 py-1 text-[11px] ${
                       on
-                        ? "border-[#b8422e] bg-[#b8422e]/20 text-white"
-                        : "border-white/15 text-white/45"
+                        ? "border-[#b8422e] bg-[#b8422e]/20 pp-strong"
+                        : "border-white/15 pp-faint"
                     }`}
                   >
                     {label}
@@ -391,10 +391,10 @@ export function SettingsPanel({
         </section>
 
         <section className="border-b border-white/10 py-5">
-          <p className="mb-1 text-xs font-medium uppercase tracking-wider text-white/70">
+          <p className="mb-1 text-xs font-medium uppercase tracking-wider pp-body">
             Lock · schedule · allowlist
           </p>
-          <p className="mb-3 text-[11px] text-white/55">
+          <p className="mb-3 text-[11px] pp-muted">
             Changes save immediately. Quick lock arms the shield until the timer ends.
           </p>
           <BlockerControls
@@ -415,7 +415,7 @@ export function SettingsPanel({
 
         {oauthGithub && (
           <section className="pt-4">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-white/70">GitHub</p>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wider pp-body">GitHub</p>
             <button
               type="button"
               onClick={() => signIn("github", { callbackUrl: "/app?tab=focus" })}

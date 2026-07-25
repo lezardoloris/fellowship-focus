@@ -13,6 +13,7 @@ import { PremiumLoader } from "@/components/PremiumLoader";
 import { BlockerModePill, BlockerModeProvider } from "@/components/BlockerMode";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useToast } from "@/components/Toasts";
+import { useConfirm, setConfirmImpl } from "@/components/ConfirmAction";
 import { type SceneId } from "@/lib/scenes";
 import type { BackgroundQuality } from "@/lib/backgroundPrefs";
 
@@ -65,6 +66,12 @@ function persistMembership(code: string, token: string, name: string) {
 export function FocusApp() {
   const params = useSearchParams();
   const toast = useToast();
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  // Let non-component code (requestHardUnlock) raise the in-app dialog too.
+  useEffect(() => {
+    setConfirmImpl(confirm);
+    return () => setConfirmImpl(null);
+  }, [confirm]);
   const [tab, setTab] = useState<Tab>("block");
   const [code, setCode] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -204,9 +211,17 @@ export function FocusApp() {
     [googleUser]
   );
 
-  const leaveGuild = useCallback(() => {
+  const leaveGuild = useCallback(async () => {
     if (!code) return;
-    if (!window.confirm(`Leave guild “${code}”? You can rejoin anytime.`)) return;
+    // [UX-E6.4] In-app dialog — a native window.confirm renders OS chrome on
+    // top of the video and can't be styled.
+    const ok = await confirm({
+      title: "Leave this guild?",
+      message: `You can rejoin “${code}” anytime.`,
+      confirmLabel: "Leave",
+      danger: true,
+    });
+    if (!ok) return;
     localStorage.removeItem(`ff-member-${code}`);
     localStorage.removeItem(LAST_CODE_KEY);
     setCode(null);
@@ -218,7 +233,7 @@ export function FocusApp() {
       setName(null);
     }
     toast.info("Left guild");
-  }, [code, googleUser, toast]);
+  }, [code, googleUser, toast, confirm]);
 
   async function connectGoogle() {
     setAuthBusy(true);
@@ -408,6 +423,7 @@ export function FocusApp() {
         code={code}
         name={name}
       />
+      {confirmDialog}
     </Shell>
     </BlockerModeProvider>
   );

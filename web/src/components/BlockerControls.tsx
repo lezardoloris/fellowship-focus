@@ -9,6 +9,7 @@ import {
   shieldForcedOn,
 } from "@/lib/blockerSettings";
 import { useToast } from "@/components/Toasts";
+import { appConfirm } from "@/components/ConfirmAction";
 
 const DAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -136,7 +137,7 @@ export function BlockerControls({
     <div className="space-y-4">
       <div>
         <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
-          <span className="text-xs font-medium text-white/80">Quick lock</span>
+          <span className="text-xs font-medium pp-body">Quick lock</span>
           {lockUntil && (
             <span className="text-[10px] text-[#e8a598]">Shield forced until {lockUntil}</span>
           )}
@@ -151,7 +152,7 @@ export function BlockerControls({
               type="button"
               disabled={disabled}
               onClick={() => quickLock(h)}
-              className="rounded-md border border-white/15 px-2.5 py-1 text-xs text-white/80 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 disabled:opacity-40"
+              className="rounded-md border border-white/15 px-2.5 py-1 text-xs pp-body hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 disabled:opacity-40"
             >
               {h < 1 ? "30m" : `${h}h`}
             </button>
@@ -160,7 +161,7 @@ export function BlockerControls({
             <button
               type="button"
               onClick={() => patch({ quick_lock_until: null }, "Lock cleared")}
-              className="text-xs text-white/65 underline hover:text-white/85"
+              className="text-xs pp-muted underline hover:text-white"
             >
               Clear lock
             </button>
@@ -169,8 +170,8 @@ export function BlockerControls({
       </div>
 
       <div>
-        <p className="mb-1.5 text-xs font-medium text-white/80">Hard unlock</p>
-        <p className="mb-2 text-[10px] text-white/50">How hard it is to stop a session or disarm the shield.</p>
+        <p className="mb-1.5 text-xs font-medium pp-body">Hard unlock</p>
+        <p className="mb-2 text-[10px] pp-muted">How hard it is to stop a session or disarm the shield.</p>
         <div className="flex flex-wrap items-center gap-2">
           {hardModes.map((m) => (
             <button
@@ -181,8 +182,8 @@ export function BlockerControls({
               onClick={() => patch({ hard_mode: m.id }, `Hard unlock · ${m.label}`)}
               className={`rounded-md border px-2.5 py-1 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 disabled:opacity-40 ${
                 settings.hard_mode === m.id
-                  ? "border-[#b8422e] bg-[#b8422e] text-white"
-                  : "border-white/15 text-white/70 hover:bg-white/10"
+                  ? "border-[#b8422e] bg-[#b8422e] pp-strong"
+                  : "border-white/15 pp-body hover:bg-white/10"
               }`}
             >
               {m.label}
@@ -192,14 +193,14 @@ export function BlockerControls({
       </div>
 
       <div>
-        <p className="mb-1.5 text-xs font-medium text-white/80">Schedule</p>
-        <p className="mb-2 text-[10px] text-white/50">Auto-arm the shield on these days and hours.</p>
+        <p className="mb-1.5 text-xs font-medium pp-body">Schedule</p>
+        <p className="mb-2 text-[10px] pp-muted">Auto-arm the shield on these days and hours.</p>
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             disabled={disabled}
             onClick={addWorkdaySchedule}
-            className="rounded-md border border-white/15 px-2.5 py-1 text-xs text-white/80 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 disabled:opacity-40"
+            className="rounded-md border border-white/15 px-2.5 py-1 text-xs pp-body hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 disabled:opacity-40"
           >
             + Workdays 9–18
           </button>
@@ -215,7 +216,7 @@ export function BlockerControls({
                   "Schedule removed"
                 )
               }
-              className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-white/75 hover:border-white/25 hover:text-white"
+              className="rounded-md border border-white/10 px-2 py-1 text-[10px] pp-body hover:border-white/25 hover:text-white"
             >
               {r.days.map((d) => DAY_LABELS[d]).join("")} {r.start}–{r.end} ✕
             </button>
@@ -224,8 +225,8 @@ export function BlockerControls({
       </div>
 
       <div>
-        <p className="mb-1.5 text-xs font-medium text-white/80">Allowlist</p>
-        <p className="mb-2 text-[10px] text-white/50">Always reachable even when the shield is on.</p>
+        <p className="mb-1.5 text-xs font-medium pp-body">Allowlist</p>
+        <p className="mb-2 text-[10px] pp-muted">Always reachable even when the shield is on.</p>
         <form onSubmit={addAllow} className="flex gap-2">
           <input
             value={allowDraft}
@@ -240,7 +241,7 @@ export function BlockerControls({
         </form>
         <div className="mt-2 flex flex-wrap gap-1">
           {settings.allowlist.length === 0 && (
-            <span className="text-[10px] text-white/40">No allowed domains yet</span>
+            <span className="text-[10px] pp-faint">No allowed domains yet</span>
           )}
           {settings.allowlist.map((d) => (
             <button
@@ -250,7 +251,7 @@ export function BlockerControls({
               onClick={() =>
                 patch({ allowlist: settings.allowlist.filter((x) => x !== d) }, `Removed ${d}`)
               }
-              className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white/60 hover:border-white/25 hover:text-white/85"
+              className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] pp-muted hover:border-white/25 hover:text-white"
             >
               {d} ✕
             </button>
@@ -294,7 +295,7 @@ export function BlockerControls({
             }}
           />
         </label>
-        <label className="flex items-center gap-1 text-xs text-white/70">
+        <label className="flex items-center gap-1 text-xs pp-body">
           Friction
           <input
             type="number"
@@ -313,7 +314,7 @@ export function BlockerControls({
       {suggestions.length > 0 && (
         <ul className="grid gap-1 sm:grid-cols-2">
           {suggestions.slice(0, 8).map((s) => (
-            <li key={s.domain} className="truncate text-xs text-white/70">
+            <li key={s.domain} className="truncate text-xs pp-body">
               {s.domain} · {s.visits}
             </li>
           ))}
@@ -321,7 +322,7 @@ export function BlockerControls({
       )}
 
       {devices.length > 0 && (
-        <p className="text-[10px] text-white/55">
+        <p className="text-[10px] pp-muted">
           Devices: {devices.map((d) => `${d.label || d.kind}${d.shield_on ? " ●" : ""}`).join(" · ")}
         </p>
       )}
@@ -336,16 +337,23 @@ export async function requestHardUnlock(
   if (settings.hard_mode === "off") {
     // A plain "are you sure?" so a stray click can't end a session. This used
     // to hang off an unlabeled "Anti-Oops" toggle nobody understood.
-    return window.confirm(`${actionLabel}?`);
+    return appConfirm({ title: `${actionLabel}?`, confirmLabel: actionLabel });
   }
   if (settings.hard_mode === "confirm") {
-    return window.confirm(`${actionLabel}?`);
+    return appConfirm({ title: `${actionLabel}?`, confirmLabel: actionLabel });
   }
   if (settings.hard_mode === "delay") {
     const secs = Math.max(5, settings.hard_delay_secs || 30);
-    if (!window.confirm(`${actionLabel}? Wait ${secs}s.`)) return false;
-    await new Promise((r) => setTimeout(r, secs * 1000));
-    return window.confirm(`Still ${actionLabel.toLowerCase()}?`);
+    // The wait is the whole point of delay mode — the dialog counts it down
+    // in-app instead of freezing behind a native modal.
+    const ok = await appConfirm({
+      title: `${actionLabel}?`,
+      message: `Hard mode: the confirm unlocks in ${secs}s.`,
+      confirmLabel: actionLabel,
+      delaySecs: secs,
+      danger: true,
+    });
+    return ok;
   }
   if (settings.hard_mode === "phrase") {
     const phrase = settings.hard_phrase || "i will focus";

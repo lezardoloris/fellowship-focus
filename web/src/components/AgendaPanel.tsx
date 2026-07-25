@@ -34,9 +34,9 @@ type Productivity = {
 };
 
 function scoreColor(score: number): string {
-  if (score >= 70) return "#4ade80";
-  if (score >= 40) return "#facc15";
-  return "#f87171";
+  if (score >= 70) return "var(--success)";
+  if (score >= 40) return "var(--warning)";
+  return "var(--danger)";
 }
 
 function pct(current: number, target: number): number {
@@ -126,11 +126,11 @@ export function AgendaPanel({ token }: { token: string }) {
   ];
 
   return (
-    <div className="glass-card p-6">
+    <div className="premium-panel p-6">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h2 className="text-lg font-semibold">Agenda &amp; OKR</h2>
-          <p className="mt-0.5 text-xs text-[#9ca3af]">
+          <p className="mt-0.5 text-xs pp-muted">
             Week of {rangeLabel(data.week_start)} · progress updates from your focus data
             {saving ? " · saving…" : ""}
           </p>
@@ -141,16 +141,16 @@ export function AgendaPanel({ token }: { token: string }) {
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {kpiCards.map((k) => (
           <div key={k.label} className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-4">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-[#9ca3af]">{k.label}</p>
+            <p className="text-[10px] font-medium uppercase tracking-wider pp-muted">{k.label}</p>
             <p className="mt-1 text-2xl font-semibold text-[#f4f4f5]">{k.value}</p>
-            {k.sub && <p className="mt-0.5 text-[11px] text-[#9ca3af]">{k.sub}</p>}
+            {k.sub && <p className="mt-0.5 text-[11px] pp-muted">{k.sub}</p>}
           </div>
         ))}
       </div>
 
       {/* Weekly calendar */}
       <div className="mb-6">
-        <p className="mb-3 text-xs font-medium uppercase tracking-wider text-[#9ca3af]">
+        <p className="mb-3 text-xs font-medium uppercase tracking-wider pp-muted">
           Focus calendar
         </p>
         <div className="flex items-end justify-between gap-2">
@@ -178,11 +178,11 @@ export function AgendaPanel({ token }: { token: string }) {
                     {d.focus_score}
                   </span>
                 ) : (
-                  <span className="text-[10px] text-[#4b4f52]">·</span>
+                  <span className="text-[10px] pp-faint">·</span>
                 )}
                 <span
                   className={`text-[11px] ${
-                    isToday ? "font-semibold text-[#f4f4f5]" : "text-[#9ca3af]"
+                    isToday ? "font-semibold text-[#f4f4f5]" : "pp-muted"
                   }`}
                 >
                   {d.weekday}
@@ -191,14 +191,14 @@ export function AgendaPanel({ token }: { token: string }) {
             );
           })}
         </div>
-        <p className="mt-2 text-[11px] text-[#9ca3af]">
+        <p className="mt-2 text-[11px] pp-muted">
           Bars = focus minutes · number = daily focus score (green ≥70, amber ≥40, red below).
         </p>
       </div>
 
       {/* OKRs */}
       <div className="space-y-4">
-        <p className="text-xs font-medium uppercase tracking-wider text-[#9ca3af]">OKR of the week</p>
+        <p className="text-xs font-medium uppercase tracking-wider pp-muted">OKR of the week</p>
 
         <OkrRow
           label="Focus hours"
@@ -231,7 +231,7 @@ export function AgendaPanel({ token }: { token: string }) {
           current={`€${Math.round(okr.revenue.current_cents / 100)}`}
           percent={pct(okr.revenue.current_cents, okr.revenue.target_cents)}
           editor={
-            <div className="flex items-center gap-1 text-xs text-[#9ca3af]">
+            <div className="flex items-center gap-1 text-xs pp-muted">
               <span>€</span>
               <input
                 type="number"
@@ -283,8 +283,8 @@ function OkrRow({
       <div className="mb-1.5 flex items-center justify-between gap-3">
         <span className="text-sm font-medium text-[#f4f4f5]">{label}</span>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-[#9ca3af]">
-            {current} <span className="text-[#6b7075]">({percent}%)</span>
+          <span className="text-xs pp-muted">
+            {current} <span className="pp-faint">({percent}%)</span>
           </span>
           {editor}
         </div>
@@ -310,7 +310,7 @@ function TargetInput({
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
   return (
-    <span className="flex items-center gap-0.5 text-xs text-[#9ca3af]">
+    <span className="flex items-center gap-0.5 text-xs pp-muted">
       {prefix && <span>{prefix}</span>}
       <input
         type="number"

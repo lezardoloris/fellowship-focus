@@ -88,3 +88,31 @@ export function EmptyState({
     </div>
   );
 }
+
+/**
+ * A failed fetch used to render as a permanently missing panel with no
+ * explanation — every call site was a silent `if (res.ok)`. Now it says what
+ * happened and offers a retry. [UX-E3.2]
+ */
+export function ErrorState({
+  onRetry,
+  children = "Couldn't load this.",
+}: {
+  onRetry?: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="premium-panel p-5">
+      <p className="text-sm pp-body">{children}</p>
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-3 rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold pp-body transition-colors hover:bg-white/10"
+        >
+          Try again
+        </button>
+      )}
+    </div>
+  );
+}

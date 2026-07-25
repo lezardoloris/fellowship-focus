@@ -41,17 +41,17 @@ export function SessionRecapCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-[0.14em] text-[#c4653a]">Session complete</p>
-          <h3 className="mt-1 text-lg font-semibold text-white">{minsLabel}</h3>
-          <p className="mt-1 text-sm text-white/60">
+          <h3 className="mt-1 text-lg font-semibold pp-strong">{minsLabel}</h3>
+          <p className="mt-1 text-sm pp-muted">
             {recap.value_line || "Nice work."}
             {recap.streak != null ? ` · 🔥 ${recap.streak}` : ""}
             {recap.xp_earned ? ` · +${recap.xp_earned} XP` : ""}
           </p>
           {recap.focus_score != null && recap.focus_score > 0 && (
-            <p className="mt-1 text-xs text-white/45">Focus score {recap.focus_score}</p>
+            <p className="mt-1 text-xs pp-faint">Focus score {recap.focus_score}</p>
           )}
           {recap.focusing_now != null && recap.focusing_now > 0 && (
-            <p className="mt-1 text-xs text-white/40">
+            <p className="mt-1 text-xs pp-faint">
               {recap.focusing_now} focusing with you
             </p>
           )}
@@ -59,7 +59,7 @@ export function SessionRecapCard({
         <button
           type="button"
           onClick={onClose}
-          className="text-white/40 hover:text-white"
+          className="pp-faint hover:text-white"
           aria-label="Close"
         >
           ✕
@@ -67,7 +67,7 @@ export function SessionRecapCard({
       </div>
 
       {onGoalDone && (
-        <div className="mt-3 flex items-center gap-2 text-xs text-white/55">
+        <div className="mt-3 flex items-center gap-2 text-xs pp-muted">
           <span>Finished what you wanted?</span>
           <button
             type="button"
@@ -91,7 +91,7 @@ export function SessionRecapCard({
           <button
             type="button"
             onClick={onBreak}
-            className="rounded-lg bg-[#b8422e] px-3 py-1.5 text-sm font-semibold text-white"
+            className="rounded-lg bg-[#b8422e] px-3 py-1.5 text-sm font-semibold pp-strong"
           >
             Break
           </button>
@@ -100,7 +100,7 @@ export function SessionRecapCard({
           <button
             type="button"
             onClick={onExtend}
-            className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/90 hover:bg-white/10"
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-sm pp-strong hover:bg-white/10"
           >
             +10
           </button>
@@ -109,7 +109,7 @@ export function SessionRecapCard({
           <button
             type="button"
             onClick={onAgain}
-            className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/90 hover:bg-white/10"
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-sm pp-strong hover:bg-white/10"
           >
             Again
           </button>
@@ -117,7 +117,7 @@ export function SessionRecapCard({
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-white/50 hover:bg-white/5"
+          className="rounded-lg border border-white/10 px-3 py-1.5 text-sm pp-muted hover:bg-white/5"
         >
           Close
         </button>

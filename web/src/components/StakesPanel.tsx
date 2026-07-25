@@ -165,21 +165,21 @@ export function StakesPanel({
           onClick={() => setCeremony(null)}
         >
           <div
-            className="guild-levelup glass-panel max-w-sm px-7 py-8 text-center"
+            className="guild-levelup premium-panel max-w-sm px-7 py-8 text-center"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/50">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.35em] pp-muted">
               Ring settled
             </p>
-            <p className="font-display mt-3 text-2xl text-white">Pot closed</p>
-            <p className="mt-2 text-xs text-white/60">{ceremony.note}</p>
+            <p className="font-display mt-3 text-2xl pp-strong">Pot closed</p>
+            <p className="mt-2 text-xs pp-muted">{ceremony.note}</p>
             {ceremony.winners.length > 0 && (
               <p className="mt-4 text-sm text-green-400/90">
                 Winners · {ceremony.winners.join(", ")}
               </p>
             )}
             {ceremony.losers.length > 0 && (
-              <p className="mt-1 text-sm text-white/45">Pot · {ceremony.losers.join(", ")}</p>
+              <p className="mt-1 text-sm pp-faint">Pot · {ceremony.losers.join(", ")}</p>
             )}
             <button type="button" className="btn-primary mt-6 w-full" onClick={() => setCeremony(null)}>
               Done
@@ -189,24 +189,24 @@ export function StakesPanel({
       )}
 
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-semibold text-white">Goal bets</h3>
+        <h3 className="text-sm font-semibold pp-strong">Goal bets</h3>
         {sandbox && (
           <span className="text-[10px] uppercase tracking-wide text-amber-400/80">Escrow sandbox</span>
         )}
       </div>
-      <p className="mb-4 text-[11px] text-white/45">
+      <p className="mb-4 text-[11px] pp-faint">
         Real money via Escrow · winners reclaim stake + split the pot
       </p>
 
       {!active && (!stake || stake.status.startsWith("settled")) ? (
         <div className="space-y-3">
           {stake?.status.startsWith("settled") && (
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/60">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs pp-muted">
               Last · {stake.settlement_note || stake.title}
             </div>
           )}
           <div className="flex flex-wrap items-center gap-3">
-            <label className="text-sm text-white/60">Stake</label>
+            <label className="text-sm pp-muted">Stake</label>
             <select
               value={amount}
               onChange={(e) => setAmount(Number(e.target.value))}
@@ -220,7 +220,7 @@ export function StakesPanel({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm text-white/60">Goal</label>
+            <label className="mb-1 block text-sm pp-muted">Goal</label>
             <select
               value={goalType}
               onChange={(e) => setGoalType(e.target.value)}
@@ -248,12 +248,12 @@ export function StakesPanel({
       ) : stake ? (
         <div className="space-y-4">
           <div className="rounded-xl border border-[#b8422e]/25 bg-[#b8422e]/10 p-4">
-            <p className="font-display text-lg text-white">
+            <p className="font-display text-lg pp-strong">
               €{(stake.amount_cents / 100).toFixed(0)}
-              <span className="ml-1 text-sm font-sans font-normal text-white/50">/ person</span>
+              <span className="ml-1 text-sm font-sans font-normal pp-muted">/ person</span>
             </p>
-            <p className="mt-1 text-sm text-white/75">{stake.goal_label}</p>
-            <p className="mt-2 text-[11px] text-white/45">
+            <p className="mt-1 text-sm pp-body">{stake.goal_label}</p>
+            <p className="mt-2 text-[11px] pp-faint">
               {stake.title} · week of {stake.week_start} · {stake.status}
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-wider">
@@ -270,9 +270,9 @@ export function StakesPanel({
 
           <ul className="space-y-2 text-sm">
             {stake.entries.map((e) => (
-              <li key={e.id} className="flex justify-between rounded-lg bg-white/[0.04] px-3 py-2">
-                <span className="text-white/85">{memberNames[e.member_id] ?? "Member"}</span>
-                <span className={e.funded ? "text-green-400" : "text-white/40"}>
+              <li key={e.id} className="flex justify-between rounded-lg bg-white/[0.06] px-3 py-2">
+                <span className="pp-body">{memberNames[e.member_id] ?? "Member"}</span>
+                <span className={e.funded ? "text-green-400" : "pp-faint"}>
                   {e.funded ? "✓ Funded" : e.escrow_transaction_id ? "Awaiting pay" : "Pending"}
                   {e.outcome !== "pending" && ` · ${e.outcome}`}
                 </span>
@@ -310,7 +310,7 @@ export function StakesPanel({
           )}
 
           {active && !escrowOk && (
-            <p className="text-xs text-white/45">Set ESCROW_EMAIL + ESCROW_API_KEY on the server.</p>
+            <p className="text-xs pp-faint">Set ESCROW_EMAIL + ESCROW_API_KEY on the server.</p>
           )}
 
           {active && (
@@ -318,7 +318,7 @@ export function StakesPanel({
               type="button"
               onClick={settle}
               disabled={settling}
-              className="w-full rounded-lg border border-white/15 px-3 py-2.5 text-sm text-white/70 transition hover:bg-white/5 disabled:opacity-40"
+              className="w-full rounded-lg border border-white/15 px-3 py-2.5 text-sm pp-body transition hover:bg-white/5 disabled:opacity-40"
             >
               {settling ? "Settling…" : "Settle week — ceremony"}
             </button>

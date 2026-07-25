@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { SkeletonTiles } from "@/components/Skeleton";
-import { StatTile } from "@/components/Panel";
+import { StatTile, ErrorState } from "@/components/Panel";
 
 type MoneyRow = {
   key: string;
@@ -67,15 +67,25 @@ export function MoneyPanel({ token }: { token: string }) {
   const [win, setWin] = useState<Win>("week");
   const [data, setData] = useState<Money | null>(null);
 
+  const [failed, setFailed] = useState(false);
+
   const load = useCallback(async () => {
-    const r = await fetch(`/api/money?token=${encodeURIComponent(token)}&window=${win}`);
-    if (r.ok) setData((await r.json()) as Money);
+    try {
+      const r = await fetch(`/api/money?token=${encodeURIComponent(token)}&window=${win}`);
+      if (!r.ok) throw new Error(String(r.status));
+      setData((await r.json()) as Money);
+      setFailed(false);
+    } catch {
+      // [UX-E3.2] A failed fetch used to leave a permanently missing panel.
+      setFailed(true);
+    }
   }, [token, win]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  if (failed && !data) return <ErrorState onRetry={load}>Couldn&apos;t load your money view.</ErrorState>;
   // [UX-E3.1] Reserve the height while loading — this panel is ~380px and used
   // to pop into the layout, shoving everything below it down.
   if (!data) return <SkeletonTiles count={4} minHeight={380} />;

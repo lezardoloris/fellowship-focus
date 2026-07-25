@@ -221,8 +221,8 @@ export function FellowshipDashboard({
 
   if (error || !data) {
     return (
-      <div className="glass-panel mx-auto max-w-md p-8 text-center guild-fade-in">
-        <p className="font-display text-lg font-semibold text-white">Guild unavailable</p>
+      <div className="premium-panel mx-auto max-w-md p-8 text-center guild-fade-in">
+        <p className="font-display text-lg font-semibold pp-strong">Guild unavailable</p>
         <p className="mt-2 text-sm text-[#fca5a5]">{error || "Not found"}</p>
         <div className="mt-5 flex flex-wrap justify-center gap-2">
           <button type="button" onClick={() => { setLoading(true); load(); }} className="btn-primary">
@@ -263,30 +263,30 @@ export function FellowshipDashboard({
       />
 
       {/* ── Act 1 · Identity ── */}
-      <section className="glass-panel overflow-hidden p-0">
+      <section className="premium-panel overflow-hidden p-0">
         <div className="flex flex-col gap-5 p-5 md:flex-row md:items-center md:p-6">
           <div
-            className="guild-crest flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-[#b8422e]/40 bg-[#b8422e]/15 font-display text-3xl font-bold text-white"
+            className="guild-crest flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-[#b8422e]/40 bg-[#b8422e]/15 font-display text-3xl font-bold pp-strong"
             aria-hidden
           >
             {crestLetter}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-white/50">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.35em] pp-title">
               {nicheLabel(fellowship.niche)} · {guildTitle}
             </p>
-            <h1 className="font-display mt-1 truncate text-2xl font-bold text-white md:text-3xl">
+            <h1 className="font-display mt-1 truncate text-2xl font-bold pp-strong md:text-3xl">
               {fellowship.name}
             </h1>
             {fellowship.objective ? (
-              <p className="mt-1.5 max-w-2xl text-sm text-white/60">{fellowship.objective}</p>
+              <p className="mt-1.5 max-w-2xl text-sm pp-muted">{fellowship.objective}</p>
             ) : (
-              <p className="mt-1.5 text-sm text-white/45">Focus together. Distraction is the enemy.</p>
+              <p className="mt-1.5 text-sm pp-faint">Focus together. Distraction is the enemy.</p>
             )}
             {myName && myRow && (
-              <p className="mt-2 text-xs text-white/55">
+              <p className="mt-2 text-xs pp-muted">
                 {myName} · Rank {myProg.rank} · {myRow.league}
-                <span className="ml-2 text-white/35">{myProg.percent}% to next</span>
+                <span className="ml-2 pp-faint">{myProg.percent}% to next</span>
               </p>
             )}
           </div>
@@ -315,16 +315,16 @@ export function FellowshipDashboard({
             ["Members", leaderboard.length],
           ].map(([label, val]) => (
             <div key={label as string} className="border-white/10 px-4 py-3 sm:border-r sm:last:border-r-0">
-              <p className="text-[10px] uppercase tracking-wider text-white/40">{label}</p>
-              <p className="mt-0.5 text-xl font-semibold tabular-nums text-white">{val}</p>
+              <p className="text-[10px] uppercase tracking-wider pp-title">{label}</p>
+              <p className="mt-0.5 text-xl font-semibold tabular-nums pp-strong">{val}</p>
             </div>
           ))}
         </div>
       </section>
 
       {!myToken && (
-        <form onSubmit={joinFellowship} className="glass-panel p-6">
-          <h2 className="font-display text-lg text-white">Join this guild</h2>
+        <form onSubmit={joinFellowship} className="premium-panel p-6">
+          <h2 className="font-display text-lg pp-strong">Join this guild</h2>
           <div className="mt-4 flex gap-3">
             <input
               type="text"
@@ -343,39 +343,39 @@ export function FellowshipDashboard({
       {/* ── Act 2 · Arena ── */}
       <section className="space-y-4">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="font-display text-lg text-white">Arena</h2>
-          <p className="text-[11px] text-white/40">Ladder · bets · feed</p>
+          <h2 className="font-display text-lg pp-strong">Arena</h2>
+          <p className="text-[11px] pp-faint">Ladder · bets · feed</p>
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2">
           {/* Podium ladder */}
-          <div className="glass-panel p-5 md:p-6">
-            <h3 className="text-sm font-semibold text-white">Weekly ladder</h3>
-            <p className="mt-1 text-[11px] text-white/45">Net XP this week · leagues Mordor / Gondor / Rohan / Shire</p>
+          <div className="premium-panel p-5 md:p-6">
+            <h3 className="text-sm font-semibold pp-strong">Weekly ladder</h3>
+            <p className="mt-1 text-[11px] pp-faint">Net XP this week · leagues Mordor / Gondor / Rohan / Shire</p>
 
             {leaderboard.length === 0 ? (
-              <p className="mt-6 text-sm text-white/45">No members yet. Share the invite.</p>
+              <p className="mt-6 text-sm pp-faint">No members yet. Share the invite.</p>
             ) : (
               <>
                 <div className="guild-podium mt-5 grid grid-cols-3 items-end gap-2">
                   {[1, 0, 2].map((idx) => {
                     const m = leaderboard[idx];
                     if (!m) {
-                      return <div key={idx} className="rounded-lg bg-white/[0.03] py-8" />;
+                      return <div key={idx} className="rounded-lg bg-white/[0.06] py-8" />;
                     }
                     const place = idx + 1;
                     const h = place === 1 ? "h-28" : place === 2 ? "h-20" : "h-16";
                     return (
                       <div key={m.id} className="flex flex-col items-center">
-                        <p className="mb-2 truncate text-center text-xs font-medium text-white/80">{m.name}</p>
+                        <p className="mb-2 truncate text-center text-xs font-medium pp-body">{m.name}</p>
                         <div
                           className={`guild-podium-bar flex w-full flex-col items-center justify-end rounded-t-lg ${h} ${
                             place === 1 ? "ladder-gold" : place === 2 ? "ladder-silver" : "ladder-bronze"
                           }`}
                         >
-                          <span className="mb-2 font-display text-lg text-white/90">{place}</span>
+                          <span className="mb-2 font-display text-lg pp-strong">{place}</span>
                         </div>
-                        <p className="mt-1 text-[10px] tabular-nums text-white/50">{m.weekly_net} net</p>
+                        <p className="mt-1 text-[10px] tabular-nums pp-muted">{m.weekly_net} net</p>
                       </div>
                     );
                   })}
@@ -405,7 +405,7 @@ export function FellowshipDashboard({
 
           <div className="space-y-5">
             {myToken && (
-              <div className="glass-panel p-5 md:p-6">
+              <div className="premium-panel p-5 md:p-6">
                 <StakesPanel
                   token={myToken}
                   fellowshipCode={code}
@@ -418,15 +418,15 @@ export function FellowshipDashboard({
                 />
               </div>
             )}
-            <div className="glass-panel p-5 md:p-6">
-              <h3 className="text-sm font-semibold text-white">Activity</h3>
+            <div className="premium-panel p-5 md:p-6">
+              <h3 className="text-sm font-semibold pp-strong">Activity</h3>
               {settleFlash && (
-                <p className="mt-2 rounded-lg border border-[#b8422e]/30 bg-[#b8422e]/10 px-3 py-2 text-xs text-white/80">
+                <p className="mt-2 rounded-lg border border-[#b8422e]/30 bg-[#b8422e]/10 px-3 py-2 text-xs pp-body">
                   {settleFlash}
                 </p>
               )}
               {feed.length === 0 ? (
-                <p className="mt-4 text-sm text-white/45">No activity yet. Start a focus session.</p>
+                <p className="mt-4 text-sm pp-faint">No activity yet. Start a focus session.</p>
               ) : (
                 <ul className="mt-4 max-h-72 space-y-2 overflow-y-auto text-sm">
                   {feed.map((event) => (
@@ -441,11 +441,11 @@ export function FellowshipDashboard({
                               ? "bg-green-950/25"
                               : event.type === "stake"
                                 ? "border border-[#b8422e]/25 bg-[#b8422e]/10"
-                                : "bg-white/[0.04]"
+                                : "bg-white/[0.06]"
                       }`}
                     >
-                      <p className="text-white/90">{event.message}</p>
-                      <p className="mt-1 text-[10px] text-white/40">
+                      <p className="pp-strong">{event.message}</p>
+                      <p className="mt-1 text-[10px] pp-faint">
                         {new Date(event.created_at + "Z").toLocaleString()}
                       </p>
                     </li>
@@ -460,8 +460,8 @@ export function FellowshipDashboard({
       {/* ── Act 3 · Craft ── */}
       <section className="space-y-4">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="font-display text-lg text-white">Craft</h2>
-          <p className="text-[11px] text-white/40">Journey · habits · trust</p>
+          <h2 className="font-display text-lg pp-strong">Craft</h2>
+          <p className="text-[11px] pp-faint">Journey · habits · trust</p>
         </div>
 
         <GuildJourney
@@ -476,7 +476,7 @@ export function FellowshipDashboard({
             {titles.map((t) => (
               <span
                 key={t.id}
-                className="rounded-full border border-white/12 bg-white/[0.04] px-2.5 py-1 text-[10px] text-white/60"
+                className="rounded-full border border-white/12 bg-white/[0.06] px-2.5 py-1 text-[10px] pp-muted"
                 title={t.waypoint}
               >
                 {t.title}
@@ -486,34 +486,34 @@ export function FellowshipDashboard({
         )}
 
         {myToken && (
-          <div className="glass-panel p-5 md:p-6">
+          <div className="premium-panel p-5 md:p-6">
             <AgendaPanel token={myToken} />
           </div>
         )}
 
         {myToken && (
-          <div className="glass-panel p-5 md:p-6">
+          <div className="premium-panel p-5 md:p-6">
             <HabitTracker token={myToken} fellowshipCode={code} />
           </div>
         )}
 
         <div className="grid gap-5 lg:grid-cols-2">
-          <div className="glass-panel p-5 md:p-6">
-            <h3 className="text-sm font-semibold text-white">Habit ladder</h3>
-            <p className="mt-1 text-[11px] text-white/45">Stake score · auto habits weigh 100%</p>
+          <div className="premium-panel p-5 md:p-6">
+            <h3 className="text-sm font-semibold pp-strong">Habit ladder</h3>
+            <p className="mt-1 text-[11px] pp-faint">Stake score · auto habits weigh 100%</p>
             {habitLeaderboard.length === 0 ? (
-              <p className="mt-4 text-sm text-white/45">Join to track habits.</p>
+              <p className="mt-4 text-sm pp-faint">Join to track habits.</p>
             ) : (
               <ol className="mt-4 space-y-2">
                 {habitLeaderboard.map((m, i) => (
-                  <li key={m.member_id} className="flex items-center gap-3 rounded-lg bg-white/[0.04] px-3 py-2.5">
-                    <span className="w-6 text-sm font-semibold text-white/40">{i + 1}</span>
+                  <li key={m.member_id} className="flex items-center gap-3 rounded-lg bg-white/[0.06] px-3 py-2.5">
+                    <span className="w-6 text-sm font-semibold pp-faint">{i + 1}</span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-white/90">
+                      <p className="truncate font-medium pp-strong">
                         {m.name}
                         {m.name === myName && <span className="ml-2 text-xs accent-text">you</span>}
                       </p>
-                      <p className="text-[11px] text-white/45">
+                      <p className="text-[11px] pp-faint">
                         {m.total_achieved}/{m.total_goal} · {m.completion_rate}% · score {m.stake_score}
                       </p>
                     </div>
@@ -528,7 +528,7 @@ export function FellowshipDashboard({
       </section>
 
       {(fellowship.blocker_bypass_penalty ?? 0) > 0 && (
-        <p className="text-center text-[11px] text-white/40">
+        <p className="text-center text-[11px] pp-faint">
           Rule · −{fellowship.blocker_bypass_penalty} XP if Shield is off during focus
         </p>
       )}
@@ -565,12 +565,12 @@ function MemberRow({
   return (
     <li
       className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${
-        isYou ? "bg-[#b8422e]/12 ring-1 ring-[#b8422e]/30" : "bg-white/[0.03]"
+        isYou ? "bg-[#b8422e]/12 ring-1 ring-[#b8422e]/30" : "bg-white/[0.06]"
       }`}
     >
-      <span className="w-6 text-center text-sm font-semibold text-white/40">{place}</span>
+      <span className="w-6 text-center text-sm font-semibold pp-faint">{place}</span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-white/90">
+        <p className="truncate text-sm font-medium pp-strong">
           {name}
           {isYou && <span className="ml-1.5 text-[10px] accent-text">you</span>}
           <span
@@ -580,20 +580,20 @@ function MemberRow({
             {league}
           </span>
         </p>
-        <p className="text-[11px] text-white/45">
+        <p className="text-[11px] pp-faint">
           Rank {rank}
           {" · "}
           <span className="text-green-400/80">+{weeklyXp}</span>
           {penalties > 0 && <span className="text-red-400/70"> −{penalties}</span>}
           {" = "}
-          <strong className="text-white/70">{weeklyNet}</strong>
+          <strong className="pp-body">{weeklyNet}</strong>
           {" · "}
           {streak}d
         </p>
       </div>
       <div className="text-right">
-        <p className="font-mono text-xs text-white/50">{totalXp}</p>
-        {isYou && <p className="text-[9px] text-white/35">{title}</p>}
+        <p className="font-mono text-xs pp-muted">{totalXp}</p>
+        {isYou && <p className="text-[9px] pp-faint">{title}</p>}
       </div>
     </li>
   );

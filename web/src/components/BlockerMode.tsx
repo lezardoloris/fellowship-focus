@@ -79,10 +79,10 @@ export function BlockerModePill({ className = "" }: { className?: string }) {
       className={`inline-flex min-h-11 select-none items-center gap-2.5 rounded-full border border-white/15 bg-[#0c0e10]/90 py-1 pl-3 pr-1 shadow-lg ${className}`}
       title="Shield (Blocker Mode) — the core of Fellowship Focus"
     >
-      <span className="hidden text-xs font-medium tracking-wide text-white/85 sm:inline">
+      <span className="hidden text-xs font-medium tracking-wide pp-body sm:inline">
         Shield
       </span>
-      <span className="text-xs font-medium tracking-wide text-white/85 sm:hidden">Shield</span>
+      <span className="text-xs font-medium tracking-wide pp-body sm:hidden">Shield</span>
       <span
         className={`h-2 w-2 shrink-0 rounded-full ${
           live ? "bg-emerald-400" : arming ? "animate-pulse bg-amber-400" : "bg-white/25"
@@ -96,7 +96,7 @@ export function BlockerModePill({ className = "" }: { className?: string }) {
             if (connect) connect();
             else window.location.href = "/download";
           }}
-          className="min-h-9 rounded-full px-3 py-1.5 text-xs font-semibold text-white/85 transition hover:bg-white/10 hover:text-white"
+          className="min-h-9 rounded-full px-3 py-1.5 text-xs font-semibold pp-body transition hover:bg-white/10 hover:text-white"
         >
           Connect
         </button>
@@ -112,8 +112,8 @@ export function BlockerModePill({ className = "" }: { className?: string }) {
         }}
         className={`min-h-9 min-w-[3.25rem] rounded-full px-3.5 py-1.5 text-xs font-bold tracking-wider transition disabled:opacity-50 ${
           live || arming
-            ? "bg-[#b8422e] text-white hover:bg-[#c46551]"
-            : "bg-white/12 text-white/75 hover:bg-white/18 hover:text-white"
+            ? "bg-[#b8422e] pp-strong hover:bg-[#c46551]"
+            : "bg-white/12 pp-body hover:bg-white/18 hover:text-white"
         }`}
       >
         {busy || arming ? "…" : live ? "ON" : "OFF"}

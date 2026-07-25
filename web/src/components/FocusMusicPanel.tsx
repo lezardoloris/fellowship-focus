@@ -297,7 +297,7 @@ function ChevronDown({ open }: { open: boolean }) {
   return (
     <svg
       aria-hidden
-      className={`h-3.5 w-3.5 shrink-0 text-white/45 transition-transform duration-200 ${
+      className={`h-3.5 w-3.5 shrink-0 pp-faint transition-transform duration-200 ${
         open ? "rotate-180" : ""
       }`}
       viewBox="0 0 16 16"
@@ -346,7 +346,7 @@ function MusicScrubber({
 
   return (
     <div className="flex items-center gap-2">
-      <span className="w-9 shrink-0 text-right text-[10px] tabular-nums text-white/45">{fmt(pos)}</span>
+      <span className="w-9 shrink-0 text-right text-[10px] tabular-nums pp-faint">{fmt(pos)}</span>
       <input
         type="range"
         min={0}
@@ -368,7 +368,7 @@ function MusicScrubber({
         className="h-1 min-w-0 flex-1 accent-[#b8422e]"
         aria-label="Seek"
       />
-      <span className="w-9 shrink-0 text-[10px] tabular-nums text-white/45">{fmt(durationMs)}</span>
+      <span className="w-9 shrink-0 text-[10px] tabular-nums pp-faint">{fmt(durationMs)}</span>
     </div>
   );
 }
@@ -403,7 +403,7 @@ function Shell({
   children?: ReactNode;
 }) {
   const rootClass = [
-    "glass-panel flex w-full min-w-0 flex-col",
+    "premium-panel flex w-full min-w-0 flex-col",
     /* Compact: hug content height — never stretch into empty vertical space. */
     compact ? "h-auto p-3" : "h-full min-h-0 p-5",
     className,
@@ -421,7 +421,7 @@ function Shell({
             onClick={onToggle}
             disabled={disabled}
             aria-label={playing ? "Pause" : "Play"}
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white shadow-[0_6px_18px_rgba(184,66,46,0.3)] transition disabled:opacity-40 ${
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full pp-strong shadow-[0_6px_18px_rgba(184,66,46,0.3)] transition disabled:opacity-40 ${
               playing
                 ? "bg-[#912a1d] hover:bg-[#b8422e]"
                 : "bg-[#b8422e] hover:bg-[#c46551]"
@@ -437,12 +437,12 @@ function Shell({
             <div className="flex items-center gap-1.5">
               <div className="min-w-0 flex-1">{select}</div>
               {count > 0 && (
-                <span className="shrink-0 text-xs tabular-nums text-white/40">{count}</span>
+                <span className="shrink-0 text-xs tabular-nums pp-faint">{count}</span>
               )}
             </div>
             {scrubber}
             <div className="flex items-center gap-1.5">
-              <span className="text-xs text-white/45">Vol</span>
+              <span className="text-xs pp-faint">Vol</span>
               <input
                 type="range"
                 min={0}
@@ -464,8 +464,8 @@ function Shell({
     <div className={rootClass} style={style}>
       {children}
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wider text-white/55">Music</p>
-        {count > 0 && <span className="text-xs tabular-nums text-white/40">{count}</span>}
+        <p className="text-xs font-medium uppercase tracking-wider pp-muted">Music</p>
+        {count > 0 && <span className="text-xs tabular-nums pp-faint">{count}</span>}
       </div>
 
       <div className="mt-6 flex flex-col items-center text-center">
@@ -474,7 +474,7 @@ function Shell({
           onClick={onToggle}
           disabled={disabled}
           aria-label={playing ? "Pause" : "Play"}
-          className={`flex h-16 w-16 items-center justify-center rounded-full text-white shadow-[0_10px_28px_rgba(184,66,46,0.35)] transition disabled:opacity-40 ${
+          className={`flex h-16 w-16 items-center justify-center rounded-full pp-strong shadow-[0_10px_28px_rgba(184,66,46,0.35)] transition disabled:opacity-40 ${
             playing
               ? "bg-[#912a1d] hover:bg-[#b8422e]"
               : "bg-[#b8422e] hover:bg-[#c46551]"
@@ -486,7 +486,7 @@ function Shell({
             <span className="ml-0.5 text-lg">▶</span>
           )}
         </button>
-        <p className="mt-4 w-full line-clamp-2 text-sm font-medium leading-snug text-white/90">
+        <p className="mt-4 w-full line-clamp-2 text-sm font-medium leading-snug pp-strong">
           {title}
         </p>
         {playing && (
@@ -498,7 +498,7 @@ function Shell({
         {select}
         {scrubber}
         <div className="flex items-center gap-2.5">
-          <span className="text-xs text-white/45">Vol</span>
+          <span className="text-xs pp-faint">Vol</span>
           <input
             type="range"
             min={0}

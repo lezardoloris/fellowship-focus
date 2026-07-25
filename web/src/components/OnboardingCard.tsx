@@ -57,23 +57,23 @@ export function OnboardingCard({
   }
 
   return (
-    <div className="glass-panel mb-4 border border-[#b8422e]/35 p-4">
+    <div className="premium-panel mb-4 border border-[#b8422e]/35 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-[#c46551]">First run</p>
-          <h2 className="font-display mt-1 text-lg text-white">Activate your Shield</h2>
-          <p className="mt-1 text-sm text-white/65">
+          <h2 className="font-display mt-1 text-lg pp-strong">Activate your Shield</h2>
+          <p className="mt-1 text-sm pp-muted">
             Connect → pick sites → Shield ON → Start. That is the product.
           </p>
         </div>
-        <button type="button" onClick={finish} className="text-xs text-white/45 hover:text-white/80">
+        <button type="button" onClick={finish} className="text-xs pp-faint hover:text-white">
           {allDone ? "Done" : "Skip"}
         </button>
       </div>
       <ol className="mt-3 space-y-1.5 text-sm">
         {steps.map((s, i) => (
-          <li key={s.id} className={`flex items-center gap-2 ${s.done ? "text-emerald-400/90" : "text-white/70"}`}>
-            <span className="tabular-nums text-white/40">{i + 1}.</span>
+          <li key={s.id} className={`flex items-center gap-2 ${s.done ? "text-emerald-400/90" : "pp-body"}`}>
+            <span className="tabular-nums pp-faint">{i + 1}.</span>
             <span>{s.done ? "✓ " : ""}{s.label}</span>
           </li>
         ))}

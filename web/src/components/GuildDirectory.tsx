@@ -164,15 +164,15 @@ export function GuildDirectory({
   if (mode === "join" && selected) {
     return (
       <div className="mx-auto max-w-md">
-        <div className="glass-panel p-6">
-          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-white/70">
+        <div className="premium-panel p-6">
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] pp-title">
             {nicheLabel(selected.niche)}
           </p>
-          <h2 className="mt-1 font-display text-xl font-semibold text-white">{selected.name}</h2>
+          <h2 className="mt-1 font-display text-xl font-semibold pp-strong">{selected.name}</h2>
           {selected.objective ? (
-            <p className="mt-2 text-sm text-white/65">{selected.objective}</p>
+            <p className="mt-2 text-sm pp-muted">{selected.objective}</p>
           ) : null}
-          <p className="mt-3 text-xs text-white/70">
+          <p className="mt-3 text-xs pp-body">
             {selected.member_count} member{selected.member_count === 1 ? "" : "s"} · {selected.total_xp} XP
             {selected.blocker_bypass_penalty > 0
               ? ` · bypass −${selected.blocker_bypass_penalty} XP`
@@ -202,7 +202,7 @@ export function GuildDirectory({
               setSelected(null);
               setMode("browse");
             }}
-            className="mt-4 text-xs text-white/75 underline"
+            className="mt-4 text-xs pp-body underline"
           >
             Back to ladder
           </button>
@@ -214,9 +214,9 @@ export function GuildDirectory({
   if (mode === "private") {
     return (
       <div className="mx-auto max-w-md">
-        <div className="glass-panel p-6">
-          <h2 className="text-lg font-semibold text-white">Private invite</h2>
-          <p className="mt-1 mb-4 text-sm text-white/60">Enter a private guild code.</p>
+        <div className="premium-panel p-6">
+          <h2 className="text-lg font-semibold pp-strong">Private invite</h2>
+          <p className="mt-1 mb-4 text-sm pp-muted">Enter a private guild code.</p>
           <form
             className="space-y-3"
             onSubmit={(e) => {
@@ -244,7 +244,7 @@ export function GuildDirectory({
               Continue
             </button>
           </form>
-          <button type="button" onClick={() => setMode("browse")} className="mt-4 text-xs text-white/75 underline">
+          <button type="button" onClick={() => setMode("browse")} className="mt-4 text-xs pp-body underline">
             Back to ladder
           </button>
         </div>
@@ -255,11 +255,11 @@ export function GuildDirectory({
   if (mode === "create") {
     return (
       <div className="mx-auto max-w-lg">
-        <div className="glass-panel p-6">
-          <h2 className="font-display text-xl font-semibold text-white">Found a guild</h2>
+        <div className="premium-panel p-6">
+          <h2 className="font-display text-xl font-semibold pp-strong">Found a guild</h2>
           <form onSubmit={createGuild} className="mt-5 space-y-4">
             <label className="block">
-              <span className="text-[11px] uppercase tracking-wider text-white/70">Name</span>
+              <span className="text-[11px] uppercase tracking-wider pp-title">Name</span>
               <input
                 value={createName}
                 onChange={(e) => setCreateName(e.target.value)}
@@ -268,7 +268,7 @@ export function GuildDirectory({
               />
             </label>
             <label className="block">
-              <span className="text-[11px] uppercase tracking-wider text-white/70">Niche</span>
+              <span className="text-[11px] uppercase tracking-wider pp-title">Niche</span>
               <select
                 value={createNiche}
                 onChange={(e) => setCreateNiche(e.target.value)}
@@ -282,7 +282,7 @@ export function GuildDirectory({
               </select>
             </label>
             <label className="block">
-              <span className="text-[11px] uppercase tracking-wider text-white/70">Objective</span>
+              <span className="text-[11px] uppercase tracking-wider pp-title">Objective</span>
               <textarea
                 value={createObjective}
                 onChange={(e) => setCreateObjective(e.target.value)}
@@ -291,7 +291,7 @@ export function GuildDirectory({
                 className="input-premium mt-1 w-full resize-none bg-white/5"
               />
             </label>
-            <label className="flex items-center gap-2 text-sm text-white/70">
+            <label className="flex items-center gap-2 text-sm pp-body">
               <input
                 type="checkbox"
                 checked={createPublic}
@@ -301,7 +301,7 @@ export function GuildDirectory({
               List on the public ladder
             </label>
             <label className="block">
-              <span className="text-[11px] uppercase tracking-wider text-white/70">Your name</span>
+              <span className="text-[11px] uppercase tracking-wider pp-title">Your name</span>
               <input
                 value={joinName}
                 onChange={(e) => setJoinName(e.target.value)}
@@ -325,10 +325,10 @@ export function GuildDirectory({
 
   return (
     <div className="space-y-5">
-      <div className="glass-panel p-5">
+      <div className="premium-panel p-5">
         <div className="flex flex-wrap items-start gap-3">
           <div className="mr-auto min-w-0">
-            <h2 className="font-display text-xl font-semibold text-white">Guild ladder</h2>
+            <h2 className="font-display text-xl font-semibold pp-strong">Guild ladder</h2>
           </div>
           <button type="button" onClick={onGoFocus} className="btn-secondary text-sm">
             Stay solo
@@ -355,9 +355,9 @@ export function GuildDirectory({
       {loading ? (
         <PremiumLoader full className="min-h-[20vh]" />
       ) : guilds.length === 0 ? (
-        <div className="glass-panel p-6 text-sm text-white/75">
+        <div className="premium-panel p-6 text-sm pp-body">
           No public guilds in this niche yet.{" "}
-          <button type="button" onClick={() => setMode("create")} className="text-white underline">
+          <button type="button" onClick={() => setMode("create")} className="pp-strong underline">
             Found the first one
           </button>
           .
@@ -371,7 +371,7 @@ export function GuildDirectory({
                 <button
                   type="button"
                   onClick={() => enterOrPromptJoin(g)}
-                  className="glass-panel group relative w-full overflow-hidden p-5 text-left transition hover:bg-white/5"
+                  className="premium-panel group relative w-full overflow-hidden p-5 text-left transition hover:bg-white/5"
                 >
                   {art ? (
                     <div
@@ -394,20 +394,20 @@ export function GuildDirectory({
                   ) : null}
                   <div className="relative z-[1] pr-[28%] sm:pr-[32%]">
                     <div className="flex items-baseline gap-2">
-                      <span className="font-display text-lg tabular-nums text-white/62">
+                      <span className="font-display text-lg tabular-nums pp-muted">
                         #{String(i + 1).padStart(2, "0")}
                       </span>
-                      <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-white/70">
+                      <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wider pp-body">
                         {nicheLabel(g.niche)}
                       </span>
                     </div>
-                    <h3 className="mt-2 text-base font-semibold text-white">{g.name}</h3>
+                    <h3 className="mt-2 text-base font-semibold pp-strong">{g.name}</h3>
                     {g.objective ? (
-                      <p className="mt-1 line-clamp-2 text-sm text-white/75">{g.objective}</p>
+                      <p className="mt-1 line-clamp-2 text-sm pp-body">{g.objective}</p>
                     ) : (
-                      <p className="mt-1 text-sm text-white/65">No objective set yet.</p>
+                      <p className="mt-1 text-sm pp-muted">No objective set yet.</p>
                     )}
-                    <p className="mt-3 text-xs text-white/65">
+                    <p className="mt-3 text-xs pp-muted">
                       {g.member_count} member{g.member_count === 1 ? "" : "s"} · {g.total_xp} XP
                     </p>
                   </div>
@@ -418,7 +418,7 @@ export function GuildDirectory({
         </ul>
       )}
 
-      <p className="text-center text-xs text-white/65">
+      <p className="text-center text-xs pp-muted">
         Have a private code?{" "}
         <button type="button" onClick={() => setMode("private")} className="underline hover:text-white/70">
           Enter it here
@@ -446,8 +446,8 @@ function FilterChip({
       onClick={onClick}
       className={`rounded-full px-3 py-1 text-xs font-medium transition ${
         active
-          ? "bg-[#b8422e] text-white"
-          : "border border-white/15 bg-black/25 text-white/65 hover:text-white"
+          ? "bg-[#b8422e] pp-strong"
+          : "border border-white/15 bg-black/25 pp-muted hover:text-white"
       }`}
     >
       {label}

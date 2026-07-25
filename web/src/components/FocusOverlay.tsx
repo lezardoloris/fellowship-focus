@@ -180,7 +180,7 @@ export function FocusOverlay({
     <>
       {immersive && (
         <div
-          className="fixed inset-0 z-[9999] flex flex-col text-white"
+          className="fixed inset-0 z-[9999] flex flex-col pp-strong"
           role="dialog"
           aria-modal="true"
           aria-label="Focus session"
@@ -195,21 +195,21 @@ export function FocusOverlay({
           </div>
 
           <div className="relative z-10 flex items-center justify-between px-5 py-4 md:px-8">
-            <p className="font-display text-xs font-semibold tracking-[0.35em] text-white/70">
+            <p className="font-display text-xs font-semibold tracking-[0.35em] pp-body">
               THE FELLOWSHIP
             </p>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setPlayerOpen((v) => !v)}
-                className="pill-glass rounded-full px-3 py-1.5 text-xs text-white/85 hover:text-white"
+                className="pill-glass rounded-full px-3 py-1.5 text-xs pp-body hover:text-white"
               >
                 {playerOpen ? "Hide sound" : "Sound · vibrations"}
               </button>
               <button
                 type="button"
                 onClick={minimize}
-                className="pill-glass rounded-full px-3 py-1.5 text-xs text-white/85 hover:text-white"
+                className="pill-glass rounded-full px-3 py-1.5 text-xs pp-body hover:text-white"
                 title="Keep timer bottom-right"
               >
                 Minimize
@@ -217,7 +217,7 @@ export function FocusOverlay({
               <button
                 type="button"
                 onClick={closeAll}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-black/45 text-lg text-white/85 hover:bg-black/70 hover:text-white"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-black/45 text-lg pp-body hover:bg-black/70 hover:text-white"
                 aria-label="Close session"
                 title="End session"
               >
@@ -227,15 +227,15 @@ export function FocusOverlay({
           </div>
 
           <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6">
-            <p className="mb-3 text-[11px] uppercase tracking-[0.35em] text-white/75">{sub}</p>
+            <p className="mb-3 text-[11px] uppercase tracking-[0.35em] pp-body">{sub}</p>
             <div
               className={`font-display text-[6.5rem] font-bold leading-none tabular-nums tracking-tight sm:text-[8rem] md:text-[9rem] ${
-                paused || awaitingBreak ? "text-white/45" : ""
+                paused || awaitingBreak ? "pp-faint" : ""
               }`}
             >
               {fmt(remaining)}
             </div>
-            <p className="mt-4 text-sm uppercase tracking-[0.45em] text-white/60">{label}</p>
+            <p className="mt-4 text-sm uppercase tracking-[0.45em] pp-muted">{label}</p>
 
             {awaitingBreak && (
               <div className="mt-8 flex w-full max-w-sm flex-col gap-2">
@@ -257,8 +257,8 @@ export function FocusOverlay({
             )}
 
             {playerOpen && !awaitingBreak && (
-              <div className="glass-panel mt-8 w-full max-w-md p-4">
-                <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.2em] text-white/70">
+              <div className="premium-panel mt-8 w-full max-w-md p-4">
+                <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.2em] pp-body">
                   Ambient / vibrations
                 </p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -269,16 +269,16 @@ export function FocusOverlay({
                       onClick={() => pickAmbient(p.id)}
                       className={`rounded-lg border px-3 py-2 text-left transition ${
                         ambient === p.id
-                          ? "border-[#b8422e]/70 bg-[#b8422e]/20 text-white"
-                          : "border-white/15 bg-white/5 text-white/80 hover:bg-white/10"
+                          ? "border-[#b8422e]/70 bg-[#b8422e]/20 pp-strong"
+                          : "border-white/15 bg-white/5 pp-body hover:bg-white/10"
                       }`}
                     >
                       <span className="block text-xs font-semibold">{p.label}</span>
-                      <span className="block text-[10px] text-white/70">{p.hint}</span>
+                      <span className="block text-[10px] pp-body">{p.hint}</span>
                     </button>
                   ))}
                 </div>
-                <label className="mt-4 flex items-center gap-3 text-xs text-white/60">
+                <label className="mt-4 flex items-center gap-3 text-xs pp-muted">
                   Volume
                   <input
                     type="range"
@@ -290,7 +290,7 @@ export function FocusOverlay({
                     className="flex-1 accent-[#b8422e]"
                   />
                 </label>
-                <p className="mt-2 text-[10px] text-white/65">
+                <p className="mt-2 text-[10px] pp-muted">
                   Generated in-app — works offline, no YouTube fight with the shield.
                 </p>
               </div>
@@ -350,7 +350,7 @@ export function FocusOverlay({
                 />
                 <span
                   className={`font-sans text-[15px] font-semibold tabular-nums tracking-wide ${
-                    paused || awaitingBreak ? "text-white/45" : "text-[#f4f4f5]"
+                    paused || awaitingBreak ? "pp-faint" : "text-[#f4f4f5]"
                   }`}
                 >
                   {fmt(remaining)}
@@ -359,7 +359,7 @@ export function FocusOverlay({
               <button
                 type="button"
                 onClick={() => setFloatExpanded((v) => !v)}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-xs text-white/70 hover:bg-[#3a3d40] hover:text-white"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-xs pp-body hover:bg-[#3a3d40] hover:text-white"
                 aria-label={floatExpanded ? "Collapse" : "Expand"}
               >
                 {floatExpanded ? "▴" : "▾"}
@@ -367,7 +367,7 @@ export function FocusOverlay({
               <button
                 type="button"
                 onClick={closeAll}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-base leading-none text-white/70 hover:bg-[#3a3d40] hover:text-white"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#2e3134] text-base leading-none pp-body hover:bg-[#3a3d40] hover:text-white"
                 aria-label="Close timer"
                 title="End session"
               >

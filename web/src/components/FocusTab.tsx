@@ -142,7 +142,7 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
 
       {empty && (
         <div className="premium-panel border-[#b8422e]/40 px-5 py-4 text-sm pp-body">
-          Finish a timer on <span className="font-semibold pp-strong">Block</span> to fill this week.
+          Finish a timer on <span className="font-semibold pp-strong">Focus</span> to fill this week.
         </div>
       )}
 
@@ -179,7 +179,7 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
         </>
       )}
 
-      <div className="glass-panel p-6">
+      <div className="premium-panel p-6">
         <HabitTracker token={token} fellowshipCode={fellowshipCode} />
       </div>
     </div>
@@ -215,24 +215,24 @@ function WeekPanel({
   ];
 
   return (
-    <div className="glass-panel p-6">
+    <div className="premium-panel p-6">
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-white">Week overview</h2>
-        <p className="mt-0.5 text-xs text-[#9ca3af]">{rangeLabel(stats.weekStart)}</p>
+        <p className="mt-0.5 text-xs pp-muted">{rangeLabel(stats.weekStart)}</p>
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {kpiCards.map((k) => (
           <div key={k.label} className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-4">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-[#9ca3af]">{k.label}</p>
+            <p className="text-[10px] font-medium uppercase tracking-wider pp-muted">{k.label}</p>
             <p className="mt-1 text-2xl font-semibold text-[#f4f4f5]">{k.value}</p>
-            <p className="mt-0.5 text-[11px] text-[#9ca3af]">{k.sub}</p>
+            <p className="mt-0.5 text-[11px] pp-muted">{k.sub}</p>
           </div>
         ))}
       </div>
 
       <div className="mb-6">
-        <p className="mb-3 text-xs font-medium uppercase tracking-wider text-[#9ca3af]">Focus calendar</p>
+        <p className="mb-3 text-xs font-medium uppercase tracking-wider pp-muted">Focus calendar</p>
         <div className="flex items-end justify-between gap-2">
           {days.map((d) => {
             const h = Math.round((d.focus_minutes / maxMinutes) * 100);
@@ -252,22 +252,22 @@ function WeekPanel({
                     {d.focus_score}
                   </span>
                 ) : (
-                  <span className="text-[10px] text-[#4b4f52]">·</span>
+                  <span className="text-[10px] pp-faint">·</span>
                 )}
-                <span className={`text-[11px] ${isToday ? "font-semibold text-[#f4f4f5]" : "text-[#9ca3af]"}`}>
+                <span className={`text-[11px] ${isToday ? "font-semibold text-[#f4f4f5]" : "pp-muted"}`}>
                   {d.weekday}
                 </span>
               </div>
             );
           })}
         </div>
-        <p className="mt-2 text-[11px] text-[#9ca3af]">
+        <p className="mt-2 text-[11px] pp-muted">
           Bars = focus minutes · number = daily focus score (green ≥70, amber ≥40, red below).
         </p>
       </div>
 
       <div className="space-y-4">
-        <p className="text-xs font-medium uppercase tracking-wider text-[#9ca3af]">OKR of the week</p>
+        <p className="text-xs font-medium uppercase tracking-wider pp-muted">OKR of the week</p>
 
         <OkrRow
           label="Focus hours"
@@ -288,15 +288,15 @@ function WeekPanel({
 }
 
 function LadderCard({ stats }: { stats: WeeklyStats }) {
-  const { league, kpis, history } = stats;
+  const { league, history } = stats;
   const style = LEAGUE_STYLE[league.name] ?? LEAGUE_STYLE.Shire;
   const maxMins = Math.max(60, ...history.map((h) => h.work_minutes));
   const toNext = league.next ? Math.max(0, league.next.at - league.hours) : 0;
   const nextPct = league.next ? pct(league.hours, league.next.at) : 100;
 
   return (
-    <div className="glass-panel p-6">
-      <p className="text-xs font-medium uppercase tracking-wider text-white/70">Your ladder</p>
+    <div className="premium-panel p-6">
+      <p className="text-xs font-medium uppercase tracking-wider pp-body">Your ladder</p>
       <div className="mt-3 flex items-center gap-3">
         <span
           className="flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold"
@@ -306,13 +306,13 @@ function LadderCard({ stats }: { stats: WeeklyStats }) {
         </span>
         <div>
           <p className="text-lg font-semibold" style={{ color: style.color }}>{league.name}</p>
-          <p className="text-[11px] text-[#9ca3af]">{style.blurb}</p>
+          <p className="text-[11px] pp-muted">{style.blurb}</p>
         </div>
       </div>
 
       {league.next && (
         <div className="mt-4">
-          <div className="mb-1.5 flex items-center justify-between text-[11px] text-[#9ca3af]">
+          <div className="mb-1.5 flex items-center justify-between text-[11px] pp-muted">
             <span>To {league.next.name}</span>
             <span>{toNext.toFixed(1)} h to go</span>
           </div>
@@ -322,19 +322,12 @@ function LadderCard({ stats }: { stats: WeeklyStats }) {
         </div>
       )}
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
-        <div className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-[#9ca3af]">Streak</p>
-          <p className="mt-0.5 text-xl font-semibold">{kpis.streak} d</p>
-        </div>
-        <div className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-3">
-          <p className="text-[10px] uppercase tracking-wider text-[#9ca3af]">This week</p>
-          <p className="mt-0.5 text-xl font-semibold">{league.hours} h</p>
-        </div>
-      </div>
+      {/* [UX-E9.3] Streak and weekly hours were shown here AND in WeekPanel AND
+          in the digest — the audit counted streak 4× on one screen. WeekPanel
+          owns those numbers; the ladder keeps only what is unique to it. */}
 
       <div className="mt-5">
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[#9ca3af]">8-week history</p>
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-wider pp-muted">8-week history</p>
         <div className="flex items-end justify-between gap-1">
           {history.map((w, i) => {
             const hgt = Math.round((w.work_minutes / maxMins) * 100);
@@ -517,9 +510,9 @@ function GitHubCard({
   }
 
   return (
-    <div className="glass-panel p-6">
+    <div className="premium-panel p-6">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wider text-white/70">GitHub coding</p>
+        <p className="text-xs font-medium uppercase tracking-wider pp-body">GitHub coding</p>
         {data?.avatarUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={data.avatarUrl} alt="" className="h-6 w-6 rounded-full" />
@@ -537,8 +530,8 @@ function GitHubCard({
         </button>
       )}
       {oauthLogin && (
-        <p className="mt-3 text-[11px] text-white/70">
-          Connected as <span className="text-white/80">@{oauthLogin}</span>
+        <p className="mt-3 text-[11px] pp-body">
+          Connected as <span className="pp-body">@{oauthLogin}</span>
           {data?.privateIncluded ? " · private + public" : ""}
           {token ? " · linked to guild" : ""}
         </p>
@@ -557,7 +550,7 @@ function GitHubCard({
         </button>
       </div>
       {user && (
-        <button type="button" onClick={clearTracking} className="mt-2 text-[11px] text-white/65 underline">
+        <button type="button" onClick={clearTracking} className="mt-2 text-[11px] pp-muted underline">
           Clear
         </button>
       )}
@@ -572,15 +565,15 @@ function GitHubCard({
               ["Repos", data.repos],
             ].map(([label, val]) => (
               <div key={label as string} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                <p className="text-[10px] uppercase tracking-wider text-white/70">{label} · 7d</p>
+                <p className="text-[10px] uppercase tracking-wider pp-body">{label} · 7d</p>
                 <p className="mt-0.5 text-xl font-semibold text-white">{val}</p>
               </div>
             ))}
           </div>
           {data.topRepos.length > 0 && (
-            <p className="mt-3 truncate text-[11px] text-white/70">{data.topRepos.join(" · ")}</p>
+            <p className="mt-3 truncate text-[11px] pp-body">{data.topRepos.join(" · ")}</p>
           )}
-          <p className="mt-2 text-[11px] text-white/65">
+          <p className="mt-2 text-[11px] pp-muted">
             @{data.user}
             {!oauthLogin && (data.privateIncluded ? " · private + public" : " · public events")}
             {" · "}
@@ -591,7 +584,7 @@ function GitHubCard({
 
       {data?.error && <p className="mt-3 text-[11px] text-[#f87171]">{data.error}</p>}
       {!data && !user && (
-        <p className="mt-3 text-[11px] text-white/65">
+        <p className="mt-3 text-[11px] pp-muted">
           Track commits, PRs, and reviews. Connect OAuth + guild for XP & habit auto-check.
         </p>
       )}
@@ -614,7 +607,7 @@ function RevenueRow({
       current={`€${okr.current_eur}`}
       percent={pct(okr.current_eur, okr.target_eur)}
       editor={
-        <div className="flex items-center gap-1 text-xs text-[#9ca3af]">
+        <div className="flex items-center gap-1 text-xs pp-muted">
           <span>€</span>
           <input
             type="number"
@@ -649,8 +642,8 @@ function OkrRow({
       <div className="mb-1.5 flex items-center justify-between gap-3">
         <span className="text-sm font-medium text-[#f4f4f5]">{label}</span>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-[#9ca3af]">
-            {current} <span className="text-[#6b7075]">({percent}%)</span>
+          <span className="text-xs pp-muted">
+            {current} <span className="pp-faint">({percent}%)</span>
           </span>
           {editor}
         </div>
@@ -676,7 +669,7 @@ function TargetInput({
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
   return (
-    <span className="flex items-center gap-0.5 text-xs text-[#9ca3af]">
+    <span className="flex items-center gap-0.5 text-xs pp-muted">
       {prefix && <span>{prefix}</span>}
       <input
         type="number"

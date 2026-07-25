@@ -309,13 +309,13 @@ export function HabitTracker({ token }: Props) {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-white">Habit tracker</h2>
+          <h2 className="text-xl font-semibold pp-strong">Habit tracker</h2>
         </div>
         <div className="flex gap-2">
           <button
             type="button"
             aria-label="Previous month"
-            className="rounded-lg border border-[#3a3d40] px-3 py-1 text-sm text-[#9ca3af] hover:border-[#9ca3af]"
+            className="rounded-lg border border-[#3a3d40] px-3 py-1 text-sm pp-muted hover:border-[#9ca3af]"
             onClick={() => {
               const m = month === 1 ? 12 : month - 1;
               const y = month === 1 ? year - 1 : year;
@@ -329,7 +329,7 @@ export function HabitTracker({ token }: Props) {
           <button
             type="button"
             aria-label="Next month"
-            className="rounded-lg border border-[#3a3d40] px-3 py-1 text-sm text-[#9ca3af] hover:border-[#9ca3af]"
+            className="rounded-lg border border-[#3a3d40] px-3 py-1 text-sm pp-muted hover:border-[#9ca3af]"
             onClick={() => {
               const m = month === 12 ? 1 : month + 1;
               const y = month === 12 ? year + 1 : year;
@@ -343,7 +343,7 @@ export function HabitTracker({ token }: Props) {
       </div>
 
       {data.grid.length === 0 ? (
-        <div className="rounded-xl border border-[#b8422e]/35 bg-[#b8422e]/10 px-4 py-3 text-sm text-white/80">
+        <div className="rounded-xl border border-[#b8422e]/35 bg-[#b8422e]/10 px-4 py-3 text-sm pp-body">
           No habits yet. Add a preset below or create your own activity.
         </div>
       ) : (
@@ -463,7 +463,7 @@ export function HabitTracker({ token }: Props) {
                             aria-label={`${habit.label} · day ${dayNum}${isTodayCol ? " · today" : ""}${done ? " · done" : ""}`}
                             className={`${isTodayCol ? "habit-day-btn-today" : "h-5 w-5 rounded"} ${
                               done
-                                ? "bg-[#b8422e] text-white"
+                                ? "bg-[#b8422e] pp-strong"
                                 : isFuture
                                   ? "bg-white/5"
                                   : isManual
@@ -485,7 +485,7 @@ export function HabitTracker({ token }: Props) {
                         <button
                           type="button"
                           onClick={() => removeHabit(habit.id)}
-                          className="text-[#9ca3af] hover:text-red-400"
+                          className="pp-muted hover:text-red-400"
                           title="Remove"
                         >
                           ×
@@ -511,7 +511,7 @@ export function HabitTracker({ token }: Props) {
               type="button"
               disabled={adding}
               onClick={() => addPreset(p.id)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[#3a3d40] bg-[#2e3134]/50 px-3 py-1.5 text-xs text-[#9ca3af] hover:border-[#b8422e] hover:text-[#f4f4f5]"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[#3a3d40] bg-[#2e3134]/50 px-3 py-1.5 text-xs pp-muted hover:border-[#b8422e] hover:text-[#f4f4f5]"
             >
               <HabitMark mark={p.emoji} className="text-[0.95rem]" />
               {p.label}
@@ -541,7 +541,7 @@ export function HabitTracker({ token }: Props) {
               aria-label="Premium habit marks"
               className="absolute bottom-[calc(100%+8px)] left-0 z-30 w-[232px] rounded-xl border border-white/12 bg-[#121416]/98 p-2 shadow-[0_16px_40px_rgba(0,0,0,0.55)]"
             >
-              <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/45">
+              <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] pp-faint">
                 Premium marks
               </p>
               <div className="grid grid-cols-6 gap-1">
