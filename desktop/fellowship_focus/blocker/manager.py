@@ -349,8 +349,27 @@ def _broadcast_proxy_change() -> None:
         blocker_log(f"WinINET broadcast FAILED: {e}")
 
 
+_last_release_at = 0.0
+
+
 def force_release_blocker() -> None:
-    """Stop mitmdump and clear the system proxy. Safe to call repeatedly."""
+    """Stop mitmdump and clear the system proxy. Safe to call repeatedly.
+
+    Several paths legitimately call this (startup cleanup, disarm, cert wizard,
+    atexit) and they can land within the same second — each one otherwise pays a
+    graceful-shutdown request plus a full psutil process sweep plus registry
+    writes. A short coalescing window makes the redundant calls free without
+    weakening the guarantee: the first call still does the real teardown.
+    """
+    global _last_release_at
+    import time as _time
+
+    now = _time.monotonic()
+    if now - _last_release_at < 2.0:
+        blocker_log("force_release_blocker() — coalesced (already released <2s ago)")
+        return
+    _last_release_at = now
+
     blocker_log("force_release_blocker()")
     try:
         shutdown_mitmdump_gracefully()
