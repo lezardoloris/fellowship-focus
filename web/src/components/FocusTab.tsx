@@ -10,6 +10,7 @@ import { buildSoloWeeklyStats, saveSoloOkr } from "@/lib/soloStats";
 import { StreakBadge } from "@/components/StreakBadge";
 import { FocusScoreHero } from "@/components/FocusScoreHero";
 import { BillablePanel } from "@/components/BillablePanel";
+import { MoneyPanel } from "@/components/MoneyPanel";
 import { TaskList } from "@/components/TaskList";
 import { RitualWizard } from "@/components/RitualWizard";
 import { WeeklyDigestPanel } from "@/components/WeeklyDigestPanel";
@@ -151,6 +152,8 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
           <WeeklyDigestPanel token={token} />
         </div>
       )}
+
+      {token && <MoneyPanel token={token} />}
 
       <div className="grid gap-5 lg:grid-cols-[1.6fr_1fr]">
         <WeekPanel stats={stats} today={today} onSaveOkr={saveOkr} githubWeek={ghWeek} />

@@ -977,4 +977,235 @@ export function deleteTask(memberId: string, taskId: string): boolean {
   return true;
 }
 
+// ── Money view (PLAN-MONEY-VIEW) — DataFast for your time ─────────────
+//
+// The DataFast abstraction: raw events → attributed to a money-bearing entity
+// via a deterministic join + a heuristic fallback → everything shown in euros.
+// Here: minutes → clients via (1) the focus session's client_id (deterministic,
+// like Stripe metadata), (2) client_rules matched on app names (heuristic, like
+// email matching), (3) an "unattributed" bucket surfaced loudly.
+// It is a recomputable projection — editing a rule re-attributes history.
+
+export type MoneyRow = {
+  key: string; // client id or activity class
+  label: string;
+  kind: "client" | "class";
+  minutes: number;
+  value_cents: number;
+  rate_cents: number; // 0 for classes
+  effective_rate_cents: number; // value / hours (equals rate for clients)
+  currency: string;
+  source_minutes: { session: number; rule: number };
+};
+
+export type MoneySummary = {
+  from: string;
+  to: string;
+  tracked_minutes: number;
+  billable_minutes: number;
+  billable_pct: number;
+  total_cents: number;
+  effective_rate_cents: number; // earned / total tracked hours
+  currency: string;
+  rows: MoneyRow[];
+  days: Array<{ date: string; value_cents: number; billable_minutes: number; tracked_minutes: number }>;
+};
+
+export function moneySummary(memberId: string, from: string, to: string): MoneySummary {
+  const database = getDb();
+  const clients = listClients(memberId);
+  const clientById = new Map(clients.map((c) => [c.id, c]));
+  const currency = clients[0]?.currency || "EUR";
+
+  type DayAcc = { value_cents: number; billable_minutes: number; tracked_minutes: number };
+  const dayAcc = new Map<string, DayAcc>();
+  const day = (d: string): DayAcc => {
+    let a = dayAcc.get(d);
+    if (!a) {
+      a = { value_cents: 0, billable_minutes: 0, tracked_minutes: 0 };
+      dayAcc.set(d, a);
+    }
+    return a;
+  };
+
+  // Per-client accumulators.
+  const rowAcc = new Map<string, MoneyRow>();
+  const rowFor = (key: string, label: string, kind: "client" | "class", rate: number): MoneyRow => {
+    let r = rowAcc.get(key);
+    if (!r) {
+      r = {
+        key,
+        label,
+        kind,
+        minutes: 0,
+        value_cents: 0,
+        rate_cents: rate,
+        effective_rate_cents: rate,
+        currency,
+        source_minutes: { session: 0, rule: 0 },
+      };
+      rowAcc.set(key, r);
+    }
+    return r;
+  };
+
+  // 1) Deterministic: focus sessions with a client (the "Stripe metadata" path).
+  const sessions = database
+    .prepare(
+      `SELECT date(created_at) AS d, minutes, client_id FROM focus_sessions
+       WHERE member_id = ? AND completed = 1
+         AND date(created_at) >= ? AND date(created_at) <= ?`
+    )
+    .all(memberId, from, to) as Array<{ d: string; minutes: number; client_id: string | null }>;
+  let sessionClientMin = 0;
+  let sessionUnassignedMin = 0;
+  for (const s of sessions) {
+    const c = s.client_id ? clientById.get(s.client_id) : undefined;
+    if (c) {
+      const r = rowFor(c.id, c.name, "client", c.hourly_rate_cents);
+      r.minutes += s.minutes;
+      r.source_minutes.session += s.minutes;
+      const v = Math.round((s.minutes / 60) * c.hourly_rate_cents);
+      r.value_cents += v;
+      const a = day(s.d);
+      a.value_cents += v;
+      a.billable_minutes += s.minutes;
+      a.tracked_minutes += s.minutes;
+      sessionClientMin += s.minutes;
+    } else {
+      sessionUnassignedMin += s.minutes;
+      day(s.d).tracked_minutes += s.minutes;
+    }
+  }
+
+  // Deterministic too: manually logged offline time (meetings/calls).
+  const offline = database
+    .prepare(
+      `SELECT date AS d, minutes, client_id FROM offline_time
+       WHERE member_id = ? AND date >= ? AND date <= ?`
+    )
+    .all(memberId, from, to) as Array<{ d: string; minutes: number; client_id: string | null }>;
+  for (const o of offline) {
+    const c = o.client_id ? clientById.get(o.client_id) : undefined;
+    const a = day(o.d);
+    a.tracked_minutes += o.minutes;
+    if (c) {
+      const r = rowFor(c.id, c.name, "client", c.hourly_rate_cents);
+      r.minutes += o.minutes;
+      r.source_minutes.session += o.minutes;
+      const v = Math.round((o.minutes / 60) * c.hourly_rate_cents);
+      r.value_cents += v;
+      a.value_cents += v;
+      a.billable_minutes += o.minutes;
+      sessionClientMin += o.minutes;
+    } else {
+      sessionUnassignedMin += o.minutes;
+    }
+  }
+
+  // 2) Heuristic + classes: daily app-usage rollups. Work time NOT already
+  // covered by client sessions is split via client_rules matched on app names
+  // (the "email fallback"); the rest lands in honest 0€ buckets.
+  const usageDays = database
+    .prepare(
+      `SELECT date AS d, work_seconds, distraction_seconds, personal_seconds, neutral_seconds, apps_json
+       FROM app_usage WHERE member_id = ? AND date >= ? AND date <= ?`
+    )
+    .all(memberId, from, to) as Array<{
+    d: string;
+    work_seconds: number;
+    distraction_seconds: number;
+    personal_seconds: number;
+    neutral_seconds: number;
+    apps_json?: string;
+  }>;
+  const rules = listClientRules(memberId);
+  const matchClient = (name: string): string | null => {
+    const n = name.toLowerCase();
+    for (const r of rules) if (n.includes(r.pattern)) return r.client_id;
+    return null;
+  };
+
+  for (const u of usageDays) {
+    const a = day(u.d);
+    const sessionsThatDay = sessions
+      .filter((s) => s.d === u.d)
+      .reduce((acc, s) => acc + s.minutes, 0);
+    // Work minutes beyond what sessions already captured that day.
+    let extraWorkMin = Math.max(0, Math.round(u.work_seconds / 60) - sessionsThatDay);
+    a.tracked_minutes += extraWorkMin;
+
+    // Heuristic attribution of that extra work via app rules.
+    if (extraWorkMin > 0 && rules.length > 0) {
+      let apps: Array<{ name: string; seconds: number }> = [];
+      try {
+        apps = JSON.parse(u.apps_json || "[]");
+      } catch {
+        apps = [];
+      }
+      for (const app of apps.sort((x, y) => y.seconds - x.seconds)) {
+        if (extraWorkMin <= 0) break;
+        const cid = matchClient(app.name || "");
+        const c = cid ? clientById.get(cid) : undefined;
+        if (!c) continue;
+        const min = Math.min(extraWorkMin, Math.round(app.seconds / 60));
+        if (min <= 0) continue;
+        const r = rowFor(c.id, c.name, "client", c.hourly_rate_cents);
+        r.minutes += min;
+        r.source_minutes.rule += min;
+        const v = Math.round((min / 60) * c.hourly_rate_cents);
+        r.value_cents += v;
+        a.value_cents += v;
+        a.billable_minutes += min;
+        extraWorkMin -= min;
+      }
+    }
+    if (extraWorkMin > 0) {
+      rowFor("class:work", "Other work", "class", 0).minutes += extraWorkMin;
+    }
+    const distraction = Math.round(u.distraction_seconds / 60);
+    const personal = Math.round(u.personal_seconds / 60);
+    if (distraction > 0) {
+      rowFor("class:distraction", "Distraction", "class", 0).minutes += distraction;
+      a.tracked_minutes += distraction;
+    }
+    if (personal > 0) {
+      rowFor("class:personal", "Personal", "class", 0).minutes += personal;
+      a.tracked_minutes += personal;
+    }
+  }
+  if (sessionUnassignedMin > 0) {
+    // Loud, DataFast's "direct/unknown": focus time nobody claimed.
+    rowFor("class:unattributed", "Focus (no client)", "class", 0).minutes += sessionUnassignedMin;
+  }
+
+  const rows = [...rowAcc.values()]
+    .map((r) => ({
+      ...r,
+      effective_rate_cents:
+        r.minutes > 0 ? Math.round(r.value_cents / (r.minutes / 60)) : r.rate_cents,
+    }))
+    .sort((x, y) => y.value_cents - x.value_cents || y.minutes - x.minutes);
+
+  const tracked = rows.reduce((acc, r) => acc + r.minutes, 0);
+  const billable = rows.filter((r) => r.kind === "client").reduce((acc, r) => acc + r.minutes, 0);
+  const total = rows.reduce((acc, r) => acc + r.value_cents, 0);
+  const days = [...dayAcc.entries()]
+    .map(([date, v]) => ({ date, ...v }))
+    .sort((x, y) => x.date.localeCompare(y.date));
+
+  return {
+    from,
+    to,
+    tracked_minutes: tracked,
+    billable_minutes: billable,
+    billable_pct: tracked ? Math.round((billable / tracked) * 100) : 0,
+    total_cents: total,
+    effective_rate_cents: tracked ? Math.round(total / (tracked / 60)) : 0,
+    currency,
+    rows,
+    days,
+  };
+}
+
 export type { MemberRecords, WeeklyProductivity };
