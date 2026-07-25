@@ -165,8 +165,44 @@ def _run_frozen_elevated(action: str, domains_file: str | None) -> bool:
 
 
 def layers_status() -> dict:
+    """State of the admin-only layers (hosts file + QUIC firewall rule)."""
     return {
         "hosts": _hosts_block_present(),
         "quic": _quic_rule_present(),
         "admin": elevate.is_admin(),
+    }
+
+
+def shield_strength(proxy_up: bool, sysproxy_ok: bool) -> dict:
+    """Full picture of the shield across all four layers, for the UI.
+
+    proxy_up / sysproxy_ok come from the running app (the mitm engine liveness
+    and whether the system-proxy registry write landed). hosts/quic are read
+    live here. Returns per-layer booleans, a 0-4 count, a coarse level, and the
+    list of missing layers so the UI can name exactly what's off.
+    """
+    st = layers_status()
+    layers = {
+        "proxy": bool(proxy_up),
+        "system_proxy": bool(proxy_up and sysproxy_ok),
+        "hosts": bool(st["hosts"]),
+        "quic": bool(st["quic"]),
+    }
+    live = sum(1 for v in layers.values() if v)
+    missing = [k for k, v in layers.items() if not v]
+    if live >= 4:
+        level = "full"
+    elif live == 0:
+        level = "off"
+    elif layers["hosts"] or (layers["proxy"] and layers["system_proxy"]):
+        level = "partial"
+    else:
+        level = "weak"
+    return {
+        "layers": layers,
+        "live": live,
+        "total": 4,
+        "level": level,
+        "missing": missing,
+        "admin": bool(st["admin"]),
     }

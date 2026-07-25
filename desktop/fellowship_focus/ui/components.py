@@ -248,7 +248,15 @@ class ShieldHeroCard(GlassCard):
             f"color: {ACCENT}; letter-spacing: 1px;" if show_on else f"color: {MUTED}; letter-spacing: 1px;"
         )
 
-    def sync_state(self, *, enabled: bool, active: bool, in_focus: bool, ready: bool = True) -> None:
+    def sync_state(
+        self,
+        *,
+        enabled: bool,
+        active: bool,
+        in_focus: bool,
+        ready: bool = True,
+        strength: dict | None = None,
+    ) -> None:
         self._enabled = enabled
         self._active = active
         self._in_focus = in_focus
@@ -263,12 +271,29 @@ class ShieldHeroCard(GlassCard):
             self._pause_row.setVisible(False)
             self.setStyleSheet("")
         elif in_focus and active:
-            self._status.setText("● Shield active")
-            self._status.setStyleSheet(f"color: {SUCCESS};")
-            self._hint.setText("Twitter, YouTube Shorts, TikTok and your blocklist are filtered.")
+            # E0-S2: tell the truth about how strong the shield really is.
+            level = (strength or {}).get("level", "full")
+            missing = (strength or {}).get("missing", [])
+            if level == "full":
+                self._status.setText("● Shield active · full strength")
+                self._status.setStyleSheet(f"color: {SUCCESS};")
+                self._hint.setText("All 4 layers live: proxy · system proxy · hosts · QUIC firewall.")
+                self.setStyleSheet(f"#shieldHeroCard {{ border-color: rgba(45, 106, 79, 0.55); }}")
+            else:
+                live = (strength or {}).get("live", 0)
+                self._status.setText(f"● Shield active · limited ({live}/4 layers)")
+                self._status.setStyleSheet(f"color: {ACCENT_HOVER};")
+                pretty = ", ".join(
+                    {"proxy": "proxy", "system_proxy": "system proxy", "hosts": "hosts", "quic": "QUIC firewall"}.get(m, m)
+                    for m in missing
+                )
+                self._hint.setText(
+                    f"Blocking runs, but these layers are OFF: {pretty}. "
+                    "Some browsers/apps may slip through — accept UAC when arming for full strength."
+                )
+                self.setStyleSheet(f"#shieldHeroCard {{ border-color: rgba(196, 101, 58, 0.5); }}")
             self._quick_off.setVisible(True)
             self._pause_row.setVisible(True)
-            self.setStyleSheet(f"#shieldHeroCard {{ border-color: rgba(45, 106, 79, 0.55); }}")
         elif in_focus and enabled and not active:
             self._status.setText("Shield paused")
             self._status.setStyleSheet(f"color: {ACCENT_HOVER};")

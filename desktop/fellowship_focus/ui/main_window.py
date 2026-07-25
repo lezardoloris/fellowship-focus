@@ -94,6 +94,7 @@ class MainWindow(QMainWindow):
         self.mitm_process = None
         self.blocker_active = False
         self._blocker_arming = False
+        self._sysproxy_ok = True  # E0-S2: system-proxy write success (WinError 5 → False)
         self._filter_ok: bool | None = None
         # Detects a dead engine and releases the system proxy so a crash can
         # never leave the whole machine without internet.
@@ -1140,9 +1141,23 @@ class MainWindow(QMainWindow):
             ready=bool(self._cert_ok and proxy_engine_available()),
         )
         if hasattr(self, "shield_hero"):
-            self.shield_hero.sync_state(**state)
+            self.shield_hero.sync_state(**state, strength=self._shield_strength())
         if hasattr(self, "focus_shield"):
             self.focus_shield.sync_state(**state)
+
+    def _shield_strength(self) -> dict | None:
+        """E0-S2: real state of the four blocking layers, or None if off."""
+        if not self.blocker_active:
+            return None
+        try:
+            from fellowship_focus.blocker.layers import shield_strength
+
+            return shield_strength(
+                proxy_up=bool(self.mitm_process is not None),
+                sysproxy_ok=bool(getattr(self, "_sysproxy_ok", True)),
+            )
+        except Exception:
+            return None
 
     def _on_shield_setting_changed(self, enabled: bool) -> None:
         was_enabled = self.config.get("enable_website_blocker", True)
@@ -1775,7 +1790,17 @@ class MainWindow(QMainWindow):
             return
         if is_mitmdump_running():
             blocker_log("engine up — arming system proxy (canary pending)")
-            set_system_proxy(True)
+            # Track whether the system-proxy write actually landed (fails with
+            # WinError 5 on MDM/GPO machines) so the shield strength is honest.
+            self._sysproxy_ok = set_system_proxy(True)
+            if not self._sysproxy_ok:
+                self.toasts.show(
+                    "Shield partly limited",
+                    "Couldn't set the system proxy (locked-down PC?). Blocking still "
+                    "runs via hosts + extension — see shield status.",
+                    "warning",
+                    6000,
+                )
             # QUIC/HTTP3 can bypass the system proxy — best-effort HKCU policy.
             if disable_browser_quic():
                 blocker_log("QUIC disabled for Chrome/Edge (restart browsers if needed)")

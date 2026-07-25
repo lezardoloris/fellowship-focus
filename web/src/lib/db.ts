@@ -35,16 +35,42 @@ import {
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "fellowship.db");
 
-// On Railway the container filesystem is ephemeral. Without DATA_DIR pointing at
-// a mounted volume, every redeploy silently wipes fellowships, XP and stakes —
-// the symptom is fellowship codes suddenly 404ing. Make that loud. See
-// web/railway.toml for the one-time volume setup.
-if (process.env.NODE_ENV === "production" && !process.env.DATA_DIR) {
-  console.warn(
-    `[fellowship] DATA_DIR is not set — the database at ${DB_PATH} lives on ` +
-      `ephemeral storage and WILL be lost on the next deploy. ` +
-      `Set DATA_DIR=/data and mount a volume there.`
-  );
+/**
+ * E0-S1 — Fail-fast DATA_DIR guard.
+ *
+ * On Railway the container filesystem is ephemeral. If DATA_DIR is unset (or
+ * points at a writable-but-ephemeral path inside the build/app directory), a
+ * redeploy silently starts a fresh empty DB and wipes every fellowship, XP
+ * total, habit, and money stake — with no error. The old code only warned.
+ *
+ * We now REFUSE to serve requests in that state (throw on first DB access)
+ * instead of losing data quietly. The check is skipped during `next build`
+ * (NEXT_PHASE=phase-production-build) so the guard never breaks the build —
+ * only the real runtime is gated.
+ */
+function assertDurableDataDir(): void {
+  if (process.env.NODE_ENV !== "production") return;
+  // Don't trip during the build; only at runtime.
+  if (process.env.NEXT_PHASE === "phase-production-build") return;
+
+  if (!process.env.DATA_DIR) {
+    throw new Error(
+      "[fellowship] FATAL: DATA_DIR is not set in production. The database would " +
+        "live on ephemeral storage and be wiped on every redeploy. Fix: set " +
+        "DATA_DIR=/data and mount a Railway volume at /data (see web/railway.toml)."
+    );
+  }
+  // Heuristic: a DATA_DIR inside the app/build working directory is almost
+  // certainly ephemeral, not a mounted volume.
+  const resolved = path.resolve(process.env.DATA_DIR);
+  const cwd = path.resolve(process.cwd());
+  if (resolved === cwd || resolved.startsWith(cwd + path.sep)) {
+    throw new Error(
+      `[fellowship] FATAL: DATA_DIR (${resolved}) is inside the app directory ` +
+        `(${cwd}) — that is ephemeral storage on Railway and will be wiped on ` +
+        `redeploy. Point DATA_DIR at a mounted volume outside the app dir (e.g. /data).`
+    );
+  }
 }
 
 export type Fellowship = {
@@ -209,6 +235,7 @@ let db: Database.Database | null = null;
 /** Shared SQLite handle — used by backlog feature modules. */
 export function getDb(): Database.Database {
   if (db) return db;
+  assertDurableDataDir(); // E0-S1: refuse to serve on ephemeral storage
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   db = new Database(DB_PATH);
   db.pragma("journal_mode = WAL");

@@ -239,17 +239,28 @@ def start_mitmdump(
     return proc
 
 
-def set_system_proxy(enable: bool) -> None:
+def set_system_proxy(enable: bool) -> bool:
+    """Toggle the WinINET system proxy. Returns True on success.
+
+    On MDM/GPO-locked machines the registry write fails with WinError 5
+    (Access denied); we return False so the caller can surface a degraded
+    shield instead of pretending the proxy layer is live.
+    """
     from uniproxy import Uniproxy
 
     blocker_log(f"system proxy -> {'ON' if enable else 'OFF'}")
-    proxy = Uniproxy("127.0.0.1", PROXY_PORT)
-    if enable:
-        proxy.join()
-        _flush_dns()
-    else:
-        proxy.delete_proxy()
-    _broadcast_proxy_change()
+    try:
+        proxy = Uniproxy("127.0.0.1", PROXY_PORT)
+        if enable:
+            proxy.join()
+            _flush_dns()
+        else:
+            proxy.delete_proxy()
+        _broadcast_proxy_change()
+        return True
+    except Exception as e:
+        blocker_log(f"system proxy set failed ({'ON' if enable else 'OFF'}): {e}")
+        return False
 
 
 def disable_browser_quic() -> bool:

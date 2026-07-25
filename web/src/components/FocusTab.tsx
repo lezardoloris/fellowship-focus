@@ -12,7 +12,6 @@ import { FocusScoreHero } from "@/components/FocusScoreHero";
 import { BillablePanel } from "@/components/BillablePanel";
 import { TaskList } from "@/components/TaskList";
 import { RitualWizard } from "@/components/RitualWizard";
-import { TemptationsPanel } from "@/components/TemptationsPanel";
 import { WeeklyDigestPanel } from "@/components/WeeklyDigestPanel";
 
 const GITHUB_KEY = "ff-github-user";
@@ -166,7 +165,6 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
           <TaskList token={token} />
           <BillablePanel token={token} />
           <RitualWizard token={token} kind="morning" />
-          <TemptationsPanel token={token} />
         </div>
       )}
 
