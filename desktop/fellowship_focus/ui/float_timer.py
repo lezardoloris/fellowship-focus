@@ -80,8 +80,16 @@ class FloatTimerWindow(QWidget):
         self._music_index = -1
         self._music_playing = False
         self._music_volume = 0.5
+        # Docking + appearance, restored from config.
+        _cfg = load_config()
+        self._anchor: str | None = _cfg.get("float_timer_anchor") or None
+        self._opacity = float(_cfg.get("float_timer_opacity", 1.0) or 1.0)
+        self._scale = float(_cfg.get("float_timer_scale", 1.0) or 1.0)
+        self._opacity = min(1.0, max(0.3, self._opacity))
+        self._scale = min(1.6, max(0.7, self._scale))
 
         self.setStyleSheet(self._qss())
+        self.setWindowOpacity(self._opacity)
 
         root = QWidget(self)
         root.setObjectName("floatRoot")
@@ -105,7 +113,7 @@ class FloatTimerWindow(QWidget):
 
         self._time = QLabel("00:00")
         self._time.setObjectName("timeLabel")
-        self._time.setFont(font_timer(30))
+        self._time.setFont(font_timer(int(30 * self._scale)))
         head.addWidget(self._time)
         head.addStretch(1)
 
@@ -241,6 +249,13 @@ class FloatTimerWindow(QWidget):
                 self._restart_btn,
             ):
                 b.setFont(glyph_font)
+
+        # If a non-default size was saved, apply the base font now (the glyph
+        # buttons keep their symbol font; scale re-fits on first show).
+        if abs(self._scale - 1.0) > 0.02:
+            base = QFont(self.font())
+            base.setPointSizeF(9.0 * self._scale)
+            self.setFont(base)
 
         self._render()
 
@@ -533,7 +548,70 @@ class FloatTimerWindow(QWidget):
             except Exception:
                 pass
 
-    # ── Position ─────────────────────────────────────────────
+    # ── Position (magnetic snap to strategic anchors) ────────
+
+    # Distance (px) within which a released timer snaps to an anchor.
+    _SNAP_DIST = 90
+    _MARGIN = 16
+
+    def _anchor_points(self, geo) -> dict[str, tuple[int, int]]:
+        """Top-left coords for each strategic dock, for the current size."""
+        w, h = self.width(), self.height()
+        m = self._MARGIN
+        left = geo.left() + m
+        right = geo.right() - w - m
+        top = geo.top() + m
+        bottom = geo.bottom() - h - m
+        cx = geo.left() + (geo.width() - w) // 2
+        cy = geo.top() + (geo.height() - h) // 2
+        return {
+            "top-left": (left, top),
+            "top-center": (cx, top),
+            "top-right": (right, top),
+            "bottom-left": (left, bottom),
+            "bottom-center": (cx, bottom),
+            "bottom-right": (right, bottom),
+            "center-left": (left, cy),
+            "center-right": (right, cy),
+        }
+
+    def _nearest_anchor(self, geo) -> tuple[str, int]:
+        """(name, distance²) of the closest anchor to the current top-left."""
+        px, py = self.x(), self.y()
+        best_name, best_d2 = "bottom-right", 1 << 62
+        for name, (ax, ay) in self._anchor_points(geo).items():
+            d2 = (px - ax) ** 2 + (py - ay) ** 2
+            if d2 < best_d2:
+                best_name, best_d2 = name, d2
+        return best_name, best_d2
+
+    def _snap_after_drag(self) -> None:
+        """On release, magnet to the nearest strategic dock if close enough."""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            self._save_position()
+            return
+        geo = screen.availableGeometry()
+        name, d2 = self._nearest_anchor(geo)
+        if d2 <= self._SNAP_DIST**2:
+            ax, ay = self._anchor_points(geo)[name]
+            self.move(ax, ay)
+            self._anchor = name
+        else:
+            self._anchor = None  # free-floating; remember exact coords
+        self._save_position()
+
+    def _reapply_anchor(self) -> None:
+        """Re-dock to the saved anchor (after a resize/scale change)."""
+        if not self._anchor:
+            return
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        pts = self._anchor_points(screen.availableGeometry())
+        if self._anchor in pts:
+            ax, ay = pts[self._anchor]
+            self.move(ax, ay)
 
     def _place_bottom_right(self) -> None:
         screen = self.screen() or QGuiApplication.primaryScreen()
@@ -541,16 +619,24 @@ class FloatTimerWindow(QWidget):
             return
         geo = screen.availableGeometry()
         self.adjustSize()
-        self.move(geo.right() - self.width() - 16, geo.bottom() - self.height() - 16)
+        ax, ay = self._anchor_points(geo)["bottom-right"]
+        self.move(ax, ay)
+        self._anchor = "bottom-right"
 
     def _restore_or_default_position(self) -> None:
+        cfg = load_config()
+        self._anchor = cfg.get("float_timer_anchor") or None
+        self.adjustSize()
+        # A saved anchor wins — it re-docks correctly whatever the screen size.
+        if self._anchor:
+            self._reapply_anchor()
+            return
         try:
-            pos = load_config().get("float_timer_pos")
+            pos = cfg.get("float_timer_pos")
             x, y = int(pos[0]), int(pos[1])
         except Exception:
             self._place_bottom_right()
             return
-        self.adjustSize()
         for screen in QGuiApplication.screens():
             geo = screen.availableGeometry()
             if geo.contains(x + 20, y + 10) or geo.contains(x + self.width() - 20, y + 10):
@@ -562,19 +648,88 @@ class FloatTimerWindow(QWidget):
         try:
             cfg = load_config()
             cfg["float_timer_pos"] = [self.x(), self.y()]
+            cfg["float_timer_anchor"] = self._anchor
             save_config(cfg)
         except Exception:
             pass
+
+    # ── Appearance (transparency + size) ─────────────────────
+
+    def _set_opacity(self, value: float) -> None:
+        self._opacity = min(1.0, max(0.3, float(value)))
+        self.setWindowOpacity(self._opacity)
+        try:
+            cfg = load_config()
+            cfg["float_timer_opacity"] = self._opacity
+            save_config(cfg)
+        except Exception:
+            pass
+
+    def _set_scale(self, value: float) -> None:
+        self._scale = min(1.6, max(0.7, float(value)))
+        self._apply_scale()
+        try:
+            cfg = load_config()
+            cfg["float_timer_scale"] = self._scale
+            save_config(cfg)
+        except Exception:
+            pass
+
+    def _apply_scale(self) -> None:
+        """Grow/shrink the whole card: the big timer glyph plus every button
+        and label (via a base point size on the widget), then re-fit + re-dock."""
+        self._time.setFont(font_timer(int(30 * self._scale)))
+        base = QFont(self.font())
+        base.setPointSizeF(9.0 * self._scale)  # buttons/labels inherit this
+        self.setFont(base)
+        self._apply_expanded()
+        self._reapply_anchor()
 
     # ── Menu & mouse ─────────────────────────────────────────
 
     def _context_menu(self, pos) -> None:
         menu = QMenu(self)
         menu.addAction("Open Fellowship Focus").triggered.connect(self.open_app_requested.emit)
-        menu.addAction("Hide timer").triggered.connect(self._on_dismiss)
+
+        dock = menu.addMenu("Dock to")
+        for label, name in (
+            ("Top left", "top-left"),
+            ("Top center", "top-center"),
+            ("Top right", "top-right"),
+            ("Center left", "center-left"),
+            ("Center right", "center-right"),
+            ("Bottom left", "bottom-left"),
+            ("Bottom center", "bottom-center"),
+            ("Bottom right", "bottom-right"),
+        ):
+            act = dock.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(self._anchor == name)
+            act.triggered.connect(lambda _=False, n=name: self._dock_to(n))
+
+        size_menu = menu.addMenu("Size")
+        for label, val in (("Small", 0.8), ("Normal", 1.0), ("Large", 1.25), ("Extra large", 1.5)):
+            act = size_menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(abs(self._scale - val) < 0.02)
+            act.triggered.connect(lambda _=False, v=val: self._set_scale(v))
+
+        opac_menu = menu.addMenu("Transparency")
+        for label, val in (("Solid", 1.0), ("Light", 0.85), ("Medium", 0.7), ("Ghost", 0.5)):
+            act = opac_menu.addAction(label)
+            act.setCheckable(True)
+            act.setChecked(abs(self._opacity - val) < 0.02)
+            act.triggered.connect(lambda _=False, v=val: self._set_opacity(v))
+
         menu.addSeparator()
+        menu.addAction("Hide timer").triggered.connect(self._on_dismiss)
         menu.addAction("End session").triggered.connect(self._on_end_session)
         menu.exec(self.mapToGlobal(pos))
+
+    def _dock_to(self, name: str) -> None:
+        self._anchor = name
+        self._reapply_anchor()
+        self._save_position()
 
     def _on_dismiss(self) -> None:
         self.dismiss()
@@ -604,7 +759,7 @@ class FloatTimerWindow(QWidget):
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if self._dragged:
             self._dragged = False
-            self._save_position()
+            self._snap_after_drag()
         self._drag_pos = None
         super().mouseReleaseEvent(event)
 
