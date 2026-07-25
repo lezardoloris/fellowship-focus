@@ -477,8 +477,13 @@ class FloatTimerWindow(QWidget):
             self._pause_btn.setText("⏸")
             self._pause_btn.setToolTip("Pause")
 
-        self._dot.setStyleSheet(f"color: {dot}; background: transparent; font-size: 13px;")
-        self._time.setStyleSheet(f"color: {time_color}; background: transparent;")
+        # Avoid setStyleSheet every second — QSS reparse is measurable.
+        if getattr(self, "_dot_color", None) != dot:
+            self._dot_color = dot
+            self._dot.setStyleSheet(f"color: {dot}; background: transparent; font-size: 13px;")
+        if getattr(self, "_time_color", None) != time_color:
+            self._time_color = time_color
+            self._time.setStyleSheet(f"color: {time_color}; background: transparent;")
 
     def _apply_expanded(self) -> None:
         self._panel.setVisible(self._expanded)

@@ -72,7 +72,7 @@ export function computeStreakAdvance(opts: {
     // If they focused on an off day, treat next work day as continuation.
     const afterOff = prevWorkDay(opts.today, workDays);
     // Find most recent work day ≤ lastQuest
-    let bridge = opts.lastQuestDate;
+    const bridge = opts.lastQuestDate;
     if (!isWorkDay(bridge, workDays)) {
       // Last focus was weekend — chain continues if today is next work day after that weekend
       let cursor = addDays(bridge, 1);

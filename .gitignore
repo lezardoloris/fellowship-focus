@@ -47,3 +47,8 @@ public/scenes/_original/
 # Chrome extension signing key + built store zips (never commit)
 extension/store/*.pem
 extension/store/*.zip
+
+# BMAD-METHOD (local dev tooling — not part of the app)
+.claude/skills/bmad-*/
+_bmad/
+_bmad-output/

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
@@ -45,31 +46,69 @@ DEFAULT_CATEGORY_KEYWORDS: dict[str, list[str]] = {
     ],
 }
 
+# Precomputed once — categorize() must not rebuild this every tick.
+_BASE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    cat: tuple(words) for cat, words in DEFAULT_CATEGORY_KEYWORDS.items()
+}
+
+# Shared last sample so nudge / other callers can reuse without a second psutil hit.
+_last_sample: dict = {
+    "proc": "",
+    "title": "",
+    "idle": 0.0,
+    "monotonic": 0.0,
+}
+
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
+    class _LASTINPUTINFO(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+
+    _user32 = ctypes.windll.user32
+    _kernel32 = ctypes.windll.kernel32
+else:
+    _LASTINPUTINFO = None  # type: ignore[misc, assignment]
+    _user32 = None
+    _kernel32 = None
+
 
 def _lower(text: str) -> str:
     return (text or "").lower()
 
 
+def last_foreground_sample(max_age_s: float = 6.0) -> tuple[str, str] | None:
+    """Return cached (proc, title) if fresher than ``max_age_s``, else None."""
+    age = time.monotonic() - float(_last_sample.get("monotonic") or 0)
+    if age > max_age_s:
+        return None
+    return (str(_last_sample.get("proc") or ""), str(_last_sample.get("title") or ""))
+
+
+def last_idle_sample(max_age_s: float = 6.0) -> float | None:
+    age = time.monotonic() - float(_last_sample.get("monotonic") or 0)
+    if age > max_age_s:
+        return None
+    return float(_last_sample.get("idle") or 0.0)
+
+
 def foreground_app() -> tuple[str, str]:
     """Return (process_name, window_title) of the foreground window."""
-    if sys.platform != "win32":
+    if sys.platform != "win32" or _user32 is None:
         return ("unknown", "")
     try:
-        import ctypes
-        from ctypes import wintypes
-
-        user32 = ctypes.windll.user32
-        hwnd = user32.GetForegroundWindow()
+        hwnd = _user32.GetForegroundWindow()
         if not hwnd:
             return ("", "")
 
-        length = user32.GetWindowTextLengthW(hwnd) + 1
+        length = _user32.GetWindowTextLengthW(hwnd) + 1
         buf = ctypes.create_unicode_buffer(length)
-        user32.GetWindowTextW(hwnd, buf, length)
+        _user32.GetWindowTextW(hwnd, buf, length)
         title = buf.value.strip()
 
         pid = wintypes.DWORD()
-        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         proc_name = _process_name(pid.value)
         return (proc_name, title)
     except Exception:
@@ -89,19 +128,14 @@ def _process_name(pid: int) -> str:
 
 def idle_seconds() -> float:
     """Seconds since the last keyboard/mouse input (Windows)."""
-    if sys.platform != "win32":
+    if sys.platform != "win32" or _LASTINPUTINFO is None or _user32 is None:
         return 0.0
     try:
-        import ctypes
-
-        class LASTINPUTINFO(ctypes.Structure):
-            _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
-
-        info = LASTINPUTINFO()
+        info = _LASTINPUTINFO()
         info.cbSize = ctypes.sizeof(info)
-        if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+        if not _user32.GetLastInputInfo(ctypes.byref(info)):
             return 0.0
-        millis = ctypes.windll.kernel32.GetTickCount() - info.dwTime
+        millis = _kernel32.GetTickCount() - info.dwTime
         return max(0.0, millis / 1000.0)
     except Exception:
         return 0.0
@@ -115,14 +149,18 @@ def _friendly_label(proc: str, title: str) -> str:
 
 def categorize(proc: str, title: str, overrides: dict | None = None) -> str:
     hay = f"{_lower(proc)} {_lower(title)}"
-    keywords = {cat: list(words) for cat, words in DEFAULT_CATEGORY_KEYWORDS.items()}
     if overrides:
+        keywords: dict[str, list[str] | tuple[str, ...]] = {
+            cat: list(words) for cat, words in _BASE_KEYWORDS.items()
+        }
         for cat, words in overrides.items():
             if cat in keywords and isinstance(words, list):
-                keywords[cat].extend(str(w).lower() for w in words)
+                keywords[cat] = list(keywords[cat]) + [str(w).lower() for w in words]
+    else:
+        keywords = _BASE_KEYWORDS  # type: ignore[assignment]
     # Distraction takes precedence, then work, then personal.
     for cat in ("distraction", "work", "personal"):
-        if any(kw and kw in hay for kw in keywords.get(cat, [])):
+        if any(kw and kw in hay for kw in keywords.get(cat, ())):
             return cat
     return "neutral"
 
@@ -182,11 +220,16 @@ class UsageTracker(QObject):
         self._day = date.today().isoformat()
         self._data = load_day(self._day)
         self._since_save = 0
+        self._dirty = False
+        self._overrides_cache: dict | None = None
+        self._overrides_key: object = None
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
+        self._last_tick_mono = time.monotonic()
 
     def start(self) -> None:
         if not self._timer.isActive():
+            self._last_tick_mono = time.monotonic()
             self._timer.start(POLL_SECONDS * 1000)
 
     def stop(self) -> None:
@@ -200,9 +243,14 @@ class UsageTracker(QObject):
         if not self._config_getter:
             return None
         try:
-            return (self._config_getter() or {}).get("usage_categories")
+            raw = (self._config_getter() or {}).get("usage_categories")
         except Exception:
             return None
+        key = id(raw) if raw is not None else None
+        if key != self._overrides_key:
+            self._overrides_key = key
+            self._overrides_cache = raw if isinstance(raw, dict) else None
+        return self._overrides_cache
 
     def _enabled(self) -> bool:
         if not self._config_getter:
@@ -213,6 +261,10 @@ class UsageTracker(QObject):
             return True
 
     def _tick(self) -> None:
+        now = time.monotonic()
+        elapsed = max(1, min(30, int(round(now - self._last_tick_mono))))
+        self._last_tick_mono = now
+
         # Roll over to a new day if needed.
         today = date.today().isoformat()
         if today != self._day:
@@ -222,27 +274,39 @@ class UsageTracker(QObject):
 
         if not self._enabled():
             return
-        if idle_seconds() >= IDLE_THRESHOLD_SECONDS:
-            return
 
+        idle = idle_seconds()
         proc, title = foreground_app()
+        _last_sample["proc"] = proc
+        _last_sample["title"] = title
+        _last_sample["idle"] = idle
+        _last_sample["monotonic"] = now
+
+        if idle >= IDLE_THRESHOLD_SECONDS:
+            return
         if not proc and not title:
             return
         label = _friendly_label(proc, title)
         category = categorize(proc, title, self._overrides())
 
-        self._data["apps"][label] = self._data["apps"].get(label, 0) + POLL_SECONDS
-        self._data["categories"][category] = self._data["categories"].get(category, 0) + POLL_SECONDS
+        self._data["apps"][label] = self._data["apps"].get(label, 0) + elapsed
+        self._data["categories"][category] = self._data["categories"].get(category, 0) + elapsed
+        self._dirty = True
 
-        self._since_save += POLL_SECONDS
+        self._since_save += elapsed
         if self._since_save >= SAVE_EVERY_SECONDS:
             self._save()
-        self.updated.emit()
 
     def _save(self) -> None:
         self._since_save = 0
+        if not self._dirty:
+            return
+        self._dirty = False
         try:
             USAGE_DIR.mkdir(parents=True, exist_ok=True)
-            usage_path(self._day).write_text(json.dumps(self._data, indent=2), encoding="utf-8")
+            path = usage_path(self._day)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self._data), encoding="utf-8")
+            tmp.replace(path)
         except Exception:
-            pass
+            self._dirty = True

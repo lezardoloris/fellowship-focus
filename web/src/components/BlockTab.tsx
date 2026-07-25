@@ -736,17 +736,14 @@ export function BlockTab({
     const mins = Math.max(1, Math.round(elapsedSec / 60));
     segmentLoggedRef.current = true;
     logSoloSession(mins);
+    const showRecap = prefs.session_recap !== false;
     const localRecap: SessionRecapData = {
       minutes: mins,
       planned_minutes: prefs.focus_min,
       value_line: "Session logged",
       streak: undefined,
     };
-    setSessionRecap(localRecap);
-    // Honour session_recap setting (default on)
-    if (prefs.session_recap === false) {
-      setSessionRecap(null);
-    }
+    if (showRecap) setSessionRecap(localRecap);
     if (token) {
       fetch(`/api/sessions`, {
         method: "POST",
@@ -759,7 +756,7 @@ export function BlockTab({
         }),
       })
         .then(async (res) => {
-          if (!res.ok) return;
+          if (!res.ok || !showRecap) return;
           const j = (await res.json()) as {
             session?: { id: string };
             xpEarned?: number;

@@ -13,7 +13,7 @@ class PomodoroEngine(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self.timer = QTimer()
+        self.timer = QTimer(self)
         self.timer.timeout.connect(self._on_tick)
         self.phase = self.PHASE_IDLE
         self.remaining = 0

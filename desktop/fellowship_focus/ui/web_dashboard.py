@@ -248,19 +248,53 @@ class WebDashboardPage(QWidget):
             fallback.setStyleSheet(f"color: {MUTED}; padding: 40px;")
             layout.addWidget(fallback)
             self._view = None
+            self._pull_timer = QTimer(self)
+            self._pull_timer.timeout.connect(self._pull_credentials_from_web)
+            self._credentials_known = False
+            self._pull_paused = False
             return
 
-        self._view = QWebEngineView()
-        from PySide6.QtGui import QColor
-
-        # Match the cinematic scene edge — no solid black panel behind the page
-        self._view.page().setBackgroundColor(QColor("#0c0e10"))
+        # Defer Chromium spawn until first tab show / reload (startup win).
+        self._view = None
+        self._view_host = QWidget()
+        self._view_host.setStyleSheet("background: #0c0e10;")
+        layout.addWidget(self._view_host, 1)
         self.setStyleSheet("background: #0c0e10;")
+
+        self._pull_timer = QTimer(self)
+        self._pull_timer.timeout.connect(self._pull_credentials_from_web)
+        self._credentials_known = False
+        self._pull_paused = False
+
+    def set_pull_active(self, active: bool) -> None:
+        """Pause credential polling when the web tab is not visible."""
+        self._pull_paused = not active
+        if not active:
+            self._pull_timer.stop()
+        elif self._view and not self._credentials_known and not self._pull_timer.isActive():
+            self._pull_timer.start(4000)
+
+    def _ensure_view(self) -> bool:
+        """Lazily construct QWebEngineView on first use (heavy Chromium spawn)."""
+        if self._view is not None:
+            return True
+        if not HAS_WEBENGINE:
+            return False
+        from PySide6.QtGui import QColor
+        from PySide6.QtWidgets import QVBoxLayout
+
+        host = getattr(self, "_view_host", None)
+        if host is None:
+            return False
+        host_layout = host.layout()
+        if host_layout is None:
+            host_layout = QVBoxLayout(host)
+            host_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._view = QWebEngineView(host)
+        self._view.page().setBackgroundColor(QColor("#0c0e10"))
         profile = QWebEngineProfile.defaultProfile()
         profile.setHttpUserAgent(profile.httpUserAgent() + " FellowshipFocusDesktop/1.3.2")
-        # Persist localStorage / cookies across app restarts. Without an explicit
-        # storage path the webview can be effectively off-the-record, so things
-        # like the dismissed onboarding card came back every launch.
         try:
             from pathlib import Path as _Path
 
@@ -275,12 +309,9 @@ class WebDashboardPage(QWidget):
         except Exception:
             pass
         self._view.loadFinished.connect(self._on_load_finished)
-        layout.addWidget(self._view, 1)
-
+        host_layout.addWidget(self._view, 1)
         self._setup_bridge()
-
-        self._pull_timer = QTimer(self)
-        self._pull_timer.timeout.connect(self._pull_credentials_from_web)
+        return True
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -369,7 +400,7 @@ class WebDashboardPage(QWidget):
         self._setup.setVisible(False)
         self._connected_bar.setVisible(False)
 
-        if not self._view:
+        if not self._ensure_view():
             return
 
         base = f"{api}/app"
@@ -377,16 +408,27 @@ class WebDashboardPage(QWidget):
             self._injected = False
             url = f"{base}?code={code}"
             if token:
+                # Desktop already has membership — no need to poll Chromium forever.
+                self._credentials_known = True
+                self._pull_timer.stop()
                 self._load_dashboard_with_auth(url, code, token, name)
             elif self._view.url().toString().rstrip("/") != url:
                 self._view.setUrl(QUrl(url))
             else:
                 self._on_load_finished(True)
-            if not self._pull_timer.isActive():
+            if (
+                not self._credentials_known
+                and not self._pull_paused
+                and not self._pull_timer.isActive()
+            ):
                 self._pull_timer.start(4000)
         else:
             # Solo mode — still poll so a join inside the web UI syncs to desktop config.
-            if not self._pull_timer.isActive():
+            if (
+                not self._credentials_known
+                and not self._pull_paused
+                and not self._pull_timer.isActive()
+            ):
                 self._pull_timer.start(4000)
             current = self._view.url().toString().rstrip("/")
             if current != base and not current.startswith(base + "?"):
@@ -476,7 +518,9 @@ class WebDashboardPage(QWidget):
         self._push_credentials_to_web()
 
     def _pull_credentials_from_web(self) -> None:
-        if not self._view:
+        if not self._view or self._pull_paused or self._credentials_known:
+            if self._credentials_known:
+                self._pull_timer.stop()
             return
         # Discover code+token from the embedded web join flow (not only when
         # desktop config already knows fellowship_code).
@@ -519,6 +563,9 @@ class WebDashboardPage(QWidget):
             updates["member_token"] = token
         if name and name != cfg.get("member_name", ""):
             updates["member_name"] = name
+        # Stop polling once we have a stable membership (even if already in config).
+        self._credentials_known = True
+        self._pull_timer.stop()
         if updates:
             cfg.update(updates)
             self._on_config_updated(cfg)

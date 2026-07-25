@@ -37,9 +37,24 @@ def test_categorize_user_overrides():
 
 
 def test_focus_score():
-    assert focus_score({"categories": {"work": 3600, "distraction": 1800}}) == 67
-    assert focus_score({"categories": {"work": 100, "distraction": 0}}) == 100
+    # Pulse weights: Focus=100, Work=75, Neutral=50, Personal=25, Distraction=0
+    # 3600 work + 1800 distraction → (3600*75)/5400 = 50
+    assert focus_score({"categories": {"work": 3600, "distraction": 1800}}) == 50
+    # Pure work (no focus band) scores 75, not 100 — Focus band is reserved for pomodoro
+    assert focus_score({"categories": {"work": 100, "distraction": 0}}) == 75
     assert focus_score({"categories": {"work": 0, "distraction": 0}}) == 0
+    assert focus_score({"focus_seconds": 1800, "categories": {"work": 0, "distraction": 0}}) == 100
+    # Mixed bands
+    assert focus_score(
+        {
+            "categories": {
+                "work": 3600,
+                "personal": 1200,
+                "distraction": 1200,
+                "neutral": 0,
+            }
+        }
+    ) == round((3600 * 75 + 1200 * 25) / 6000)
 
 
 def test_friendly_label_strips_exe():

@@ -1,4 +1,5 @@
 import json
+import threading
 from pathlib import Path
 
 from fellowship_focus.constants import (
@@ -11,6 +12,11 @@ from fellowship_focus.constants import (
 
 CONFIG_DIR = Path.home() / ".fellowship-focus"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+
+_save_lock = threading.Lock()
+_pending: dict | None = None
+_debounce_timer: threading.Timer | None = None
+_DEBOUNCE_S = 0.4
 
 
 def load_config() -> dict:
@@ -59,9 +65,62 @@ def _repair_member_name(config: dict) -> str:
     return name[:40]
 
 
-def save_config(config: dict) -> None:
+def _write_config_atomic(config: dict) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(json.dumps(config, indent=2), encoding="utf-8")
+    payload = json.dumps(config, indent=2)
+    tmp = CONFIG_FILE.with_suffix(".tmp")
+    tmp.write_text(payload, encoding="utf-8")
+    tmp.replace(CONFIG_FILE)
+
+
+def save_config(config: dict, *, flush: bool = False) -> None:
+    """Debounced config write. Pass ``flush=True`` on quit / critical paths."""
+    global _pending, _debounce_timer
+    with _save_lock:
+        _pending = config
+        if _debounce_timer is not None:
+            _debounce_timer.cancel()
+            _debounce_timer = None
+        if flush:
+            snap = dict(config)
+            _pending = None
+            try:
+                _write_config_atomic(snap)
+            except Exception:
+                pass
+            return
+        _debounce_timer = threading.Timer(_DEBOUNCE_S, _flush_pending)
+        _debounce_timer.daemon = True
+        _debounce_timer.start()
+
+
+def flush_config() -> None:
+    """Force any pending debounce write to disk immediately."""
+    global _pending, _debounce_timer
+    with _save_lock:
+        if _debounce_timer is not None:
+            _debounce_timer.cancel()
+            _debounce_timer = None
+        snap = dict(_pending) if _pending is not None else None
+        _pending = None
+    if snap is not None:
+        try:
+            _write_config_atomic(snap)
+        except Exception:
+            pass
+
+
+def _flush_pending() -> None:
+    global _pending, _debounce_timer
+    with _save_lock:
+        snap = dict(_pending) if _pending is not None else None
+        _pending = None
+        _debounce_timer = None
+    if snap is not None:
+        try:
+            _write_config_atomic(snap)
+        except Exception:
+            pass
 
 
 def default_config() -> dict:
@@ -108,4 +167,7 @@ def default_config() -> dict:
         "focus_music_track": "",
         "screen_time_enabled": True,
         "usage_categories": {},
+        "float_timer_enabled": True,
+        "session_recap_enabled": True,
+        "session_nudge_enabled": True,
     }
