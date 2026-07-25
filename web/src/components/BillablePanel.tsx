@@ -64,51 +64,51 @@ export function BillablePanel({ token }: { token: string }) {
   };
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <div className="premium-panel p-5">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] uppercase tracking-[0.12em] text-[#c4653a]">Billable</p>
+        <p className="pp-title">Billable</p>
         <button
           type="button"
           onClick={exportCsv}
-          className="text-xs text-white/50 hover:text-white"
+          className="text-xs pp-muted transition-colors hover:pp-strong"
         >
           Export CSV
         </button>
       </div>
       {summary && (
-        <p className="mt-2 text-2xl font-semibold tabular-nums text-white">
+        <p className="mt-2.5 text-3xl font-bold tabular-nums pp-strong">
           {(summary.total_cents / 100).toFixed(0)} €
-          <span className="ml-2 text-sm font-normal text-white/40">this period</span>
+          <span className="ml-2 text-sm font-normal pp-muted">this period</span>
         </p>
       )}
-      <ul className="mt-3 space-y-1 text-sm text-white/60">
+      <ul className="mt-3.5 space-y-1.5 text-sm pp-body">
         {(summary?.rows || []).map((r) => (
           <li key={r.client_id} className="flex justify-between">
             <span>{r.name}</span>
-            <span>
+            <span className="tabular-nums pp-muted">
               {r.hours}h · {(r.billable_cents / 100).toFixed(0)} €
             </span>
           </li>
         ))}
-        {clients.length === 0 && <li className="text-white/40">Add a client to start tracking.</li>}
+        {clients.length === 0 && <li className="pp-faint">Add a client to start tracking.</li>}
       </ul>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3.5 flex flex-wrap gap-2">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Client name"
-          className="min-w-[140px] flex-1 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white"
+          className="pp-input min-w-[140px] flex-1 px-3 py-2 text-sm"
         />
         <input
           value={rate}
           onChange={(e) => setRate(e.target.value)}
           placeholder="€/h"
-          className="w-20 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white"
+          className="pp-input w-20 px-2 py-2 text-sm text-center tabular-nums"
         />
         <button
           type="button"
           onClick={add}
-          className="rounded-lg bg-[#b8422e] px-3 py-1.5 text-sm font-semibold text-white"
+          className="rounded-lg bg-[#b8422e] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#c9563d]"
         >
           Add
         </button>

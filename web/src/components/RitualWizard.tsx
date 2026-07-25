@@ -40,21 +40,21 @@ export function RitualWizard({ token, kind = "morning", onDone }: Props) {
 
   if (done && kind === "shutdown") {
     return (
-      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-6 text-center">
-        <p className="text-lg font-semibold text-white">Done for today</p>
-        <p className="mt-1 text-sm text-white/50">See you tomorrow.</p>
+      <div className="premium-panel p-6 text-center">
+        <p className="text-lg font-semibold pp-strong">Done for today</p>
+        <p className="mt-1 text-sm pp-muted">See you tomorrow.</p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-      <p className="text-[11px] uppercase tracking-[0.12em] text-[#c4653a]">
+    <div className="premium-panel p-5">
+      <p className="pp-title">
         {kind === "morning" ? "Morning planning" : "Shutdown"}
       </p>
       {kind === "morning" ? (
-        <div className="mt-3 space-y-2">
-          <p className="text-sm text-white/55">Three priorities for today</p>
+        <div className="mt-3.5 space-y-2.5">
+          <p className="text-sm pp-body">Three priorities for today</p>
           {priorities.map((p, i) => (
             <input
               key={i}
@@ -65,33 +65,33 @@ export function RitualWizard({ token, kind = "morning", onDone }: Props) {
                 setPriorities(next);
               }}
               placeholder={`Priority ${i + 1}`}
-              className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white"
+              className="pp-input w-full px-3 py-2 text-sm"
             />
           ))}
-          <label className="mt-2 block text-xs text-white/40">
+          <label className="mt-2 block text-xs pp-muted">
             Focus target (minutes)
             <input
               value={focusTarget}
               onChange={(e) => setFocusTarget(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white"
+              className="pp-input mt-1.5 w-full px-3 py-2 text-sm tabular-nums"
             />
           </label>
         </div>
       ) : (
-        <div className="mt-3 space-y-2">
+        <div className="mt-3.5 space-y-2.5">
           <textarea
             value={wins}
             onChange={(e) => setWins(e.target.value)}
             placeholder="Wins of the day"
             rows={2}
-            className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white"
+            className="pp-input w-full px-3 py-2 text-sm"
           />
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="One note for tomorrow"
             rows={2}
-            className="w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-sm text-white"
+            className="pp-input w-full px-3 py-2 text-sm"
           />
         </div>
       )}
@@ -99,7 +99,7 @@ export function RitualWizard({ token, kind = "morning", onDone }: Props) {
         type="button"
         disabled={saving}
         onClick={save}
-        className="mt-3 rounded-lg bg-[#b8422e] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+        className="mt-4 rounded-lg bg-[#b8422e] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#c9563d] disabled:opacity-50"
       >
         {kind === "morning" ? "Start the day" : "Finish the day"}
       </button>

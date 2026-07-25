@@ -133,6 +133,62 @@ html {
   z-index: 1;
 }
 
+/* Premium inner panels (Focus Score, Weekly review, Tasks, Billable, …).
+   The backlog panels shipped near-transparent (bg-white/[0.03]) so the red
+   scene bled through and text was unreadable. These give a solid, refined
+   card: deep near-black ground, a warm hairline, a soft top sheen, real
+   depth — and readable text tiers that never dip below ~0.62 alpha. */
+.premium-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 120px),
+    rgba(16, 17, 20, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+    0 16px 44px rgba(0, 0, 0, 0.46);
+  position: relative;
+  z-index: 1;
+}
+.premium-panel:hover {
+  border-color: rgba(196, 101, 58, 0.34);
+}
+/* Readable text tiers on the premium ground — use in place of text-white/xx. */
+.pp-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(224, 138, 106, 0.95);
+}
+.pp-strong {
+  color: #f4f2ef;
+}
+.pp-body {
+  color: rgba(232, 230, 226, 0.9);
+}
+.pp-muted {
+  color: rgba(197, 199, 204, 0.72);
+}
+.pp-faint {
+  color: rgba(160, 163, 170, 0.62);
+}
+/* Inputs inside premium panels — solid enough to read the text typed. */
+.pp-input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: #f4f2ef;
+}
+.pp-input::placeholder {
+  color: rgba(160, 163, 170, 0.6);
+}
+.pp-input:focus {
+  outline: none;
+  border-color: rgba(196, 101, 58, 0.6);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 /* Block tab — fluid timer digits (zoom-resilient). */
 .ff-timer-digits {
   font-size: clamp(2rem, 4vw + 1rem, 3.25rem);

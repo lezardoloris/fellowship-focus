@@ -23,7 +23,7 @@ export function StreakBadge({
     >
       <span aria-hidden>🔥</span>
       {streak}
-      {!compact && <span className="font-normal text-white/45">day streak</span>}
+      {!compact && <span className="font-normal text-white/70">day streak</span>}
       {inDanger && !compact && (
         <span className="ml-1 text-xs font-normal text-amber-400/90">at risk</span>
       )}

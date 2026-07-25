@@ -141,8 +141,8 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
       </div>
 
       {empty && (
-        <div className="glass-panel border border-[#b8422e]/40 px-5 py-4 text-sm text-white/80">
-          Finish a timer on <span className="font-semibold text-white">Block</span> to fill this week.
+        <div className="premium-panel border-[#b8422e]/40 px-5 py-4 text-sm pp-body">
+          Finish a timer on <span className="font-semibold pp-strong">Block</span> to fill this week.
         </div>
       )}
 
