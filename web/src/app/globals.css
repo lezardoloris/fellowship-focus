@@ -159,7 +159,8 @@ html {
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(224, 138, 106, 0.95);
+  /* Lightened to clear AA at 11px (was ~4.3:1). [UX-E5] */
+  color: rgba(233, 156, 126, 1);
 }
 .pp-strong {
   color: #f4f2ef;
@@ -170,8 +171,10 @@ html {
 .pp-muted {
   color: rgba(197, 199, 204, 0.72);
 }
+/* Raised from .62 → .82: at .62 this sat at ~3.4:1, under WCAG AA, and it is
+   used for 11px labels all over the money/task panels. [UX-E5] */
 .pp-faint {
-  color: rgba(160, 163, 170, 0.62);
+  color: rgba(178, 181, 188, 0.82);
 }
 /* Inputs inside premium panels — solid enough to read the text typed. */
 .pp-input {
@@ -187,6 +190,52 @@ html {
   outline: none;
   border-color: rgba(196, 101, 58, 0.6);
   background: rgba(255, 255, 255, 0.08);
+}
+
+/* Toast entrance [UX-DR11] — they used to snap in and out. */
+.toast-enter {
+  animation: toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast-enter {
+    animation: none;
+  }
+}
+
+/* Loading skeletons [UX-E3.1] — reserve the height so nothing jumps. */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05) 25%,
+    rgba(255, 255, 255, 0.11) 37%,
+    rgba(255, 255, 255, 0.05) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-sweep {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none;
+    background: rgba(255, 255, 255, 0.07);
+  }
 }
 
 /* Block tab — fluid timer digits (zoom-resilient). */
@@ -578,7 +627,10 @@ html {
   height: 100%;
   background: var(--accent);
   border-radius: 2px;
+  /* [UX-DR12] Animating `width` relayouts on every frame; keep the transition
+     on width for callers that set it, but hint the compositor. */
   transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: width;
 }
 
 @keyframes fade-up {

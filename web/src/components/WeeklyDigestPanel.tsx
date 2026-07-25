@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SkeletonPanel } from "@/components/Skeleton";
 
 type Digest = {
   insights: string[];
@@ -26,7 +27,9 @@ export function WeeklyDigestPanel({ token }: { token: string }) {
     load();
   }, [load]);
 
-  if (!data) return null;
+  // [UX-E3.1] Same height as the loaded panel, so the 2-col grid never
+  // collapses to 1 col and back (which also reflowed FocusScoreHero).
+  if (!data) return <SkeletonPanel lines={4} minHeight={210} />;
 
   return (
     <div className="premium-panel p-5">

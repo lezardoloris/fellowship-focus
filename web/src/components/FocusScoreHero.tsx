@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SkeletonPanel } from "@/components/Skeleton";
 
 type Hero = {
   today: number;
@@ -32,6 +33,8 @@ export function FocusScoreHero({ token }: { token: string | null }) {
   }, [token]);
 
   if (!token) return null;
+  // [UX-E3.1] Don't render a fake 0 that then jumps to the real score.
+  if (!data) return <SkeletonPanel lines={2} minHeight={140} />;
   const score = data?.today ?? 0;
   const delta = data?.delta ?? 0;
   const deltaLabel = delta === 0 ? "same as yesterday" : delta > 0 ? `+${delta} vs yesterday` : `${delta} vs yesterday`;

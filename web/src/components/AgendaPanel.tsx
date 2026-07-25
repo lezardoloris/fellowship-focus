@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PremiumLoader } from "@/components/PremiumLoader";
 import { WeeklyDigestPanel } from "@/components/WeeklyDigestPanel";
 import { TemptationsPanel } from "@/components/TemptationsPanel";
@@ -57,13 +57,21 @@ export function AgendaPanel({ token }: { token: string }) {
   const [saving, setSaving] = useState(false);
   const [revenueDraft, setRevenueDraft] = useState<string>("");
 
+  // [UX-DR14] The 20s poll used to overwrite the revenue field while the user
+  // was typing in it. Only seed the draft when the field isn't being edited.
+  const revenueFocused = useRef(false);
+  const seededRevenue = useRef(false);
+
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/productivity?token=${encodeURIComponent(token)}`);
       if (res.ok) {
         const json = (await res.json()) as Productivity;
         setData(json);
-        setRevenueDraft(String(Math.round(json.okr.revenue.current_cents / 100)));
+        if (!revenueFocused.current && !seededRevenue.current) {
+          setRevenueDraft(String(Math.round(json.okr.revenue.current_cents / 100)));
+          seededRevenue.current = true;
+        }
       }
     } finally {
       setLoading(false);
@@ -112,7 +120,7 @@ export function AgendaPanel({ token }: { token: string }) {
       value: `${kpis.focus_hours} h`,
       sub: `target ${okr.focus_hours.target} h`,
     },
-    { label: "Avg focus score", value: `${kpis.avg_focus_score}` , sub: "work vs distraction" },
+    { label: "Avg focus score", value: `${kpis.avg_focus_score}` , sub: "0–100 Pulse" },
     { label: "Streak", value: `${kpis.streak} d`, sub: `${kpis.focus_sessions} sessions` },
     { label: "Distraction", value: `${kpis.distraction_hours} h`, sub: "tracked this week" },
   ];
@@ -230,7 +238,13 @@ export function AgendaPanel({ token }: { token: string }) {
                 min={0}
                 value={revenueDraft}
                 onChange={(e) => setRevenueDraft(e.target.value)}
-                onBlur={() => save({ revenue_current_eur: Number(revenueDraft) || 0 })}
+                onFocus={() => {
+                  revenueFocused.current = true;
+                }}
+                onBlur={() => {
+                  revenueFocused.current = false;
+                  save({ revenue_current_eur: Number(revenueDraft) || 0 });
+                }}
                 className="input-premium w-20 py-1 text-center text-xs"
                 title="Revenue booked this week (manual)"
               />

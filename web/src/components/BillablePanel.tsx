@@ -104,14 +104,16 @@ export function BillablePanel({ token }: { token: string }) {
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name || id;
 
   return (
-    <div className="premium-panel p-5">
+    // [UX-E3.3] Fixed floor so switching tabs (summary ~260px vs profit/rules)
+    // never resizes the panel and shoves its grid neighbour around.
+    <div className="premium-panel p-5" style={{ minHeight: 300 }}>
       <div className="flex items-center justify-between gap-2">
         <p className="pp-title">Billable</p>
         <div className="flex gap-3 text-xs">
-          <button type="button" onClick={exportCsv} className="pp-muted transition-colors hover:pp-strong">
+          <button type="button" onClick={exportCsv} className="pp-muted transition-colors hover:text-white">
             CSV
           </button>
-          <button type="button" onClick={openInvoice} className="pp-muted transition-colors hover:pp-strong">
+          <button type="button" onClick={openInvoice} className="pp-muted transition-colors hover:text-white">
             Invoice PDF
           </button>
         </div>
@@ -131,7 +133,7 @@ export function BillablePanel({ token }: { token: string }) {
             type="button"
             onClick={() => setTab(id)}
             className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
-              tab === id ? "bg-[#b8422e] text-white" : "pp-muted hover:pp-strong"
+              tab === id ? "bg-[#b8422e] text-white" : "pp-muted hover:bg-white/10 hover:text-white"
             }`}
           >
             {label}

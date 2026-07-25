@@ -86,7 +86,7 @@ export function TaskList({ token }: { token: string }) {
             <button
               type="button"
               onClick={() => remove(t.id)}
-              className="text-xs pp-faint hover:pp-strong"
+              className="text-xs pp-faint transition-colors hover:text-[#e0674a]"
             >
               ✕
             </button>

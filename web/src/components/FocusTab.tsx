@@ -164,11 +164,19 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
       </div>
 
       {token && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <TaskList token={token} />
-          <BillablePanel token={token} />
-          <RitualWizard token={token} kind="morning" />
-        </div>
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <TaskList token={token} />
+            <BillablePanel token={token} />
+          </div>
+          {/* [UX-E9.1] Was a 3rd child in a 2-col grid — it orphaned at half
+              width beside an empty cell. [UX-E9.5] And it always showed the
+              morning planner, even at 6pm. */}
+          <RitualWizard
+            token={token}
+            kind={new Date().getHours() >= 17 ? "shutdown" : "morning"}
+          />
+        </>
       )}
 
       <div className="glass-panel p-6">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SkeletonTiles } from "@/components/Skeleton";
 
 type MoneyRow = {
   key: string;
@@ -74,7 +75,9 @@ export function MoneyPanel({ token }: { token: string }) {
     load();
   }, [load]);
 
-  if (!data) return null;
+  // [UX-E3.1] Reserve the height while loading — this panel is ~380px and used
+  // to pop into the layout, shoving everything below it down.
+  if (!data) return <SkeletonTiles count={4} minHeight={380} />;
   const cur = data.currency;
   const maxDay = Math.max(1, ...data.days.map((d) => d.tracked_minutes));
   const overProjects = data.profitability.filter((p) => p.over_budget);
@@ -90,7 +93,7 @@ export function MoneyPanel({ token }: { token: string }) {
               type="button"
               onClick={() => setWin(w)}
               className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
-                win === w ? "bg-[#b8422e] text-white" : "pp-muted hover:pp-strong"
+                win === w ? "bg-[#b8422e] text-white" : "pp-muted hover:bg-white/10 hover:text-white"
               }`}
             >
               {w === "week" ? "Week" : "Month"}
@@ -136,12 +139,13 @@ export function MoneyPanel({ token }: { token: string }) {
               return (
                 <div
                   key={d.date}
-                  className="relative flex-1 overflow-hidden rounded-sm bg-white/10"
+                  // [UX-DR12] Animate height only — these bars used to teleport.
+                  className="relative flex-1 overflow-hidden rounded-sm bg-white/10 transition-[height] duration-300 ease-out"
                   style={{ height: `${total}%` }}
                   title={`${d.date} — ${hrs(d.tracked_minutes)} tracked · ${eur(d.value_cents, cur)}`}
                 >
                   <div
-                    className="absolute bottom-0 left-0 right-0 bg-[#c4653a]"
+                    className="absolute bottom-0 left-0 right-0 bg-[#c4653a] transition-[height] duration-300 ease-out"
                     style={{ height: `${d.tracked_minutes ? (d.billable_minutes / d.tracked_minutes) * 100 : 0}%` }}
                   />
                 </div>

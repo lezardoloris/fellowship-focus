@@ -119,15 +119,16 @@ function ToastCard({
 
   return (
     <div
-      className={`pointer-events-auto rounded-xl border px-3.5 py-3 shadow-2xl backdrop-blur-md ${tone}`}
+      // [UX-DR11] Toasts used to appear and vanish instantly.
+      className={`toast-enter pointer-events-auto rounded-xl border px-3.5 py-3 shadow-2xl backdrop-blur-md ${tone}`}
       role={item.kind === "error" ? "alert" : "status"}
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-60">{label}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] opacity-80">{label}</p>
           <p className="mt-0.5 text-sm font-medium leading-snug">{item.title}</p>
           {item.message ? (
-            <p className="mt-1 text-xs leading-snug opacity-70">{item.message}</p>
+            <p className="mt-1 text-xs leading-snug opacity-90">{item.message}</p>
           ) : null}
         </div>
         <button
