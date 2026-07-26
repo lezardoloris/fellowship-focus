@@ -15,6 +15,7 @@ import {
   type HistorySuggestion,
 } from "@/lib/extensionBridge";
 import { useToast } from "@/components/Toasts";
+import { TimerRing } from "@/components/TimerRing";
 import { PremiumLoader } from "@/components/PremiumLoader";
 import { FocusMusicPanel } from "@/components/FocusMusicPanel";
 import { requestHardUnlock } from "@/components/BlockerControls";
@@ -1879,6 +1880,19 @@ export function BlockTab({
                     : "text-white"
               }`}
             >
+              <TimerRing
+                progress={
+                  inSession
+                    ? remaining /
+                      Math.max(
+                        1,
+                        (phase === "break" ? prefs.break_min : prefs.focus_min) * 60
+                      )
+                    : 1
+                }
+                tone={phase === "break" ? "break" : "focus"}
+                dim={!inSession || paused}
+              >
               <div className="ff-timer-digits font-display font-bold tracking-tight">
                 {inSession
                   ? `${mm}:${ss}`
@@ -1895,6 +1909,7 @@ export function BlockTab({
                   {prefs.focus_min}m · {prefs.break_min}m · ×{prefs.cycles}
                 </p>
               )}
+              </TimerRing>
             </div>
 
             {canEditTimer && (
