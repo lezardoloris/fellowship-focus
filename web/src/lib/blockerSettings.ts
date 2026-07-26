@@ -49,6 +49,12 @@ export type BlockerSettings = {
   work_days: number[];
   /** Daily focus target in minutes (E6). */
   daily_focus_target_min: number;
+  /** [HUD-H4] Quiet hours as "HH:MM"; both empty = disabled. Mirrors the
+      desktop config keys of the same name so one write reaches both apps. */
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+  /** [HUD-H4] Epoch seconds; 0 = not muted. Same key as the desktop tray snooze. */
+  notifications_muted_until: number;
 };
 
 export type BlockerMode = "soft" | "hard";
@@ -113,7 +119,12 @@ export const DEFAULT_BLOCKER_SETTINGS: BlockerSettings = {
   email_digest_opt_in: false,
   work_days: [1, 2, 3, 4, 5],
   daily_focus_target_min: 180,
+  quiet_hours_start: "",
+  quiet_hours_end: "",
+  notifications_muted_until: 0,
 };
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export function mergeBlockerSettings(
   partial?: Partial<BlockerSettings> | null
@@ -143,6 +154,13 @@ export function mergeBlockerSettings(
     15,
     Math.min(720, Number(base.daily_focus_target_min) || 180)
   );
+  base.quiet_hours_start = HHMM.test(String(base.quiet_hours_start ?? ""))
+    ? String(base.quiet_hours_start)
+    : "";
+  base.quiet_hours_end = HHMM.test(String(base.quiet_hours_end ?? ""))
+    ? String(base.quiet_hours_end)
+    : "";
+  base.notifications_muted_until = Math.max(0, Number(base.notifications_muted_until) || 0);
   return base;
 }
 

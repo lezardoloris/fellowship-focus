@@ -17,6 +17,7 @@ import {
 } from "@/lib/blockerSettings";
 import { PICKER_SCENE_IDS, SCENES, canonicalSceneId } from "@/lib/scenes";
 import { analyzeHistoryViaExtension, type HistorySuggestion } from "@/lib/extensionBridge";
+import { desktopBridge, isDesktopShell } from "@/lib/desktop";
 
 const LOCAL_PREFS_KEY = "ff-local-prefs";
 const LOCAL_BL_KEY = "ff-local-blocklist";
@@ -165,6 +166,34 @@ export function SettingsPanel({
       }
     }
     window.dispatchEvent(new CustomEvent("ff-blocker-reload"));
+  }
+
+  /** [HUD-H4] Notification prefs reach the desktop through the same
+      field-scoped setPrefs bridge as the blocker; never a full-blob write. */
+  async function saveNotifPrefs(
+    patch: Partial<
+      Pick<BlockerSettings, "quiet_hours_start" | "quiet_hours_end" | "notifications_muted_until">
+    >
+  ) {
+    await saveSettings({ ...settings, ...patch });
+    if (isDesktopShell()) {
+      await desktopBridge.setPrefs(patch).catch(() => undefined);
+    }
+  }
+
+  function muteFor(hours: number) {
+    // hours=0 means "until tomorrow 07:00", matching the desktop tray snooze.
+    let until: number;
+    if (hours > 0) {
+      until = Math.round(Date.now() / 1000) + hours * 3600;
+    } else {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(7, 0, 0, 0);
+      until = Math.round(tomorrow.getTime() / 1000);
+    }
+    saveNotifPrefs({ notifications_muted_until: until });
+    toast.ok("Notifications muted", hours > 0 ? `For ${hours}h` : "Until tomorrow 07:00");
   }
 
   async function importSites(list: string[]) {
@@ -387,6 +416,89 @@ export function SettingsPanel({
                 );
               })}
             </div>
+          </div>
+        </section>
+
+        {/* [HUD-H4] The desktop stored quiet_hours_start/end and
+            notifications_muted_until for months; the web exposed none of it. */}
+        <section className="space-y-3 border-b border-white/10 py-5">
+          <p className="text-xs font-medium uppercase tracking-wider pp-body">Notifications</p>
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm pp-body">
+            <span>
+              Quiet hours
+              <span className="block text-[11px] pp-muted">
+                Nudges wait until morning. Critical block alerts still fire.
+              </span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <input
+                type="time"
+                value={settings.quiet_hours_start}
+                onChange={(e) => saveNotifPrefs({ quiet_hours_start: e.target.value })}
+                aria-label="Quiet hours start"
+                className="input-premium px-2 py-1 text-xs"
+              />
+              <span className="pp-faint">to</span>
+              <input
+                type="time"
+                value={settings.quiet_hours_end}
+                onChange={(e) => saveNotifPrefs({ quiet_hours_end: e.target.value })}
+                aria-label="Quiet hours end"
+                className="input-premium px-2 py-1 text-xs"
+              />
+              {(settings.quiet_hours_start || settings.quiet_hours_end) && (
+                <button
+                  type="button"
+                  onClick={() => saveNotifPrefs({ quiet_hours_start: "", quiet_hours_end: "" })}
+                  className="text-[11px] pp-muted underline"
+                >
+                  Clear
+                </button>
+              )}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm pp-body">
+            <span>
+              Mute everything
+              <span className="block text-[11px] pp-muted">
+                One switch for all nudges, on this device and the desktop app.
+              </span>
+            </span>
+            {settings.notifications_muted_until * 1000 > Date.now() ? (
+              <span className="flex items-center gap-2">
+                <span className="text-[11px] pp-muted">
+                  Muted until{" "}
+                  {new Date(settings.notifications_muted_until * 1000).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => saveNotifPrefs({ notifications_muted_until: 0 })}
+                  className="rounded-md border border-[#b8422e] bg-[#b8422e]/20 px-3 py-1 text-xs pp-strong"
+                >
+                  Unmute
+                </button>
+              </span>
+            ) : (
+              <span className="flex gap-1.5">
+                {[
+                  { label: "1 h", hours: 1 },
+                  { label: "8 h", hours: 8 },
+                  { label: "Until tomorrow", hours: 0 },
+                ].map((m) => (
+                  <button
+                    key={m.label}
+                    type="button"
+                    onClick={() => muteFor(m.hours)}
+                    className="rounded-md border border-white/15 px-3 py-1 text-xs pp-body hover:border-white/35 hover:text-white"
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </span>
+            )}
           </div>
         </section>
 

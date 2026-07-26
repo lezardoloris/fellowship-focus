@@ -1443,6 +1443,38 @@ class MainWindow(QMainWindow):
                     config_dirty = True
         except (TypeError, ValueError):
             pass
+        # [HUD-H4] Notification prefs from the web Settings panel. Config-only:
+        # the suppression policy stays in notifications.py and mitm is never
+        # involved, so these can't disarm Shield.
+        notif_dirty = False
+        for key in ("quiet_hours_start", "quiet_hours_end"):
+            if key in patch:
+                raw = str(patch.get(key) or "").strip()
+                valid = raw == "" or (
+                    len(raw) == 5 and raw[2] == ":" and raw[:2].isdigit() and raw[3:].isdigit()
+                )
+                if valid and raw != str(self.config.get(key) or ""):
+                    self.config[key] = raw
+                    config_dirty = True
+                    notif_dirty = True
+        if "notifications_muted_until" in patch:
+            try:
+                until = max(0.0, float(patch.get("notifications_muted_until") or 0))
+            except (TypeError, ValueError):
+                until = None
+            if until is not None and until != float(
+                self.config.get("notifications_muted_until") or 0
+            ):
+                self.config["notifications_muted_until"] = until
+                config_dirty = True
+                notif_dirty = True
+        if notif_dirty:
+            try:
+                from fellowship_focus.notifications import set_policy_config
+
+                set_policy_config(self.config)
+            except Exception:
+                pass
         if config_dirty:
             save_config(self.config)
             try:
