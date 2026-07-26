@@ -57,10 +57,17 @@ export function FocusScoreHero({
             {deltaLabel}
           </span>
         </div>
-        {sparkline && sparkline.some((v) => v > 0) && (
+        {/* [HUD-H6] The panel stretches to match its taller grid sibling, so
+            with no trend to draw it used to end in a tall blank band that read
+            as a broken component. Say why it is empty instead. */}
+        {sparkline && sparkline.some((v) => v > 0) ? (
           <div className="mt-3 max-w-[220px]">
             <Sparkline data={sparkline} height={32} tone="accent" />
           </div>
+        ) : (
+          <p className="mt-3 text-xs pp-faint">
+            Finish a few sessions and the week&apos;s trend appears here.
+          </p>
         )}
         {data?.best_hour != null && (
           <p className="mt-1.5 text-xs pp-faint">Best hour around {data.best_hour}:00</p>

@@ -212,6 +212,13 @@ html {
 .hud-panel {
   --aug-border-bg: var(--hairline);
   --aug-border-all: 1px;
+  /* augmented-ui fills the clipped interior from --aug-inlay-bg, NOT from the
+     element's own background. Leaving it unset made every HUD panel render a
+     washed mid-grey (73,73,73) next to .premium-panel's (32,33,35) — measured
+     on the deployed build, not guessed. With it set the two grounds match to
+     within 1/255. The `background` below still matters for .hud-toast and any
+     use without the attribute. */
+  --aug-inlay-bg: var(--panel);
   --aug-tl: 14px;
   --aug-tr: 0px;
   --aug-bl: 0px;
