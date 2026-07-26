@@ -309,10 +309,12 @@ class WebDashboardPage(QWidget):
             )
             profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
             # Drop the HTTP cache once per launch so a new web deploy is always
-            # picked up. This only clears cached responses — localStorage and
-            # cookies (the onboarding "dismissed" flag) are untouched, which is
-            # why the persistent storage path above still does its job.
-            profile.clearHttpCache()
+            # picked up. Deferred to the event loop on purpose: clearing it
+            # inline, in the same breath as setCachePath() on the default
+            # profile, left the web view blank on launch. Only cached responses
+            # are dropped — cookies and localStorage (the onboarding
+            # "dismissed" flag) survive, which is the point of the paths above.
+            QTimer.singleShot(0, lambda: self._safe_clear_cache(profile))
         except Exception:
             pass
         self._view.loadFinished.connect(self._on_load_finished)
@@ -388,6 +390,49 @@ class WebDashboardPage(QWidget):
         if not (self._view and self._bridge and self._qwebchannel_js):
             return
         self._view.page().runJavaScript(self._qwebchannel_js + _BRIDGE_INIT_JS)
+
+    def _show_load_error(self) -> None:
+        """Render an in-view error instead of a black rectangle.
+
+        The dashboard is remote, so a dropped connection, a cold Railway
+        instance or an armed proxy that can't reach it all end here. Blank is
+        the one thing we must never show — the user can't tell a broken app
+        from a slow one.
+        """
+        if not self._view:
+            return
+        api = str(
+            self._get_config().get("api_url", "https://fellowship-focus-production.up.railway.app")
+        ).rstrip("/")
+        html = f"""<!doctype html><html><head><meta charset="utf-8"><style>
+          html,body{{height:100%;margin:0;background:#0c0e10;color:#e0dedb;
+            font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
+            display:flex;align-items:center;justify-content:center}}
+          .box{{max-width:420px;padding:28px;text-align:center;
+            background:rgba(16,17,20,.92);border:1px solid rgba(255,255,255,.1);
+            border-radius:16px}}
+          h1{{font-size:18px;margin:0 0 8px}}
+          p{{font-size:13px;line-height:1.5;color:rgba(197,199,204,.72);margin:0 0 18px}}
+          code{{font-size:11px;color:rgba(178,181,188,.82)}}
+          button{{background:#b8422e;color:#fff;border:0;border-radius:10px;
+            padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer}}
+        </style></head><body><div class="box">
+          <h1>Can't reach the dashboard</h1>
+          <p>The app couldn't load <code>{api}</code>.<br>
+             Check your connection — if the shield is on, its proxy may still be starting.</p>
+          <button onclick="location.reload()">Try again</button>
+        </div></body></html>"""
+        try:
+            self._view.setHtml(html, QUrl(api))
+        except Exception:
+            pass
+
+    @staticmethod
+    def _safe_clear_cache(profile) -> None:
+        try:
+            profile.clearHttpCache()
+        except Exception:
+            pass
 
     def hard_reload(self) -> None:
         """Force-refresh the web app, bypassing the HTTP disk cache.
@@ -533,7 +578,12 @@ class WebDashboardPage(QWidget):
         self.reload_dashboard()
 
     def _on_load_finished(self, ok: bool) -> None:
-        if not ok or not self._view:
+        if not self._view:
+            return
+        if not ok:
+            # A failed load used to return silently, leaving a black window with
+            # no explanation. Say what happened and offer a way out.
+            self._show_load_error()
             return
 
         if self._auth_pending:

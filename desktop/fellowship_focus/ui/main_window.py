@@ -3054,14 +3054,22 @@ def run(start_minimized: bool = False) -> None:
     lock_dir = _Path.home() / ".fellowship-focus"
     lock_dir.mkdir(parents=True, exist_ok=True)
     _lock = QLockFile(str(lock_dir / "app.lock"))
-    _lock.setStaleLockTime(0)  # a dead process must never block a relaunch
+    # setStaleLockTime(0) means "NEVER stale" in Qt — the opposite of what we
+    # want. It left a killed instance's lock file behind forever, so the app
+    # refused to start again until the file was deleted by hand.
+    _lock.setStaleLockTime(30000)
     if not _lock.tryLock(100):
-        QMessageBox.information(
-            None,
-            "Fellowship Focus",
-            "Fellowship Focus is already running — look for it in the system tray.",
-        )
-        sys.exit(0)
+        # The holder may simply be dead. removeStaleLockFile() only removes the
+        # file when its recorded PID is gone (or it aged out), so a genuinely
+        # running instance is still protected.
+        _lock.removeStaleLockFile()
+        if not _lock.tryLock(100):
+            QMessageBox.information(
+                None,
+                "Fellowship Focus",
+                "Fellowship Focus is already running — look for it in the system tray.",
+            )
+            sys.exit(0)
     run._lock = _lock  # keep a reference for the process lifetime
     icon_file = resolve_app_icon_path()
     if icon_file:

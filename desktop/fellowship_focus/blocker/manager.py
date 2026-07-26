@@ -141,11 +141,27 @@ def _resolve_block_script() -> Path:
 
 
 def kill_mitmdump() -> None:
+    """Kill the proxy engine and everything it spawned.
+
+    Killing only the tracked PID left grandchildren behind (the engine spawns
+    its own workers), so Task Manager kept showing python processes that were
+    hard to clear and that held the port — which is what made a relaunch
+    painful. We now take each process's children with it and wait briefly for
+    them to actually die instead of assuming they did.
+    """
     self_pid = os.getpid()
+    doomed: list = []
+
+    def collect(proc) -> None:
+        try:
+            doomed.extend(proc.children(recursive=True))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+        doomed.append(proc)
 
     for pid in list(_SPAWNED_PIDS):
         try:
-            psutil.Process(pid).kill()
+            collect(psutil.Process(pid))
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
         _SPAWNED_PIDS.discard(pid)
@@ -158,8 +174,20 @@ def kill_mitmdump() -> None:
             name = proc.info.get("name") or ""
             cmdline = proc.info.get("cmdline") or []
             if name in legacy_names or RUN_PROXY_FLAG in cmdline:
-                proc.kill()
+                collect(proc)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    for proc in doomed:
+        try:
+            proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    if doomed:
+        try:
+            # Short, bounded: never let shutdown hang on a stubborn child.
+            psutil.wait_procs(doomed, timeout=3)
+        except Exception:
             pass
 
 
