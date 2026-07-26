@@ -92,6 +92,7 @@ export function BarSeries({
   renderLabel,
   formatter,
   emptyLabel = "Nothing tracked yet.",
+  minNonZero = 1,
 }: {
   data: BarPoint[];
   height?: number;
@@ -112,12 +113,24 @@ export function BarSeries({
   renderLabel?: (point: BarPoint, index: number) => ReactNode;
   formatter?: (value: number, name?: string) => string;
   emptyLabel?: ReactNode;
+  /** [UX-5] One lonely bar (e.g. first week of 8-week history) looks like a
+      bug. Require this many non-zero points before drawing. */
+  minNonZero?: number;
 }) {
-  const hasData = data.some((d) => d.value !== 0 || (d.accent ?? 0) !== 0);
-  if (!hasData) return <p className="py-4 text-sm pp-faint">{emptyLabel}</p>;
+  const nonZero = data.filter((d) => d.value !== 0 || (d.accent ?? 0) !== 0).length;
+  if (nonZero < minNonZero) return <p className="py-4 text-sm pp-faint">{emptyLabel}</p>;
   const stacked = data.some((d) => d.accent !== undefined);
   const base = TONE[stacked ? baseTone : tone];
   const radius: [number, number, number, number] = horizontal ? [0, 2, 2, 0] : [2, 2, 0, 0];
+
+  // [UX-5] Bound the scale to visible data so the tallest bar fills most of
+  // the plot (≥70%). Without this, a distant auto-max leaves bars crushed at
+  // the bottom. Horizontal ladders keep auto-scale (negatives allowed).
+  const peak = Math.max(
+    0,
+    ...data.map((d) => Math.max(Math.abs(d.value), Math.abs(d.accent ?? 0)))
+  );
+  const domainMax = peak > 0 ? peak / 0.7 : 1;
 
   return (
     <div>
@@ -153,7 +166,14 @@ export function BarSeries({
             ) : (
               <>
                 {showAxis && <XAxis dataKey="label" tickLine={false} axisLine={false} tick={AXIS_STYLE} />}
-                {showAxis && <YAxis tickLine={false} axisLine={false} tick={AXIS_STYLE} width={28} />}
+                <YAxis
+                  hide={!showAxis}
+                  domain={[0, domainMax]}
+                  tickLine={false}
+                  axisLine={false}
+                  tick={AXIS_STYLE}
+                  width={showAxis ? 28 : 0}
+                />
               </>
             )}
             <Tooltip
@@ -239,10 +259,11 @@ export function HeatBars({
   );
 }
 
-/** Tiny trend line for stat tiles — no axes, no chrome. */
+/** Tiny trend line for stat tiles — no axes, no chrome.
+ *  [UX-4] Callers must pass height ≥ 40; below that a sparkline is noise. */
 export function Sparkline({
   data,
-  height = 32,
+  height = 40,
   tone = "accent",
 }: {
   data: number[];
@@ -250,11 +271,14 @@ export function Sparkline({
   tone?: ChartTone;
 }) {
   if (!data.some((v) => v > 0)) return null;
+  // Bound Y so a single spike doesn't leave the rest as a flat line on the floor.
+  const peak = Math.max(...data.map((v) => Math.abs(v)), 1);
   const points = data.map((value, i) => ({ i, value }));
   return (
-    <div style={{ height }}>
+    <div className="min-w-0 overflow-hidden" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={points} margin={{ top: 2, right: 0, bottom: 2, left: 0 }}>
+        <LineChart data={points} margin={{ top: 4, right: 2, bottom: 4, left: 2 }}>
+          <YAxis hide domain={[0, peak / 0.7]} />
           <Line
             type="monotone"
             dataKey="value"

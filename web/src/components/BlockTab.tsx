@@ -198,6 +198,7 @@ export function BlockTab({
   const [awaitingBreak, setAwaitingBreak] = useState(false);
   const [sessionRecap, setSessionRecap] = useState<SessionRecapData | null>(null);
   const [siteQuery, setSiteQuery] = useState("");
+  const [sitesExpanded, setSitesExpanded] = useState(false);
   const [, setSuggestions] = useState<HistorySuggestion[]>([]);
   const [, setDevices] = useState<
     Array<{ id: string; kind: string; label: string; last_seen: string; shield_on: number }>
@@ -2043,7 +2044,7 @@ export function BlockTab({
           </div>
 
           <div
-            className={`premium-panel flex max-h-[min(70vh,34rem)] min-h-[12rem] flex-col overflow-hidden p-4 sm:p-5 ff-block-area-${areaForPanel(blockLayout.areas, "block")}`}
+            className={`premium-panel flex max-h-[min(70vh,28rem)] flex-col overflow-hidden p-4 sm:p-5 ff-block-area-${areaForPanel(blockLayout.areas, "block")}`}
           >
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <button
@@ -2184,38 +2185,100 @@ export function BlockTab({
             </form>
 
             {(() => {
+              // [UX-7] Flat wall of ~25 chips had no hierarchy and forced scroll.
+              // Group by category, show 8, expand the rest; search stays visible.
               const q = siteQuery.trim().toLowerCase();
               const visible = q
                 ? sites.filter((s) => s.site.includes(q))
                 : sites;
               if (sites.length === 0) {
                 return (
-                  <div className="mt-3 flex flex-1 items-center justify-center rounded-xl border border-dashed border-white/12 px-3 py-8 text-center text-xs pp-faint">
+                  <div className="mt-3 rounded-xl border border-dashed border-white/12 px-3 py-5 text-center text-xs pp-faint">
                     Pick a preset or add a site
                   </div>
                 );
               }
+
+              const catOf = (site: string) =>
+                CATEGORIES.find((c) => c.sites.includes(site))?.label ?? "Custom";
+              const groups = new Map<string, typeof visible>();
+              for (const s of visible) {
+                const g = catOf(s.site);
+                const arr = groups.get(g) ?? [];
+                arr.push(s);
+                groups.set(g, arr);
+              }
+              const ordered = [
+                ...CATEGORIES.map((c) => c.label).filter((l) => groups.has(l)),
+                ...(groups.has("Custom") ? ["Custom"] : []),
+              ];
+
+              const SHOW = 8;
+              let shown = 0;
+              const rows: Array<{ label: string; items: typeof visible }> = [];
+              for (const label of ordered) {
+                const items = groups.get(label) ?? [];
+                if (sitesExpanded || q) {
+                  rows.push({ label, items });
+                  shown += items.length;
+                } else {
+                  const room = Math.max(0, SHOW - shown);
+                  if (room === 0) break;
+                  rows.push({ label, items: items.slice(0, room) });
+                  shown += Math.min(items.length, room);
+                }
+              }
+              const hidden = Math.max(0, visible.length - shown);
+
               return (
-                <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-white/8 bg-black/25 p-2.5">
-                  <div className="flex flex-wrap gap-1.5">
-                    {visible.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => removeSite(s.site)}
-                        title={`Remove ${s.site}`}
-                        className="group inline-flex max-w-full items-center gap-1 rounded-md border border-white/10 bg-white/[0.06] py-1 pl-2 pr-1.5 text-xs pp-body transition hover:border-[#b8422e]/50 hover:bg-[#b8422e]/15 hover:text-white"
-                      >
-                        <span className="truncate">{s.site}</span>
-                        <span className="shrink-0 pp-faint group-hover:text-[#fca5a5]" aria-hidden>
-                          ×
+                <div className="mt-3 min-h-0 flex-1 space-y-2.5 overflow-y-auto rounded-xl border border-white/8 bg-black/25 p-2.5">
+                  {rows.map(({ label, items }) => (
+                    <div key={label}>
+                      <p className="mb-1 px-0.5 text-[10px] font-medium uppercase tracking-wider pp-faint">
+                        {label}
+                        <span className="ml-1 tabular-nums opacity-70">
+                          {(groups.get(label) ?? []).length}
                         </span>
-                      </button>
-                    ))}
-                    {visible.length === 0 ? (
-                      <span className="px-1 py-2 text-xs pp-faint">No match</span>
-                    ) : null}
-                  </div>
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {items.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => removeSite(s.site)}
+                            title={`Remove ${s.site}`}
+                            className="group inline-flex max-w-full items-center gap-1 rounded-md border border-white/10 bg-white/[0.06] py-1 pl-2 pr-1.5 text-xs pp-body transition hover:border-[#b8422e]/50 hover:bg-[#b8422e]/15 hover:text-white"
+                          >
+                            <span className="truncate">{s.site}</span>
+                            <span className="shrink-0 pp-faint group-hover:text-[#fca5a5]" aria-hidden>
+                              ×
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {visible.length === 0 ? (
+                    <span className="px-1 py-2 text-xs pp-faint">No match</span>
+                  ) : null}
+                  {!q && hidden > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setSitesExpanded(true)}
+                      className="w-full rounded-md border border-white/10 py-1.5 text-xs pp-muted transition hover:bg-white/5 hover:text-white"
+                    >
+                      Show {hidden} more
+                    </button>
+                  ) : null}
+                  {!q && sitesExpanded && visible.length > SHOW ? (
+                    <button
+                      type="button"
+                      onClick={() => setSitesExpanded(false)}
+                      className="w-full rounded-md border border-white/10 py-1.5 text-xs pp-muted transition hover:bg-white/5 hover:text-white"
+                    >
+                      Show less
+                    </button>
+                  ) : null}
                 </div>
               );
             })()}

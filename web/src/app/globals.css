@@ -441,9 +441,18 @@ html {
 
 .immersive-scrim {
   pointer-events: none;
+  /* [UX-6] Darken the scene under data panels so the red backdrop stops
+     competing with numerals. Top stays slightly open for the crest; mid/bottom
+     carry more veil so panels dominate. Contrast AA on white text preserved. */
   background:
-    radial-gradient(ellipse 80% 60% at 50% 35%, transparent 0%, rgba(8, 10, 12, 0.15) 100%),
-    linear-gradient(180deg, rgba(8, 10, 12, 0.1) 0%, transparent 28%, transparent 62%, rgba(8, 10, 12, 0.32) 100%);
+    radial-gradient(ellipse 80% 60% at 50% 35%, transparent 0%, rgba(8, 10, 12, 0.42) 100%),
+    linear-gradient(
+      180deg,
+      rgba(8, 10, 12, 0.28) 0%,
+      rgba(8, 10, 12, 0.45) 22%,
+      rgba(8, 10, 12, 0.55) 55%,
+      rgba(8, 10, 12, 0.72) 100%
+    );
 }
 
 /* Full-bleed HD loop — GPU-composited, no kenburns (video already moves). */

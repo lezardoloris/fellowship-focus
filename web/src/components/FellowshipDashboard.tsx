@@ -2,10 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { HabitTracker } from "@/components/HabitTracker";
 import { StakesPanel } from "@/components/StakesPanel";
 import { TrustPanel } from "@/components/TrustPanel";
-import { AgendaPanel } from "@/components/AgendaPanel";
 import { PremiumLoader } from "@/components/PremiumLoader";
 import { GuildJourney } from "@/components/GuildJourney";
 import { LevelUpModal } from "@/components/LevelUpModal";
@@ -255,7 +253,7 @@ export function FellowshipDashboard({
   const crestLetter = (fellowship.name || "F").trim().charAt(0).toUpperCase();
 
   return (
-    <div className="space-y-8 guild-fade-in">
+    <div className="space-y-5 guild-fade-in">
       <LevelUpModal
         open={Boolean(levelUp)}
         rank={levelUp?.rank || 1}
@@ -456,7 +454,9 @@ export function FellowshipDashboard({
       <section className="space-y-4">
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="font-display text-lg pp-strong">Craft</h2>
-          <p className="text-[11px] pp-faint">Journey · habits · trust</p>
+          {/* [UX-1] Personal agenda / habits / review live on Progress. Guild
+              keeps only the collective craft surface: journey, habit ladder, trust. */}
+          <p className="text-[11px] pp-faint">Journey · habit ladder · trust</p>
         </div>
 
         <GuildJourney
@@ -477,18 +477,6 @@ export function FellowshipDashboard({
                 {t.title}
               </span>
             ))}
-          </div>
-        )}
-
-        {myToken && (
-          <div className="premium-panel p-5 md:p-6">
-            <AgendaPanel token={myToken} />
-          </div>
-        )}
-
-        {myToken && (
-          <div className="premium-panel p-5 md:p-6">
-            <HabitTracker token={myToken} fellowshipCode={code} />
           </div>
         )}
 

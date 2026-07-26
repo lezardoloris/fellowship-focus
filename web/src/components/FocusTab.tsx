@@ -151,8 +151,10 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
 
       {/* [HUD-H2] Mock order: score + weekly side by side, money full width,
           then week/ladder, temptations, habits. */}
+      {/* [UX-3] items-start so the shorter tile (Focus score) is not stretched
+          to the digest height — that stretch was the blank band under the numeral. */}
       {token && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid items-start gap-4 lg:grid-cols-2">
           <FocusScoreHero
             token={token}
             sparkline={stats.days.map((d) => d.focus_score)}
@@ -175,7 +177,9 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
 
       {token && (
         <>
-          <div className="grid gap-4 lg:grid-cols-2">
+          {/* [UX-2]/[UX-3] Align to the shorter panel — Billable's old minHeight:300
+              was stretching an empty Tasks list into a dead band. */}
+          <div className="grid items-start gap-4 lg:grid-cols-2">
             <TaskList token={token} />
             <BillablePanel token={token} />
           </div>
@@ -210,10 +214,8 @@ function WeekPanel({
   const { days, kpis, okr } = stats;
 
   // [HUD-H2] Streak KPI removed — StreakBadge at the top owns it (1× only).
-  // Sparklines use 8-week history so the tiles stop looking empty under the numeral.
-  const hoursSpark = stats.history.map((w) => w.work_minutes);
-  const scoreSpark = stats.history.map((w) => w.avg_focus_score);
-  const daysSpark = stats.days.map((d) => (d.focus_minutes > 0 ? 1 : 0));
+  // [UX-4] Sparklines removed from these KPI tiles — at tile size they read as
+  // noise. Trend stays on FocusScoreHero and the calendar bars below.
 
   return (
     <div className="hud-panel p-6" data-augmented-ui="tl-clip br-clip both">
@@ -228,7 +230,6 @@ function WeekPanel({
             label="Focus this week"
             value={`${kpis.focus_hours} h`}
             sub={`target ${okr.focus_hours.target} h`}
-            history={hoursSpark}
           />
         </div>
         <div className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-4">
@@ -236,8 +237,7 @@ function WeekPanel({
             label="Avg focus score"
             value={`${kpis.avg_focus_score}`}
             sub="work vs distraction"
-            history={scoreSpark}
-            sparkTone={kpis.avg_focus_score >= 70 ? "success" : kpis.avg_focus_score >= 40 ? "warning" : "danger"}
+            tone={kpis.avg_focus_score >= 70 ? "good" : kpis.avg_focus_score < 40 ? "bad" : "default"}
           />
         </div>
         <div className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-4">
@@ -245,7 +245,6 @@ function WeekPanel({
             label="Focus days"
             value={`${kpis.focus_days}`}
             sub="days with ≥25 min"
-            history={daysSpark}
           />
         </div>
         <div className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-4">
@@ -359,13 +358,15 @@ function LadderCard({ stats }: { stats: WeeklyStats }) {
 
       <div className="mt-5">
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wider pp-muted">8-week history</p>
-        {/* [HUD-H1] Third and last hand-rolled scaling formula, removed. */}
+        {/* [UX-5] A single non-zero week used to draw one lonely bar at the far
+            right and look like a bug. Require ≥2 weeks of data. */}
         <BarSeries
           height={64}
           data={history.map((w) => ({ label: w.weekStart, value: w.work_minutes }))}
           highlightIndex={history.length - 1}
           formatter={(v) => `${(v / 60).toFixed(1)} h`}
-          emptyLabel="No history yet. Finish a week to fill this."
+          minNonZero={2}
+          emptyLabel="Finish two weeks to see the trend."
         />
       </div>
     </div>

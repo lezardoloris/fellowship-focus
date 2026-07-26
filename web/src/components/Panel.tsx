@@ -49,8 +49,9 @@ export function Panel({
  * A labelled metric. The audit found ~19 duplications in 3 different visual
  * styles (Focus tab KPIs, Agenda KPIs, Money tiles). [UX-E6]
  *
- * [HUD-H2] Optional `history` fills the empty band under the big number (the
- * gap under the 52px score that made tiles look unfinished) with a Sparkline.
+ * [UX-4] Optional `history` only where the trend is the subject. Small KPI
+ * tiles should omit it — at tile width a 28px spark reads as noise and can
+ * bleed into the next column.
  */
 export function StatTile({
   label,
@@ -70,13 +71,13 @@ export function StatTile({
   const toneClass =
     tone === "good" ? "text-success" : tone === "bad" ? "text-danger" : "pp-strong";
   return (
-    <div>
+    <div className="min-w-0 overflow-hidden">
       <p className={`hud-num text-2xl font-bold ${toneClass}`}>{value}</p>
       <p className="text-xs pp-faint">{label}</p>
       {sub ? <div className="text-xs">{sub}</div> : null}
-      {history && history.length > 1 ? (
-        <div className="mt-2">
-          <Sparkline data={history} height={28} tone={sparkTone} />
+      {history && history.length > 1 && history.some((v) => v > 0) ? (
+        <div className="mt-2 max-w-full">
+          <Sparkline data={history} height={40} tone={sparkTone} />
         </div>
       ) : null}
     </div>

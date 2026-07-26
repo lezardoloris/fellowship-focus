@@ -42,7 +42,8 @@ export function FocusScoreHero({
 
   if (!token) return null;
   // [UX-E3.1] Don't render a fake 0 that then jumps to the real score.
-  if (!data) return <SkeletonPanel lines={2} minHeight={140} />;
+  // [UX-2] Compact skeleton — no reserved 140px band that reads as empty panel.
+  if (!data) return <SkeletonPanel lines={2} minHeight={88} />;
   const score = data?.today ?? 0;
   const delta = data?.delta ?? 0;
   const deltaLabel = delta === 0 ? "same as yesterday" : delta > 0 ? `+${delta} vs yesterday` : `${delta} vs yesterday`;
@@ -57,15 +58,13 @@ export function FocusScoreHero({
             {deltaLabel}
           </span>
         </div>
-        {/* [HUD-H6] The panel stretches to match its taller grid sibling, so
-            with no trend to draw it used to end in a tall blank band that read
-            as a broken component. Say why it is empty instead. */}
+        {/* [UX-4] Trend is the subject here — keep sparkline at ≥40px, clipped. */}
         {sparkline && sparkline.some((v) => v > 0) ? (
-          <div className="mt-3 max-w-[220px]">
-            <Sparkline data={sparkline} height={32} tone="accent" />
+          <div className="mt-3 max-w-[240px] overflow-hidden">
+            <Sparkline data={sparkline} height={40} tone="accent" />
           </div>
         ) : (
-          <p className="mt-3 text-xs pp-faint">
+          <p className="mt-2 text-xs pp-faint">
             Finish a few sessions and the week&apos;s trend appears here.
           </p>
         )}

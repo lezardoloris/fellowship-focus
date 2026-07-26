@@ -89,7 +89,7 @@ export function MoneyPanel({ token }: { token: string }) {
   if (failed && !data) return <ErrorState onRetry={load}>Couldn&apos;t load your money view.</ErrorState>;
   // [UX-E3.1] Reserve the height while loading — this panel is ~380px and used
   // to pop into the layout, shoving everything below it down.
-  if (!data) return <SkeletonTiles count={4} minHeight={380} />;
+  if (!data) return <SkeletonTiles count={4} minHeight={220} />;
   const cur = data.currency;
   const overProjects = data.profitability.filter((p) => p.over_budget);
 
@@ -113,14 +113,14 @@ export function MoneyPanel({ token }: { token: string }) {
         </div>
       </div>
 
-      {/* Headline tiles — everything in euros, never raw minutes alone.
-          [HUD-H2] Day series as sparklines so the band under the numeral isn't empty. */}
+      {/* Headline tiles — euros first.
+          [UX-4] Sparklines removed from these compact KPI tiles (noise + column
+          bleed). Trend lives in the day bars below, where height is useful. */}
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile
           label="earned"
           value={eur(data.total_cents, cur)}
           sub={<Delta now={data.total_cents} prev={data.prev.total_cents} money cur={cur} />}
-          history={data.days.map((d) => d.value_cents)}
         />
         <StatTile
           label="effective rate"
@@ -130,22 +130,15 @@ export function MoneyPanel({ token }: { token: string }) {
               <span className="text-sm font-normal pp-muted">/h</span>
             </>
           }
-          history={data.days.map((d) =>
-            d.billable_minutes > 0 ? Math.round((d.value_cents / d.billable_minutes) * 60) : 0
-          )}
         />
         <StatTile
           label="tracked"
           value={hrs(data.tracked_minutes)}
-          history={data.days.map((d) => d.tracked_minutes)}
         />
         <StatTile
           label="billable"
           value={`${data.billable_pct}%`}
           sub={<Delta now={data.billable_pct} prev={data.prev.billable_pct} />}
-          history={data.days.map((d) =>
-            d.tracked_minutes > 0 ? Math.round((d.billable_minutes / d.tracked_minutes) * 100) : 0
-          )}
         />
       </div>
 

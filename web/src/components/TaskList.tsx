@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { EmptyState } from "@/components/Panel";
 
 type Task = {
   id: string;
@@ -10,10 +11,13 @@ type Task = {
   time_spent_seconds: number;
 };
 
+/** [UX-2] Empty list no longer inherits the neighbour's 300px floor — content
+ *  height only, with an immediate add affordance. */
 export function TaskList({ token }: { token: string }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState("");
   const [estimate, setEstimate] = useState("25");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/tasks?token=${encodeURIComponent(token)}`);
@@ -64,37 +68,58 @@ export function TaskList({ token }: { token: string }) {
     <div className="premium-panel p-5">
       <div className="flex items-center justify-between">
         <p className="pp-title">Tasks</p>
-        <span className="text-xs pp-faint">{openEstimate} min planned</span>
+        {tasks.length > 0 && (
+          <span className="text-xs pp-faint">{openEstimate} min planned</span>
+        )}
       </div>
-      <ul className="mt-3.5 max-h-56 space-y-1.5 overflow-y-auto text-sm">
-        {tasks.map((t) => (
-          <li key={t.id} className="flex items-center gap-2.5 pp-body">
+
+      {tasks.length === 0 ? (
+        <EmptyState
+          action={
             <button
               type="button"
-              onClick={() => toggle(t)}
-              className={`h-4 w-4 flex-none rounded border ${
-                t.completed ? "border-emerald-400 bg-emerald-400/30" : "border-white/35"
-              }`}
-              aria-label="Toggle"
-            />
-            <span className={`flex-1 ${t.completed ? "line-through opacity-45" : ""}`}>
-              {t.title}
-            </span>
-            {t.estimate_minutes > 0 && (
-              <span className="text-xs pp-faint">{t.estimate_minutes}m</span>
-            )}
-            <button
-              type="button"
-              onClick={() => remove(t.id)}
-              className="text-xs pp-faint transition-colors hover:text-[#e0674a]"
+              onClick={() => inputRef.current?.focus()}
+              className="rounded-lg bg-[#b8422e] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#c9563d]"
             >
-              ✕
+              Add a task
             </button>
-          </li>
-        ))}
-      </ul>
+          }
+        >
+          Nothing planned yet. Capture the next thing to do.
+        </EmptyState>
+      ) : (
+        <ul className="mt-3.5 max-h-56 space-y-1.5 overflow-y-auto text-sm">
+          {tasks.map((t) => (
+            <li key={t.id} className="flex items-center gap-2.5 pp-body">
+              <button
+                type="button"
+                onClick={() => toggle(t)}
+                className={`h-4 w-4 flex-none rounded border ${
+                  t.completed ? "border-emerald-400 bg-emerald-400/30" : "border-white/35"
+                }`}
+                aria-label="Toggle"
+              />
+              <span className={`flex-1 ${t.completed ? "line-through opacity-45" : ""}`}>
+                {t.title}
+              </span>
+              {t.estimate_minutes > 0 && (
+                <span className="text-xs pp-faint">{t.estimate_minutes}m</span>
+              )}
+              <button
+                type="button"
+                onClick={() => remove(t.id)}
+                className="text-xs pp-faint transition-colors hover:text-[#e0674a]"
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <div className="mt-3.5 flex gap-2">
         <input
+          ref={inputRef}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && add()}

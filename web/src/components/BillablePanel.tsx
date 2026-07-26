@@ -104,9 +104,9 @@ export function BillablePanel({ token }: { token: string }) {
   const clientName = (id: string) => clients.find((c) => c.id === id)?.name || id;
 
   return (
-    // [UX-E3.3] Fixed floor so switching tabs (summary ~260px vs profit/rules)
-    // never resizes the panel and shoves its grid neighbour around.
-    <div className="premium-panel p-5" style={{ minHeight: 300 }}>
+    // [UX-2] Dropped the fixed 300px floor — it stretched empty Tasks beside
+    // this panel into a dead band. Content height only; tabs may reflow.
+    <div className="premium-panel p-5">
       <div className="flex items-center justify-between gap-2">
         <p className="pp-title">Billable</p>
         <div className="flex gap-3 text-xs">
