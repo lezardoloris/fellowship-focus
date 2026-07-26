@@ -29,7 +29,10 @@ Pairs with the Fellowship Focus desktop app, which blocks across every browser a
 Block distracting websites during focus sessions.
 
 ## Screenshots to upload (1280x800)
-1. The block page (full-bleed image + quote).
-2. The block panel with Deep Work / Lockdown + Block page / Notify toggles.
-3. A focus session running with the timer.
-(Generate with scripts/shots-store.mjs — see SUBMIT.md.)
+Already generated in `store/screenshots/`:
+1. `01-block-page.png` — the block page (full-bleed scene + persona quote).
+2. `02-popup-focus.png` — the popup with the shield on and a focus session running.
+3. `03-friction.png` — friction mode ("Pause." breathing countdown).
+
+Regenerate anytime with `node web/scripts/shots-store.mjs` (uses headless Chrome
+with a mocked chrome.* API and demo data; no extension install needed).

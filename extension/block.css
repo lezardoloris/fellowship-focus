@@ -115,3 +115,80 @@ body {
 @media (max-width: 640px) {
   .content, .meta { padding-left: 6vw; padding-right: 6vw; }
 }
+
+/* ── Friction page ("Pause.") ────────────────────────────────────────────
+   friction.html shipped referencing .card / .btn-primary / .btn-secondary
+   that existed nowhere — the page rendered as bare unstyled HTML. Same card
+   language as the HUD notification cards: panel ground, hairline, ember. */
+body.friction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card {
+  width: min(420px, 92vw);
+  padding: 38px 34px;
+  background: #16171a;
+  border: 1px solid #2a2d31;
+  border-radius: 6px;
+  text-align: center;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.46);
+}
+
+.card .logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  margin-bottom: 14px;
+}
+
+.card h1 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.card .sub {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.card .site {
+  display: block;
+  margin-top: 16px;
+  font-size: 15px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.btn-primary,
+.btn-secondary {
+  padding: 10px 22px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: #fff;
+}
+.btn-primary:disabled { opacity: 0.45; cursor: default; }
+.btn-primary:not(:disabled):hover { background: var(--accent-hover); }
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: var(--fg);
+}
+.btn-secondary:hover { background: rgba(255, 255, 255, 0.12); }

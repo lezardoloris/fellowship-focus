@@ -24,10 +24,13 @@ runtime files (no `store/`, no `*.md`, no private key).
 ## 2. Upload + listing
 1. New item → upload the zip.
 2. Fill the listing from `STORE-LISTING.md` (name, descriptions, category).
-3. Upload the 3 screenshots (1280x800) and the 128px icon.
+3. Upload the 3 screenshots from `store/screenshots/` (1280x800) and
+   `icons/icon128.png`. Regenerate screenshots: `node web/scripts/shots-store.mjs`.
 4. Paste each permission justification from `PERMISSIONS.md`.
-5. Privacy: set the policy URL to `https://<your-domain>/privacy`, and tick the
-   data-usage disclosures listed in `PERMISSIONS.md`.
+5. Privacy: set the policy URL to
+   `https://fellowship-focus-production.up.railway.app/privacy` (live, kept in
+   sync with `PRIVACY.md`), and tick the data-usage disclosures listed in
+   `PERMISSIONS.md`.
 6. Single purpose: paste the statement from `PERMISSIONS.md`.
 
 ## 3. Submit

@@ -2,7 +2,7 @@
  * Zip the extension into an upload-ready package for the Chrome Web Store.
  *
  * Stages a clean copy (runtime files only — no store kit, no private key, no
- * markdown, no OS cruft), preserving the directory layout (icons/, rules.json…),
+ * markdown, no OS cruft), preserving the directory layout (icons/, images/),
  * then zips it. Output: extension/store/fellowship-focus-<version>.zip
  *
  * Usage (from anywhere): node web/scripts/pack-extension.mjs
@@ -38,7 +38,9 @@ try {
   $mf = Join-Path $stage 'manifest.json'
   $j = Get-Content $mf -Raw | ConvertFrom-Json
   $j.PSObject.Properties.Remove('key')
-  ($j | ConvertTo-Json -Depth 20) | Set-Content $mf -Encoding utf8
+  # No BOM: Windows PowerShell's Set-Content -Encoding utf8 writes one, and a
+  # BOM-prefixed manifest.json is a store-validator gamble not worth taking.
+  [System.IO.File]::WriteAllText($mf, ($j | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))
   Get-ChildItem -Path $stage -Recurse -File |
     Where-Object { $_.Extension -in '.md','.pem' -or $_.Name -eq '.DS_Store' } |
     Remove-Item -Force -ErrorAction SilentlyContinue
