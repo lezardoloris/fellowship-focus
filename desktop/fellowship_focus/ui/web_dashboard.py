@@ -649,6 +649,10 @@ class WebDashboardPage(QWidget):
         self._load_retries = tries
         url = self._view.url()
         if tries <= 2 and url.isValid() and not url.isEmpty():
+            # stop() aborts the pending load, which fires loadFinished(ok=False).
+            # Without this flag that lands on the error page immediately and the
+            # retry we are about to start never gets a chance to be seen.
+            self._retrying = True
             self._view.stop()
             self._view.setUrl(url)
             self._arm_load_watchdog()
@@ -656,11 +660,18 @@ class WebDashboardPage(QWidget):
         self._show_load_error()
 
     def _on_load_finished(self, ok: bool) -> None:
+        if not ok and getattr(self, "_retrying", False):
+            # Our own stop() aborting the previous attempt. Return BEFORE
+            # touching the watchdog: the retry already re-armed it, and
+            # cancelling it here would leave a second stall undetected.
+            self._retrying = False
+            return
         wd = getattr(self, "_load_watchdog", None)
         if wd is not None:
             wd.stop()
         if ok:
             self._load_retries = 0
+            self._retrying = False
         if not self._view:
             return
         if not ok:
