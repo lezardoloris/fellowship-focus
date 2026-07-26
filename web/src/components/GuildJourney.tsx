@@ -19,7 +19,7 @@ export function GuildJourney({
   const journeyImage = WAYPOINT_IMAGES[current.id] ?? "/assets/journey-map.jpg";
 
   return (
-    <div className="premium-panel overflow-hidden p-0">
+    <div className="hud-panel overflow-hidden p-0" data-augmented-ui="tl-clip br-clip both">
       <div className="relative h-44 w-full md:h-52">
         <Image src={journeyImage} alt="" fill className="object-cover opacity-75" />
         <div className="hero-overlay absolute inset-0" />
@@ -100,7 +100,7 @@ export function GuildJourney({
 
         <p className="mt-4 text-[11px] pp-faint">
           Unlocked title · <span className="accent-text">{titleForWaypoint(current)}</span>
-          <span className="pp-faint"> — {current.unlock}</span>
+          <span className="pp-faint"> · {current.unlock}</span>
         </p>
       </div>
     </div>

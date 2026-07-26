@@ -87,6 +87,7 @@ export function BarSeries({
   showAxis = false,
   showBaseline = true,
   showGrid = false,
+  horizontal = false,
   highlightIndex,
   renderLabel,
   formatter,
@@ -100,6 +101,9 @@ export function BarSeries({
   /** Ground line under the bars. Without it short bars appear to float. */
   showBaseline?: boolean;
   showGrid?: boolean;
+  /** [HUD-H3] Rows instead of columns, labels on the left — the guild ladder.
+      Negative values are allowed here (weekly net XP can dip below zero). */
+  horizontal?: boolean;
   /** Tints one column — used for "today" in the Focus calendar. */
   highlightIndex?: number;
   /** Per-bar caption under the chart (the day's score, a weekday initial…).
@@ -109,31 +113,60 @@ export function BarSeries({
   formatter?: (value: number, name?: string) => string;
   emptyLabel?: ReactNode;
 }) {
-  const hasData = data.some((d) => d.value > 0 || (d.accent ?? 0) > 0);
+  const hasData = data.some((d) => d.value !== 0 || (d.accent ?? 0) !== 0);
   if (!hasData) return <p className="py-4 text-sm pp-faint">{emptyLabel}</p>;
   const stacked = data.some((d) => d.accent !== undefined);
   const base = TONE[stacked ? baseTone : tone];
+  const radius: [number, number, number, number] = horizontal ? [0, 2, 2, 0] : [2, 2, 0, 0];
 
   return (
     <div>
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }} barCategoryGap="18%">
+          <BarChart
+            data={data}
+            layout={horizontal ? "vertical" : "horizontal"}
+            margin={{ top: 4, right: 0, bottom: 0, left: 0 }}
+            barCategoryGap="18%"
+          >
             {showGrid && (
               <CartesianGrid
-                vertical={false}
+                vertical={horizontal}
+                horizontal={!horizontal}
                 stroke="rgba(255,255,255,0.06)"
                 strokeDasharray="2 4"
               />
             )}
-            {showAxis && <XAxis dataKey="label" tickLine={false} axisLine={false} tick={AXIS_STYLE} />}
-            {showAxis && <YAxis tickLine={false} axisLine={false} tick={AXIS_STYLE} width={28} />}
+            {horizontal ? (
+              <>
+                <XAxis type="number" hide />
+                <YAxis
+                  dataKey="label"
+                  type="category"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={AXIS_STYLE}
+                  width={96}
+                  interval={0}
+                />
+              </>
+            ) : (
+              <>
+                {showAxis && <XAxis dataKey="label" tickLine={false} axisLine={false} tick={AXIS_STYLE} />}
+                {showAxis && <YAxis tickLine={false} axisLine={false} tick={AXIS_STYLE} width={28} />}
+              </>
+            )}
             <Tooltip
               cursor={{ fill: "rgba(255,255,255,0.05)" }}
               content={<ChartTooltip formatter={formatter} />}
             />
-            {showBaseline && <ReferenceLine y={0} stroke="rgba(255,255,255,0.16)" />}
-            <Bar dataKey="value" radius={[2, 2, 0, 0]} fill={base} isAnimationActive={false}>
+            {showBaseline &&
+              (horizontal ? (
+                <ReferenceLine x={0} stroke="rgba(255,255,255,0.16)" />
+              ) : (
+                <ReferenceLine y={0} stroke="rgba(255,255,255,0.16)" />
+              ))}
+            <Bar dataKey="value" radius={radius} fill={base} isAnimationActive={false}>
               {data.map((_, i) => (
                 <Cell
                   key={i}
@@ -143,12 +176,12 @@ export function BarSeries({
               ))}
             </Bar>
             {stacked && (
-              <Bar dataKey="accent" radius={[2, 2, 0, 0]} fill={TONE[tone]} isAnimationActive={false} />
+              <Bar dataKey="accent" radius={radius} fill={TONE[tone]} isAnimationActive={false} />
             )}
           </BarChart>
         </ResponsiveContainer>
       </div>
-      {renderLabel && (
+      {renderLabel && !horizontal && (
         <div
           className="mt-1 grid gap-0 text-center"
           style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}

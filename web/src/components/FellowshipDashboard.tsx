@@ -9,6 +9,7 @@ import { AgendaPanel } from "@/components/AgendaPanel";
 import { PremiumLoader } from "@/components/PremiumLoader";
 import { GuildJourney } from "@/components/GuildJourney";
 import { LevelUpModal } from "@/components/LevelUpModal";
+import { BarSeries } from "@/components/Charts";
 import { useToast } from "@/components/Toasts";
 import { isDesktopShell } from "@/lib/desktop";
 import {
@@ -348,8 +349,11 @@ export function FellowshipDashboard({
         </div>
 
         <div className="grid gap-5 lg:grid-cols-2">
-          {/* Podium ladder */}
-          <div className="premium-panel p-5 md:p-6">
+          {/* [HUD-H3] The podium encoded rank in hand-picked pixel heights
+              (h-28/h-20/h-16) that ignored the actual XP values. Horizontal
+              BarSeries: bar length is the real weekly net, my row is the only
+              one at full opacity. */}
+          <div className="hud-panel p-5 md:p-6" data-augmented-ui="tl-clip br-clip both">
             <h3 className="text-sm font-semibold pp-strong">Weekly ladder</h3>
             <p className="mt-1 text-[11px] pp-faint">Net XP this week · leagues Mordor / Gondor / Rohan / Shire</p>
 
@@ -357,47 +361,36 @@ export function FellowshipDashboard({
               <p className="mt-6 text-sm pp-faint">No members yet. Share the invite.</p>
             ) : (
               <>
-                <div className="guild-podium mt-5 grid grid-cols-3 items-end gap-2">
-                  {[1, 0, 2].map((idx) => {
-                    const m = leaderboard[idx];
-                    if (!m) {
-                      return <div key={idx} className="rounded-lg bg-white/[0.06] py-8" />;
-                    }
-                    const place = idx + 1;
-                    const h = place === 1 ? "h-28" : place === 2 ? "h-20" : "h-16";
-                    return (
-                      <div key={m.id} className="flex flex-col items-center">
-                        <p className="mb-2 truncate text-center text-xs font-medium pp-body">{m.name}</p>
-                        <div
-                          className={`guild-podium-bar flex w-full flex-col items-center justify-end rounded-t-lg ${h} ${
-                            place === 1 ? "ladder-gold" : place === 2 ? "ladder-silver" : "ladder-bronze"
-                          }`}
-                        >
-                          <span className="mb-2 font-display text-lg pp-strong">{place}</span>
-                        </div>
-                        <p className="mt-1 text-[10px] tabular-nums pp-muted">{m.weekly_net} net</p>
-                      </div>
-                    );
-                  })}
+                <div className="mt-4">
+                  <BarSeries
+                    horizontal
+                    height={Math.max(72, leaderboard.length * 30)}
+                    data={leaderboard.map((m) => ({
+                      label: m.name === myName ? `${m.name} (you)` : m.name,
+                      value: m.weekly_net,
+                    }))}
+                    highlightIndex={leaderboard.findIndex((m) => m.name === myName)}
+                    formatter={(v) => `${v} net XP this week`}
+                    emptyLabel="No XP earned this week yet. First session tops the ladder."
+                  />
                 </div>
 
                 <ol className="mt-5 space-y-1.5">
-                  {leaderboard.length > 3 &&
-                    leaderboard.slice(3).map((m, i) => (
-                      <MemberRow
-                        key={m.id}
-                        place={i + 4}
-                        name={m.name}
-                        isYou={m.name === myName}
-                        league={m.league}
-                        weeklyNet={m.weekly_net}
-                        weeklyXp={m.weekly_xp}
-                        penalties={m.weekly_penalties}
-                        streak={m.streak}
-                        totalXp={m.total_xp}
-                        fellowshipXp={totalXp}
-                      />
-                    ))}
+                  {leaderboard.map((m, i) => (
+                    <MemberRow
+                      key={m.id}
+                      place={i + 1}
+                      name={m.name}
+                      isYou={m.name === myName}
+                      league={m.league}
+                      weeklyNet={m.weekly_net}
+                      weeklyXp={m.weekly_xp}
+                      penalties={m.weekly_penalties}
+                      streak={m.streak}
+                      totalXp={m.total_xp}
+                      fellowshipXp={totalXp}
+                    />
+                  ))}
                 </ol>
               </>
             )}
@@ -418,7 +411,9 @@ export function FellowshipDashboard({
                 />
               </div>
             )}
-            <div className="premium-panel p-5 md:p-6">
+            {/* [HUD-H3] Compact feed: tighter rows, hairline left tick per type
+                instead of a full tinted card, so 10 events fit where 6 did. */}
+            <div className="hud-panel p-5 md:p-6" data-augmented-ui="tl-clip br-clip both">
               <h3 className="text-sm font-semibold pp-strong">Activity</h3>
               {settleFlash && (
                 <p className="mt-2 rounded-lg border border-[#b8422e]/30 bg-[#b8422e]/10 px-3 py-2 text-xs pp-body">
@@ -428,11 +423,11 @@ export function FellowshipDashboard({
               {feed.length === 0 ? (
                 <p className="mt-4 text-sm pp-faint">No activity yet. Start a focus session.</p>
               ) : (
-                <ul className="mt-4 max-h-72 space-y-2 overflow-y-auto text-sm">
+                <ul className="mt-4 max-h-72 space-y-1.5 overflow-y-auto text-sm">
                   {feed.map((event) => (
                     <li
                       key={event.id}
-                      className={`rounded-lg px-3 py-2.5 ${
+                      className={`rounded px-3 py-1.5 ${
                         event.type === "block"
                           ? "feed-block"
                           : event.type === "session"
@@ -444,8 +439,8 @@ export function FellowshipDashboard({
                                 : "bg-white/[0.06]"
                       }`}
                     >
-                      <p className="pp-strong">{event.message}</p>
-                      <p className="mt-1 text-[10px] pp-faint">
+                      <p className="text-[13px] pp-strong">{event.message}</p>
+                      <p className="mt-0.5 text-[10px] pp-faint">
                         {new Date(event.created_at + "Z").toLocaleString()}
                       </p>
                     </li>
