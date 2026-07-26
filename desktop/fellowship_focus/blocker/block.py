@@ -336,7 +336,17 @@ def request(flow) -> None:
             reason=reason,
             dashboard_url=ctx.options.dashboard_url.strip(),
         )
-        flow.response = http.Response.make(200, html.encode("utf-8"), {"Content-Type": "text/html; charset=utf-8"})
+        # X-Fellowship-Focus lets the desktop canary prove a block without
+        # downloading the multi-MB base64 block page (otherwise verify times out
+        # and falsely reports "Shield NOT active").
+        flow.response = http.Response.make(
+            200,
+            html.encode("utf-8"),
+            {
+                "Content-Type": "text/html; charset=utf-8",
+                "X-Fellowship-Focus": "blocked",
+            },
+        )
         return
 
     # Unblocked adult / dopamine navigation during an armed shield → queue prompt.

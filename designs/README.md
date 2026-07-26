@@ -16,6 +16,6 @@ Boards inside the file:
 
 Tokens in the pen (`$accent` `#b8422e`, `$panel` `#16171a`, `$hairline` `#2a2d31`, Cinzel + Inter) match `web/src/app/globals.css`.
 
-Open with the Pencil extension. The live code (`.hud-panel`, `Charts.tsx`, `HudCard` desktop) is the implementation; this file is the composition reference for future screens.
+Open with the Pencil extension. The live code (`.hud-panel`, `Charts.tsx`, `HudCard` desktop — toasts, nudges, session recap, **floating timer**) is the implementation; this file is the composition reference for future screens.
 
 Copy of the workspace-root `.pen` as of 26 July 2026.

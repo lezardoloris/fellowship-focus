@@ -97,6 +97,11 @@ def font_timer(size: int = 48) -> QFont:
     load_fonts()
     f = QFont(_font_sans, size)
     f.setWeight(QFont.Weight.DemiBold)
+    # Match .hud-num tabular figures so 1:09 and 11:09 don't jump width.
+    try:
+        f.setFeature("tnum", 1)
+    except Exception:
+        pass
     return f
 
 

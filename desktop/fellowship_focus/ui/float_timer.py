@@ -3,9 +3,11 @@
 Survives main-window hide/minimize. Driven by the web bridge, with an optional
 local tick so the countdown keeps moving if the WebView is throttled.
 
-A premium capsule by default; a chevron expands a bigger card (add time, break,
-pause, music). The expanded panel only opens/closes on an explicit user action
-— the per-second time sync never touches it, so it no longer flickers shut.
+Collapsed capsule by default; a chevron expands controls (add time, break,
+pause, music). Chrome matches the Pencil HUD board: HudCard silhouette
+(tl/br clip + ember corner ticks), panel/hairline tokens. The expanded panel
+only opens/closes on an explicit user action — the per-second time sync never
+touches it, so it no longer flickers shut.
 """
 
 from __future__ import annotations
@@ -27,13 +29,13 @@ from PySide6.QtWidgets import (
 )
 
 from fellowship_focus.config import load_config, save_config
+from fellowship_focus.ui.hud_card import ACCENT as HUD_ACCENT
+from fellowship_focus.ui.hud_card import HAIRLINE, HudCard
 from fellowship_focus.ui.theme import ACCENT, FG, MUTED, font_timer
 
-# Local palette — deeper, more premium than the shared chrome.
-CARD_BG = "#17191c"
-CARD_BORDER = "#2c3034"
-BTN_BG = "#232629"
-BTN_BG_HOVER = "#2e3236"
+# HUD tokens (globals.css / .pen) — controls sit on the painted HudCard.
+BTN_BG = "#1e2023"
+BTN_BG_HOVER = "#2a2d31"
 BREAK_BLUE = "#5b9bd5"
 
 
@@ -91,19 +93,21 @@ class FloatTimerWindow(QWidget):
         self.setStyleSheet(self._qss())
         self.setWindowOpacity(self._opacity)
 
-        root = QWidget(self)
+        # Same geometry as toasts / nudges — Pencil "HUD components" board.
+        root = HudCard(self, border=HAIRLINE)
         root.setObjectName("floatRoot")
+        self._root = root
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 12, 12, 12)  # room for the drop shadow
+        outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(root)
 
         col = QVBoxLayout(root)
-        col.setContentsMargins(18, 12, 12, 14)
-        col.setSpacing(12)
+        col.setContentsMargins(16, 12, 12, 12)
+        col.setSpacing(10)
 
-        # ── Header row: dot · time · phase · expand · close ──
+        # ── Header row: dot · time · expand · close ──
         head = QHBoxLayout()
-        head.setSpacing(12)
+        head.setSpacing(10)
 
         self._dot = QLabel("●")
         self._dot.setObjectName("statusDot")
@@ -125,7 +129,7 @@ class FloatTimerWindow(QWidget):
 
         self._expand_btn = QPushButton("⌄")
         self._expand_btn.setObjectName("iconBtn")
-        self._expand_btn.setFixedSize(34, 34)
+        self._expand_btn.setFixedSize(32, 32)
         self._expand_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._expand_btn.setToolTip("More")
         self._expand_btn.clicked.connect(self._toggle_expand)
@@ -133,7 +137,7 @@ class FloatTimerWindow(QWidget):
 
         close = QPushButton("✕")
         close.setObjectName("iconBtn")
-        close.setFixedSize(34, 34)
+        close.setFixedSize(32, 32)
         close.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         close.setToolTip("Hide (session keeps running)")
         close.clicked.connect(self._on_dismiss)
@@ -143,26 +147,27 @@ class FloatTimerWindow(QWidget):
 
         # ── Expandable panel ──
         self._panel = QWidget()
+        self._panel.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         pcol = QVBoxLayout(self._panel)
         pcol.setContentsMargins(0, 0, 0, 0)
-        pcol.setSpacing(10)
+        pcol.setSpacing(8)
 
         # add-time row — compact chips (+5 / +10) plus a Restart for when you
         # stepped away and the running session no longer means anything.
         add_row = QHBoxLayout()
-        add_row.setSpacing(8)
+        add_row.setSpacing(6)
         for mins in (5, 10):
             b = QPushButton(f"+{mins}")
             b.setObjectName("timeChip")
-            b.setMinimumHeight(34)
-            b.setFixedWidth(52)
+            b.setMinimumHeight(32)
+            b.setFixedWidth(48)
             b.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             b.setToolTip(f"Add {mins} minutes")
             b.clicked.connect(lambda _=False, m=mins: self.add_time_requested.emit(m))
             add_row.addWidget(b)
         self._restart_btn = QPushButton("↻  Restart")
         self._restart_btn.setObjectName("chunkBtn")
-        self._restart_btn.setMinimumHeight(34)
+        self._restart_btn.setMinimumHeight(32)
         self._restart_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._restart_btn.setToolTip("Went AFK? Start this session over from the top")
         self._restart_btn.clicked.connect(self.restart_requested.emit)
@@ -171,21 +176,21 @@ class FloatTimerWindow(QWidget):
 
         # break / pause row
         act_row = QHBoxLayout()
-        act_row.setSpacing(10)
+        act_row.setSpacing(8)
         self._break_btn = QPushButton("Break")
         self._break_btn.setObjectName("primaryBtn")
-        self._break_btn.setMinimumHeight(40)
+        self._break_btn.setMinimumHeight(36)
         self._break_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._break_btn.clicked.connect(self.break_now_requested.emit)
         self._snooze_btn = QPushButton("Remind 5m")
         self._snooze_btn.setObjectName("chunkBtn")
-        self._snooze_btn.setMinimumHeight(40)
+        self._snooze_btn.setMinimumHeight(36)
         self._snooze_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._snooze_btn.clicked.connect(self.snooze_requested.emit)
         self._pause_btn = QPushButton("⏸")
         self._pause_btn.setObjectName("glyphBtn")
-        self._pause_btn.setMinimumHeight(40)
-        self._pause_btn.setFixedWidth(46)
+        self._pause_btn.setMinimumHeight(36)
+        self._pause_btn.setFixedWidth(42)
         self._pause_btn.setToolTip("Pause")
         self._pause_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._pause_btn.clicked.connect(self._on_pause_resume)
@@ -196,15 +201,15 @@ class FloatTimerWindow(QWidget):
 
         # music row
         music_row = QHBoxLayout()
-        music_row.setSpacing(10)
+        music_row.setSpacing(8)
         self._track = QComboBox()
-        self._track.setMinimumHeight(38)
+        self._track.setMinimumHeight(34)
         self._track.currentIndexChanged.connect(self._on_track_changed)
         music_row.addWidget(self._track, 1)
         self._play_btn = QPushButton("▶")
         self._play_btn.setObjectName("glyphBtn")
-        self._play_btn.setMinimumHeight(38)
-        self._play_btn.setFixedWidth(46)
+        self._play_btn.setMinimumHeight(34)
+        self._play_btn.setFixedWidth(42)
         self._play_btn.setToolTip("Play")
         self._play_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._play_btn.clicked.connect(self.music_toggle_requested.emit)
@@ -212,7 +217,7 @@ class FloatTimerWindow(QWidget):
         pcol.addLayout(music_row)
 
         vol_row = QHBoxLayout()
-        vol_row.setSpacing(10)
+        vol_row.setSpacing(8)
         vlbl = QLabel("Vol")
         vlbl.setObjectName("volLabel")
         vol_row.addWidget(vlbl)
@@ -262,12 +267,8 @@ class FloatTimerWindow(QWidget):
     # ── Styling ──────────────────────────────────────────────
 
     def _qss(self) -> str:
+        # Root chrome is painted by HudCard — QSS only styles controls.
         return f"""
-        QWidget#floatRoot {{
-            background: {CARD_BG};
-            border: 1px solid {CARD_BORDER};
-            border-radius: 18px;
-        }}
         QLabel#timeLabel {{ color: {FG}; background: transparent; }}
         QLabel#statusDot {{ background: transparent; font-size: 13px; }}
         QLabel#phaseLabel {{
@@ -277,48 +278,48 @@ class FloatTimerWindow(QWidget):
         QLabel#volLabel {{ color: {MUTED}; background: transparent; font-size: 11px; }}
         QPushButton#iconBtn {{
             background: {BTN_BG}; color: {MUTED};
-            border: none; border-radius: 17px; font-size: 15px;
+            border: 1px solid {HAIRLINE}; border-radius: 8px; font-size: 14px;
         }}
-        QPushButton#iconBtn:hover {{ background: {BTN_BG_HOVER}; color: {FG}; }}
+        QPushButton#iconBtn:hover {{ background: {BTN_BG_HOVER}; color: {FG}; border-color: {HUD_ACCENT}; }}
         QPushButton#chunkBtn {{
             background: {BTN_BG}; color: {FG};
-            border: 1px solid {CARD_BORDER}; border-radius: 11px;
-            font-size: 13px; font-weight: 600; padding: 0 10px;
+            border: 1px solid {HAIRLINE}; border-radius: 8px;
+            font-size: 12px; font-weight: 600; padding: 0 10px;
         }}
-        QPushButton#chunkBtn:hover {{ background: {BTN_BG_HOVER}; border-color: {ACCENT}; }}
+        QPushButton#chunkBtn:hover {{ background: {BTN_BG_HOVER}; border-color: {HUD_ACCENT}; }}
         QPushButton#timeChip {{
             background: {BTN_BG}; color: {MUTED};
-            border: 1px solid {CARD_BORDER}; border-radius: 10px;
-            font-size: 13px; font-weight: 700;
+            border: 1px solid {HAIRLINE}; border-radius: 8px;
+            font-size: 12px; font-weight: 700;
         }}
-        QPushButton#timeChip:hover {{ background: {BTN_BG_HOVER}; color: {FG}; border-color: {ACCENT}; }}
+        QPushButton#timeChip:hover {{ background: {BTN_BG_HOVER}; color: {FG}; border-color: {HUD_ACCENT}; }}
         QPushButton#glyphBtn {{
             background: {BTN_BG}; color: {FG};
-            border: 1px solid {CARD_BORDER}; border-radius: 11px;
-            font-size: 15px; font-weight: 400;
+            border: 1px solid {HAIRLINE}; border-radius: 8px;
+            font-size: 14px; font-weight: 400;
         }}
-        QPushButton#glyphBtn:hover {{ background: {BTN_BG_HOVER}; border-color: {ACCENT}; }}
+        QPushButton#glyphBtn:hover {{ background: {BTN_BG_HOVER}; border-color: {HUD_ACCENT}; }}
         QPushButton#primaryBtn {{
             background: {ACCENT}; color: #fff;
-            border: none; border-radius: 11px;
+            border: none; border-radius: 8px;
             font-size: 13px; font-weight: 700; padding: 0 10px;
         }}
         QPushButton#primaryBtn:hover {{ background: #c46551; }}
         QComboBox {{
             background: {BTN_BG}; color: {FG};
-            border: 1px solid {CARD_BORDER}; border-radius: 11px;
+            border: 1px solid {HAIRLINE}; border-radius: 8px;
             padding: 4px 12px; font-size: 12px;
         }}
         QComboBox::drop-down {{ border: none; width: 22px; }}
         QComboBox QAbstractItemView {{
-            background: {CARD_BG}; color: {FG};
+            background: #16171a; color: {FG};
             selection-background-color: {ACCENT};
         }}
-        QSlider::groove:horizontal {{ height: 5px; background: {CARD_BORDER}; border-radius: 3px; }}
-        QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 3px; }}
+        QSlider::groove:horizontal {{ height: 4px; background: {HAIRLINE}; border-radius: 2px; }}
+        QSlider::sub-page:horizontal {{ background: {ACCENT}; border-radius: 2px; }}
         QSlider::handle:horizontal {{
-            width: 16px; height: 16px; margin: -6px 0;
-            background: #fff; border-radius: 8px;
+            width: 14px; height: 14px; margin: -5px 0;
+            background: #fff; border-radius: 7px;
         }}
         """
 
@@ -484,6 +485,11 @@ class FloatTimerWindow(QWidget):
         if getattr(self, "_time_color", None) != time_color:
             self._time_color = time_color
             self._time.setStyleSheet(f"color: {time_color}; background: transparent;")
+        # Accent border when a break decision is pending (matches hud-toast critical).
+        border = ACCENT if self._awaiting_break else HAIRLINE
+        if getattr(self, "_border_color", None) != border:
+            self._border_color = border
+            self._root.set_border(border)
 
     def _apply_expanded(self) -> None:
         self._panel.setVisible(self._expanded)
@@ -499,13 +505,14 @@ class FloatTimerWindow(QWidget):
         self.setMinimumSize(0, 0)
         self.setMaximumSize(16777215, 16777215)
         self._panel.updateGeometry()
-        root = self.findChild(QWidget, "floatRoot")
+        root = self._root
         m = self.layout().contentsMargins()
-        (root or self).layout().activate()
-        rh = root.sizeHint() if root else self.sizeHint()
+        root.layout().activate()
+        rh = root.sizeHint()
         w = rh.width() + m.left() + m.right()
         h = rh.height() + m.top() + m.bottom()
         self.setFixedSize(w, h)
+        root.update()
         if self._placed:
             delta = h - before_h
             if delta:

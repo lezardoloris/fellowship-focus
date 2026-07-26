@@ -2009,8 +2009,15 @@ class MainWindow(QMainWindow):
             )
             ok = False
             try:
+                # Do NOT download the full block HTML — it embeds a multi-MB JPEG
+                # and used to time out here while filtering was actually working.
                 with opener.open(f"http://{target}/", timeout=8) as resp:
-                    ok = "Blocked — Fellowship Focus" in resp.read().decode("utf-8", "replace")
+                    marker = (resp.headers.get("X-Fellowship-Focus") or "").strip().lower()
+                    if marker == "blocked":
+                        ok = True
+                    else:
+                        chunk = resp.read(8192).decode("utf-8", "replace")
+                        ok = "Blocked" in chunk and "Fellowship Focus" in chunk
             except Exception as e:
                 blocker_log(f"verify: request error {e}")
             result["ok"] = ok
