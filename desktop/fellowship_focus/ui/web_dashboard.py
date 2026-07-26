@@ -282,6 +282,11 @@ class WebDashboardPage(QWidget):
             return True
         if not HAS_WEBENGINE:
             return False
+        # Navigating in the same event-loop turn as the view's construction
+        # loses the navigation — Chromium's render process isn't up yet — and
+        # the window stays black forever. Callers check this flag and retry on
+        # the next turn. [black-screen fix]
+        self._view_just_created = True
         from PySide6.QtGui import QColor
         from PySide6.QtWidgets import QVBoxLayout
 
@@ -481,6 +486,11 @@ class WebDashboardPage(QWidget):
 
         if not self._ensure_view():
             return
+        if getattr(self, "_view_just_created", False):
+            # Let Chromium finish spawning before the first navigation.
+            self._view_just_created = False
+            QTimer.singleShot(250, self.reload_dashboard)
+            return
 
         base = f"{api}/app"
         if code:
@@ -527,33 +537,63 @@ class WebDashboardPage(QWidget):
         <p>Paste your invite link above, or use <span class="accent">Copy for desktop app</span> from the web dashboard.</p>
         </div></body></html>"""
 
+    def _install_auth_script(self, code: str, token: str, name: str) -> None:
+        """Seed membership into localStorage BEFORE the page's JS runs.
+
+        The old flow navigated, injected credentials afterwards, then called
+        location.reload() so React would re-read them — a fragile dance that
+        left the window permanently blank when the reload and the app's own
+        startup raced. Injecting at DocumentCreation (the same mechanism the
+        bridge already uses) means the credentials are simply there on first
+        mount, so no reload is needed at all.
+        """
+        if not self._view:
+            return
+        try:
+            payload = json.dumps({"token": token, "name": name})
+            js = f"""
+            (function() {{
+              try {{
+                localStorage.setItem('ff-app-code', {json.dumps(code)});
+                localStorage.setItem({json.dumps(f"ff-member-{code}")}, {json.dumps(payload)});
+              }} catch (e) {{}}
+            }})();
+            """
+            scripts = self._view.page().scripts()
+            for existing in scripts.find("ffdesktop-auth"):
+                scripts.remove(existing)
+            script = QWebEngineScript()
+            script.setName("ffdesktop-auth")
+            script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
+            script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+            script.setRunsOnSubFrames(False)
+            script.setSourceCode(js)
+            scripts.insert(script)
+        except Exception:
+            pass
+
     def _load_dashboard_with_auth(self, url: str, code: str, token: str, name: str) -> None:
-        """Navigate then inject localStorage on the real origin (not about:blank)."""
+        """Seed credentials at document creation, then navigate once."""
         code = code.strip().lower()
         target = QUrl(url)
-        if self._view.url().host() == target.host() and self._view.url().path().startswith("/app"):
-            # Already on the app origin — inject now and let reload pick up membership.
-            self._auth_pending = None
-            self._inject_auth_credentials(code, token, name, reload_once=True)
-            if self._view.url().toString().rstrip("/") != url.rstrip("/"):
-                self._view.setUrl(target)
-            return
-        self._auth_pending = (url, code, token, name)
-        self._view.setUrl(target)
+        self._auth_pending = None
+        self._install_auth_script(code, token, name)
+        if self._view.url().toString().rstrip("/") != url.rstrip("/"):
+            self._view.setUrl(target)
+        elif not self._view.url().isValid() or self._view.url().isEmpty():
+            self._view.setUrl(target)
 
     def _inject_auth_credentials(self, code: str, token: str, name: str, *, reload_once: bool = False) -> None:
         if not self._view:
             return
         payload = json.dumps({"token": token, "name": name})
         key = f"ff-member-{code}"
+        # reload_once is kept in the signature for callers, but no longer
+        # reloads: credentials are seeded at DocumentCreation by
+        # _install_auth_script, so the page already has them on first mount.
+        # The old location.reload() here raced the app's own startup and could
+        # leave the window blank forever.
         reload_js = ""
-        if reload_once:
-            reload_js = """
-          if (!sessionStorage.getItem('ff-desktop-auth-reloaded')) {
-            sessionStorage.setItem('ff-desktop-auth-reloaded', '1');
-            location.reload();
-          }
-            """
         js = f"""
         (function() {{
           localStorage.setItem('ff-app-code', {json.dumps(code)});
