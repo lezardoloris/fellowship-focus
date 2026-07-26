@@ -503,6 +503,7 @@ class WebDashboardPage(QWidget):
                 self._load_dashboard_with_auth(url, code, token, name)
             elif self._view.url().toString().rstrip("/") != url:
                 self._view.setUrl(QUrl(url))
+                self._arm_load_watchdog()
             else:
                 self._on_load_finished(True)
             if (
@@ -522,6 +523,7 @@ class WebDashboardPage(QWidget):
             current = self._view.url().toString().rstrip("/")
             if current != base and not current.startswith(base + "?"):
                 self._view.setUrl(QUrl(base))
+                self._arm_load_watchdog()
 
     def _empty_html(self) -> str:
         return f"""<html><head><style>
@@ -580,8 +582,10 @@ class WebDashboardPage(QWidget):
         self._install_auth_script(code, token, name)
         if self._view.url().toString().rstrip("/") != url.rstrip("/"):
             self._view.setUrl(target)
+            self._arm_load_watchdog()
         elif not self._view.url().isValid() or self._view.url().isEmpty():
             self._view.setUrl(target)
+            self._arm_load_watchdog()
 
     def _inject_auth_credentials(self, code: str, token: str, name: str, *, reload_once: bool = False) -> None:
         if not self._view:
@@ -617,7 +621,46 @@ class WebDashboardPage(QWidget):
         self._status.setStyleSheet(f"color: {MUTED};")
         self.reload_dashboard()
 
+    def _arm_load_watchdog(self, seconds: int = 12) -> None:
+        """Re-issue the navigation if the page never finishes loading.
+
+        The black-screen bug was a navigation that started and then hung
+        forever — loadStarted fired, loadFinished never did. Deferring the
+        first navigation fixes the known trigger, but a fixed delay is only a
+        guess about how long Chromium needs on a given machine. This is the
+        part that actually makes it safe: if a load hasn't completed in time,
+        we retry it, and only give up (with a visible error) after a couple of
+        attempts. The app can no longer sit on a blank window.
+        """
+        if not self._view:
+            return
+        wd = getattr(self, "_load_watchdog", None)
+        if wd is None:
+            wd = QTimer(self)
+            wd.setSingleShot(True)
+            wd.timeout.connect(self._on_load_stalled)
+            self._load_watchdog = wd
+        wd.start(seconds * 1000)
+
+    def _on_load_stalled(self) -> None:
+        if not self._view:
+            return
+        tries = getattr(self, "_load_retries", 0) + 1
+        self._load_retries = tries
+        url = self._view.url()
+        if tries <= 2 and url.isValid() and not url.isEmpty():
+            self._view.stop()
+            self._view.setUrl(url)
+            self._arm_load_watchdog()
+            return
+        self._show_load_error()
+
     def _on_load_finished(self, ok: bool) -> None:
+        wd = getattr(self, "_load_watchdog", None)
+        if wd is not None:
+            wd.stop()
+        if ok:
+            self._load_retries = 0
         if not self._view:
             return
         if not ok:
@@ -631,6 +674,7 @@ class WebDashboardPage(QWidget):
             current = self._view.url().toString()
             if "about:blank" in current or not current:
                 self._view.setUrl(QUrl(url))
+                self._arm_load_watchdog()
                 return
             self._auth_pending = None
             self._inject_auth_credentials(code, token, name, reload_once=True)
