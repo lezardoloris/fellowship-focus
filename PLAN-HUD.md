@@ -105,6 +105,26 @@ Chaque story indique **le .pen à faire** et **la lib à utiliser**.
 
 ---
 
+## 5 bis. État au 26/07/2026, mesuré
+
+| Story | État | Preuve |
+|---|---|---|
+| H0 socle | ✅ | `augmented-ui` installé, `.hud-panel`, `BarSeries` étendu |
+| H1 Focus | ✅ | calendrier + historique 8 semaines sur la lib |
+| H2 Progress | ✅ | ordre maquette, sparklines, `HeatBars`, `streak` dédupliqué |
+| H3 Guild | ✅ | ladder en barres horizontales, longueur = net XP réel |
+| H4 Settings | ✅ | quiet hours + mute via `/api/blocker/config` existant |
+| H5 Notifications | ✅ | `.hud-toast` web + `HudCard` Qt |
+| H6 vérification | ✅ | ci-dessous |
+
+**Chiffres de fin** : couche graphique appelée dans **7 fichiers** (1 au départ) ; **0** barre maison restante (`style={{ height: ` ne renvoie rien) ; `tsc` exit 0 ; `next build` 54/54 pages ; desktop 38/38 ; exe redéployé sur le Bureau, 3673 fichiers en parité exacte avec le build.
+
+**Deux défauts trouvés en capturant le build déployé**, pas à l'œil :
+- `.hud-panel` rendait en (73,73,73) contre (32,33,35) pour `.premium-panel`. Cause : augmented-ui remplit l'intérieur depuis `--aug-inlay-bg`, jamais depuis le `background` de l'élément. Quatre correctifs candidats mesurés en direct ; celui retenu tombe à 1/255 du panneau de référence.
+- Le panneau du score s'étire sur la hauteur de son voisin de grille et finissait en bande vide quand il n'y a pas de tendance à tracer. Il dit maintenant pourquoi.
+
+**Non fait, et pourquoi** : les 5 écrans `.pen` (Progress, Guild, Settings, notifications) n'ont pas été redessinés. Ils décrivent l'état d'avant le HUD. Leur rôle était de trancher la composition avant de coder ; c'est fait, et le code est désormais la référence. Les remettre à niveau serait de la documentation, pas de la conception. Une planche « HUD components » a été ajoutée au `.pen` (elle, sert aux écrans futurs) mais le renderer Pencil n'a pas voulu la peindre dans cette session : structure vérifiée par `snapshot_layout`, rendu visuel non validé.
+
 ## 6. Règles
 
 - **Jamais de hex dans un graphique** — un nom de ton, résolu vers les tokens.
