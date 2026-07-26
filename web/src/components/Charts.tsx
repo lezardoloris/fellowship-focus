@@ -6,9 +6,11 @@ import {
   AreaChart,
   Bar,
   BarChart,
+  CartesianGrid,
   Cell,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -83,6 +85,10 @@ export function BarSeries({
   tone = "accent",
   baseTone = "muted",
   showAxis = false,
+  showBaseline = true,
+  showGrid = false,
+  highlightIndex,
+  renderLabel,
   formatter,
   emptyLabel = "Nothing tracked yet.",
 }: {
@@ -91,34 +97,69 @@ export function BarSeries({
   tone?: ChartTone;
   baseTone?: ChartTone;
   showAxis?: boolean;
+  /** Ground line under the bars. Without it short bars appear to float. */
+  showBaseline?: boolean;
+  showGrid?: boolean;
+  /** Tints one column — used for "today" in the Focus calendar. */
+  highlightIndex?: number;
+  /** Per-bar caption under the chart (the day's score, a weekday initial…).
+      Added for [HUD-H0]: migrating the Focus calendar without it would have
+      dropped the per-day score it prints under each column. */
+  renderLabel?: (point: BarPoint, index: number) => ReactNode;
   formatter?: (value: number, name?: string) => string;
   emptyLabel?: ReactNode;
 }) {
   const hasData = data.some((d) => d.value > 0 || (d.accent ?? 0) > 0);
   if (!hasData) return <p className="py-4 text-sm pp-faint">{emptyLabel}</p>;
   const stacked = data.some((d) => d.accent !== undefined);
+  const base = TONE[stacked ? baseTone : tone];
 
   return (
-    <div style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }} barCategoryGap="18%">
-          {showAxis && <XAxis dataKey="label" tickLine={false} axisLine={false} tick={AXIS_STYLE} />}
-          {showAxis && <YAxis tickLine={false} axisLine={false} tick={AXIS_STYLE} width={28} />}
-          <Tooltip
-            cursor={{ fill: "rgba(255,255,255,0.05)" }}
-            content={<ChartTooltip formatter={formatter} />}
-          />
-          <Bar
-            dataKey="value"
-            radius={[4, 4, 0, 0]}
-            fill={TONE[stacked ? baseTone : tone]}
-            isAnimationActive={false}
-          />
-          {stacked && (
-            <Bar dataKey="accent" radius={[4, 4, 0, 0]} fill={TONE[tone]} isAnimationActive={false} />
-          )}
-        </BarChart>
-      </ResponsiveContainer>
+    <div>
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }} barCategoryGap="18%">
+            {showGrid && (
+              <CartesianGrid
+                vertical={false}
+                stroke="rgba(255,255,255,0.06)"
+                strokeDasharray="2 4"
+              />
+            )}
+            {showAxis && <XAxis dataKey="label" tickLine={false} axisLine={false} tick={AXIS_STYLE} />}
+            {showAxis && <YAxis tickLine={false} axisLine={false} tick={AXIS_STYLE} width={28} />}
+            <Tooltip
+              cursor={{ fill: "rgba(255,255,255,0.05)" }}
+              content={<ChartTooltip formatter={formatter} />}
+            />
+            {showBaseline && <ReferenceLine y={0} stroke="rgba(255,255,255,0.16)" />}
+            <Bar dataKey="value" radius={[2, 2, 0, 0]} fill={base} isAnimationActive={false}>
+              {data.map((_, i) => (
+                <Cell
+                  key={i}
+                  fill={base}
+                  fillOpacity={highlightIndex === undefined || i === highlightIndex ? 1 : 0.72}
+                />
+              ))}
+            </Bar>
+            {stacked && (
+              <Bar dataKey="accent" radius={[2, 2, 0, 0]} fill={TONE[tone]} isAnimationActive={false} />
+            )}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      {renderLabel && (
+        <div
+          className="mt-1 grid gap-0 text-center"
+          style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
+        >
+          {data.map((d, i) => (
+            <div key={i} className={i === highlightIndex ? "pp-strong" : "pp-faint"}>
+              {renderLabel(d, i)}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

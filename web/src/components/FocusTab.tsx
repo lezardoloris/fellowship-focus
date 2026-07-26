@@ -14,6 +14,7 @@ import { MoneyPanel } from "@/components/MoneyPanel";
 import { TaskList } from "@/components/TaskList";
 import { RitualWizard } from "@/components/RitualWizard";
 import { WeeklyDigestPanel } from "@/components/WeeklyDigestPanel";
+import { BarSeries } from "@/components/Charts";
 
 const GITHUB_KEY = "ff-github-user";
 
@@ -198,7 +199,6 @@ function WeekPanel({
   githubWeek: { commits: number; prs: number; reviews: number; xp: number } | null;
 }) {
   const { days, kpis, okr } = stats;
-  const maxMinutes = Math.max(30, ...days.map((d) => d.focus_minutes));
 
   const kpiCards = [
     { label: "Focus this week", value: `${kpis.focus_hours} h`, sub: `target ${okr.focus_hours.target} h` },
@@ -215,7 +215,7 @@ function WeekPanel({
   ];
 
   return (
-    <div className="premium-panel p-6">
+    <div className="hud-panel p-6" data-augmented-ui="tl-clip br-clip both">
       <div className="mb-5">
         <h2 className="text-lg font-semibold text-white">Week overview</h2>
         <p className="mt-0.5 text-xs pp-muted">{rangeLabel(stats.weekStart)}</p>
@@ -233,34 +233,35 @@ function WeekPanel({
 
       <div className="mb-6">
         <p className="mb-3 text-xs font-medium uppercase tracking-wider pp-muted">Focus calendar</p>
-        <div className="flex items-end justify-between gap-2">
-          {days.map((d) => {
-            const h = Math.round((d.focus_minutes / maxMinutes) * 100);
-            const isToday = d.date === today;
-            const isFuture = d.date > today;
+        {/* [HUD-H1] Was hand-rolled divs with their own percent-of-max maths and
+            only a title= tooltip. Now the shared layer: real scale, real
+            tooltip, real baseline. `renderLabel` keeps the per-day score and
+            weekday that a plain migration would have dropped. */}
+        <BarSeries
+          height={112}
+          data={days.map((d) => ({ label: d.weekday, value: d.focus_minutes }))}
+          highlightIndex={days.findIndex((d) => d.date === today)}
+          formatter={(v) => `${v} min focus`}
+          renderLabel={(_, i) => {
+            const d = days[i];
             return (
-              <div key={d.date} className="flex flex-1 flex-col items-center gap-2">
-                <div className="flex h-28 w-full items-end justify-center">
-                  <div
-                    className={`w-7 rounded-t-md transition-all ${isFuture ? "bg-[#2e3134]" : "bg-[#b8422e]"}`}
-                    style={{ height: `${Math.max(d.focus_minutes > 0 ? 6 : 2, h)}%` }}
-                    title={`${d.focus_minutes} min focus`}
-                  />
-                </div>
+              <div className="flex flex-col items-center gap-0.5 pt-0.5">
                 {d.focus_score > 0 ? (
-                  <span className="text-[10px] font-semibold tabular-nums" style={{ color: scoreColor(d.focus_score) }}>
+                  <span
+                    className="hud-num text-[10px] font-semibold"
+                    style={{ color: scoreColor(d.focus_score) }}
+                  >
                     {d.focus_score}
                   </span>
                 ) : (
                   <span className="text-[10px] pp-faint">·</span>
                 )}
-                <span className={`text-[11px] ${isToday ? "font-semibold text-[#f4f4f5]" : "pp-muted"}`}>
-                  {d.weekday}
-                </span>
+                <span className="text-[11px]">{d.weekday}</span>
               </div>
             );
-          })}
-        </div>
+          }}
+          emptyLabel="No focus logged this week yet."
+        />
         <p className="mt-2 text-[11px] pp-muted">
           Bars = focus minutes · number = daily focus score (green ≥70, amber ≥40, red below).
         </p>
@@ -290,12 +291,11 @@ function WeekPanel({
 function LadderCard({ stats }: { stats: WeeklyStats }) {
   const { league, history } = stats;
   const style = LEAGUE_STYLE[league.name] ?? LEAGUE_STYLE.Shire;
-  const maxMins = Math.max(60, ...history.map((h) => h.work_minutes));
   const toNext = league.next ? Math.max(0, league.next.at - league.hours) : 0;
   const nextPct = league.next ? pct(league.hours, league.next.at) : 100;
 
   return (
-    <div className="premium-panel p-6">
+    <div className="hud-panel p-6" data-augmented-ui="tl-clip br-clip both">
       <p className="text-xs font-medium uppercase tracking-wider pp-body">Your ladder</p>
       <div className="mt-3 flex items-center gap-3">
         <span
@@ -328,26 +328,14 @@ function LadderCard({ stats }: { stats: WeeklyStats }) {
 
       <div className="mt-5">
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wider pp-muted">8-week history</p>
-        <div className="flex items-end justify-between gap-1">
-          {history.map((w, i) => {
-            const hgt = Math.round((w.work_minutes / maxMins) * 100);
-            const isLast = i === history.length - 1;
-            return (
-              <div key={w.weekStart} className="flex flex-1 flex-col items-center gap-1">
-                <div className="flex h-16 w-full items-end justify-center">
-                  <div
-                    className="w-full rounded-t-sm transition-all"
-                    style={{
-                      height: `${Math.max(w.work_minutes > 0 ? 6 : 2, hgt)}%`,
-                      background: isLast ? "#b8422e" : "#4b4f52",
-                    }}
-                    title={`${(w.work_minutes / 60).toFixed(1)} h · score ${w.avg_focus_score}`}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        {/* [HUD-H1] Third and last hand-rolled scaling formula, removed. */}
+        <BarSeries
+          height={64}
+          data={history.map((w) => ({ label: w.weekStart, value: w.work_minutes }))}
+          highlightIndex={history.length - 1}
+          formatter={(v) => `${(v / 60).toFixed(1)} h`}
+          emptyLabel="No history yet — finish a week to fill this."
+        />
       </div>
     </div>
   );

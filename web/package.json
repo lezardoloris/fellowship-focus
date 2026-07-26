@@ -18,6 +18,7 @@
     "sync-assets": "powershell -ExecutionPolicy Bypass -File ../scripts/sync-assets.ps1"
   },
   "dependencies": {
+    "augmented-ui": "^2.0.0",
     "better-sqlite3": "^12.11.1",
     "nanoid": "^6.0.0",
     "next": "16.2.10",

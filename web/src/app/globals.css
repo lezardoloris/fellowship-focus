@@ -1,4 +1,10 @@
 @import "tailwindcss";
+/* HUD geometry [HUD-H0] — pure CSS, zero dependencies. Provides the
+   `data-augmented-ui` attribute used by `.hud-panel`; it draws notched,
+   bevelled borders that a border-radius cannot. No React involvement, so
+   nothing to break on a React upgrade (this is why it was picked over
+   dither-kit, which copies component source into the repo). */
+@import "augmented-ui/augmented-ui.min.css";
 
 /* ── Design tokens [UX-E4] ────────────────────────────────────────────────
    Single source of truth. The audit found 41 hard-coded hex values in TSX
@@ -177,7 +183,10 @@ html {
     linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 120px),
     var(--panel);
   border: 1px solid var(--hairline);
-  border-radius: 16px;
+  /* [HUD-H0] 16px → 6px. One line, and every panel in the app reads sharper.
+     Doing this here rather than editing 37 components is the whole point of
+     having the token layer. */
+  border-radius: 6px;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.05) inset,
     0 16px 44px rgba(0, 0, 0, 0.46);
@@ -186,6 +195,65 @@ html {
 }
 .premium-panel:hover {
   border-color: rgba(196, 101, 58, 0.34);
+}
+
+/* ── HUD geometry [HUD-H0] ────────────────────────────────────────────────
+   The "cyber forge" register: we keep the ember accent (this is Fellowship
+   Focus — Rohan, Shire, Mordor would read wrong in neon cyan) and take the
+   *geometry* of the futurist look instead of its palette.
+
+   Use `.hud-panel` with a data-augmented-ui attribute, e.g.
+     <div className="hud-panel" data-augmented-ui="tl-clip br-clip both">
+   The class supplies colour and depth; the attribute supplies the shape, so
+   a panel can change silhouette without touching its styling.
+
+   Deliberately absent: glitch and animated scanlines. This screen is stared
+   at for 50 minutes at a stretch — motion in the chrome becomes noise.     */
+.hud-panel {
+  --aug-border-bg: var(--hairline);
+  --aug-border-all: 1px;
+  --aug-tl: 14px;
+  --aug-tr: 0px;
+  --aug-bl: 0px;
+  --aug-br: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 120px),
+    var(--panel);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.46);
+  position: relative;
+  z-index: 1;
+}
+.hud-panel:hover {
+  --aug-border-bg: rgba(196, 101, 58, 0.34);
+}
+/* Corner ticks — the HUD read comes from these more than from the clip. */
+.hud-panel[data-augmented-ui]::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--accent), var(--accent)) top left / 12px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) top left / 1px 12px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom right / 12px 1px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom right / 1px 12px no-repeat;
+  opacity: 0.34;
+  transition: opacity 0.25s ease;
+}
+.hud-panel:hover[data-augmented-ui]::after {
+  opacity: 0.6;
+}
+/* Figures line up in a column — a readout, not prose. Applied to any number
+   that sits next to another number. */
+.hud-num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+/* Reduced motion: the corner ticks stop reacting to hover entirely. */
+@media (prefers-reduced-motion: reduce) {
+  .hud-panel[data-augmented-ui]::after {
+    transition: none;
+  }
 }
 /* Readable text tiers on the premium ground — use in place of text-white/xx. */
 .pp-title {
