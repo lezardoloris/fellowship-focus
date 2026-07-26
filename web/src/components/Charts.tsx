@@ -169,20 +169,28 @@ export function HeatBars({
   data,
   height = 56,
   formatter,
+  emptyLabel = "No hits yet.",
 }: {
   data: Array<{ label: string; value: number }>;
   height?: number;
   formatter?: (value: number, name?: string) => string;
+  emptyLabel?: ReactNode;
 }) {
   const max = Math.max(1, ...data.map((d) => d.value));
+  if (!data.some((d) => d.value > 0)) {
+    return <p className="py-4 text-sm pp-faint">{emptyLabel}</p>;
+  }
   return (
     <div style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }} barCategoryGap="12%">
+          {/* Hidden axis so the tooltip gets the hour label, not an index. */}
+          <XAxis dataKey="label" hide />
           <Tooltip
             cursor={{ fill: "rgba(255,255,255,0.05)" }}
             content={<ChartTooltip formatter={formatter} />}
           />
+          <ReferenceLine y={0} stroke="rgba(255,255,255,0.16)" />
           <Bar dataKey="value" radius={[3, 3, 0, 0]} isAnimationActive={false}>
             {data.map((d, i) => (
               <Cell

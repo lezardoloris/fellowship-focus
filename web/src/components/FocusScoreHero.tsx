@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { SkeletonPanel } from "@/components/Skeleton";
+import { Sparkline } from "@/components/Charts";
 
 type Hero = {
   today: number;
@@ -13,7 +14,14 @@ type Hero = {
   formula: string;
 };
 
-export function FocusScoreHero({ token }: { token: string | null }) {
+export function FocusScoreHero({
+  token,
+  sparkline,
+}: {
+  token: string | null;
+  /** [HUD-H2] Week of daily scores — fills the empty band under the 52px numeral. */
+  sparkline?: number[];
+}) {
   const [data, setData] = useState<Hero | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -40,15 +48,20 @@ export function FocusScoreHero({ token }: { token: string | null }) {
   const deltaLabel = delta === 0 ? "same as yesterday" : delta > 0 ? `+${delta} vs yesterday` : `${delta} vs yesterday`;
 
   return (
-    <div className="premium-panel p-5">
+    <div className="hud-panel p-5" data-augmented-ui="tl-clip br-clip both">
       <button type="button" className="w-full text-left" onClick={() => setOpen((v) => !v)}>
         <p className="pp-title">Focus score</p>
         <div className="mt-1.5 flex items-baseline gap-3">
-          <span className="text-5xl font-bold tabular-nums pp-strong">{score}</span>
+          <span className="hud-num text-5xl font-bold pp-strong">{score}</span>
           <span className={`text-sm font-medium ${delta > 0 ? "text-emerald-400" : delta < 0 ? "text-[#e08a6a]" : "pp-muted"}`}>
             {deltaLabel}
           </span>
         </div>
+        {sparkline && sparkline.some((v) => v > 0) && (
+          <div className="mt-3 max-w-[220px]">
+            <Sparkline data={sparkline} height={32} tone="accent" />
+          </div>
+        )}
         {data?.best_hour != null && (
           <p className="mt-1.5 text-xs pp-faint">Best hour around {data.best_hour}:00</p>
         )}

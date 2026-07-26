@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Sparkline, type ChartTone } from "@/components/Charts";
 
 /**
  * The one panel. [UX-E6]
@@ -47,25 +48,37 @@ export function Panel({
 /**
  * A labelled metric. The audit found ~19 duplications in 3 different visual
  * styles (Focus tab KPIs, Agenda KPIs, Money tiles). [UX-E6]
+ *
+ * [HUD-H2] Optional `history` fills the empty band under the big number (the
+ * gap under the 52px score that made tiles look unfinished) with a Sparkline.
  */
 export function StatTile({
   label,
   value,
   sub,
   tone = "default",
+  history,
+  sparkTone = "accent",
 }: {
   label: ReactNode;
   value: ReactNode;
   sub?: ReactNode;
   tone?: "default" | "good" | "bad";
+  history?: number[];
+  sparkTone?: ChartTone;
 }) {
   const toneClass =
     tone === "good" ? "text-success" : tone === "bad" ? "text-danger" : "pp-strong";
   return (
     <div>
-      <p className={`text-2xl font-bold tabular-nums ${toneClass}`}>{value}</p>
+      <p className={`hud-num text-2xl font-bold ${toneClass}`}>{value}</p>
       <p className="text-xs pp-faint">{label}</p>
       {sub ? <div className="text-xs">{sub}</div> : null}
+      {history && history.length > 1 ? (
+        <div className="mt-2">
+          <Sparkline data={history} height={28} tone={sparkTone} />
+        </div>
+      ) : null}
     </div>
   );
 }

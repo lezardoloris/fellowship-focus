@@ -32,12 +32,13 @@ export function WeeklyDigestPanel({ token }: { token: string }) {
   if (!data) return <SkeletonPanel lines={4} minHeight={210} />;
 
   return (
-    <div className="premium-panel p-5">
+    <div className="hud-panel p-5" data-augmented-ui="tl-clip br-clip both">
       <p className="pp-title">Weekly review</p>
+      {/* [HUD-H2] Streak removed — StreakBadge at the top of Progress owns it
+          (audit counted streak 4×; this was the 3rd remaining). */}
       <p className="mt-2.5 text-[15px] pp-body">
         <span className="pp-strong font-semibold">{data.kpis.focus_hours}h</span> focus · score{" "}
-        <span className="pp-strong font-semibold">{data.kpis.avg_focus_score}</span> · 🔥{" "}
-        {data.kpis.streak}
+        <span className="pp-strong font-semibold">{data.kpis.avg_focus_score}</span>
         {data.previous_focus_hours > 0 && (
           <span className="pp-faint">
             {" "}

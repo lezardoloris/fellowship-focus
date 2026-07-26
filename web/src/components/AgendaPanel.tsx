@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PremiumLoader } from "@/components/PremiumLoader";
 import { WeeklyDigestPanel } from "@/components/WeeklyDigestPanel";
 import { TemptationsPanel } from "@/components/TemptationsPanel";
+import { BarSeries } from "@/components/Charts";
 
 type Day = {
   date: string;
@@ -48,7 +49,7 @@ function rangeLabel(weekStart: string): string {
   const end = new Date(start);
   end.setDate(start.getDate() + 6);
   const fmt = (d: Date) => d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-  return `${fmt(start)} – ${fmt(end)}`;
+  return `${fmt(start)} - ${fmt(end)}`;
 }
 
 export function AgendaPanel({ token }: { token: string }) {
@@ -112,16 +113,17 @@ export function AgendaPanel({ token }: { token: string }) {
   if (!data) return null;
 
   const { days, kpis, okr } = data;
-  const maxMinutes = Math.max(30, ...days.map((d) => d.focus_minutes));
 
+  // [HUD-H2] Streak KPI removed: the members ladder beside this panel already
+  // shows my streak, and the audit's rule is one owner per screen.
   const kpiCards: Array<{ label: string; value: string; sub?: string }> = [
     {
       label: "Focus this week",
       value: `${kpis.focus_hours} h`,
       sub: `target ${okr.focus_hours.target} h`,
     },
-    { label: "Avg focus score", value: `${kpis.avg_focus_score}` , sub: "0–100 Pulse" },
-    { label: "Streak", value: `${kpis.streak} d`, sub: `${kpis.focus_sessions} sessions` },
+    { label: "Avg focus score", value: `${kpis.avg_focus_score}` , sub: "0-100 Pulse" },
+    { label: "Sessions", value: `${kpis.focus_sessions}`, sub: "completed this week" },
     { label: "Distraction", value: `${kpis.distraction_hours} h`, sub: "tracked this week" },
   ];
 
@@ -148,49 +150,37 @@ export function AgendaPanel({ token }: { token: string }) {
         ))}
       </div>
 
-      {/* Weekly calendar */}
+      {/* Weekly calendar. [HUD-H2] Was the last hand-rolled percent-of-max bar
+          maths in the app; now the shared layer, same call shape as FocusTab. */}
       <div className="mb-6">
         <p className="mb-3 text-xs font-medium uppercase tracking-wider pp-muted">
           Focus calendar
         </p>
-        <div className="flex items-end justify-between gap-2">
-          {days.map((d) => {
-            const h = Math.round((d.focus_minutes / maxMinutes) * 100);
-            const isToday = d.date === today;
-            const isFuture = d.date > today;
+        <BarSeries
+          height={112}
+          data={days.map((d) => ({ label: d.weekday, value: d.focus_minutes }))}
+          highlightIndex={days.findIndex((d) => d.date === today)}
+          formatter={(v) => `${v} min focus`}
+          renderLabel={(_, i) => {
+            const d = days[i];
             return (
-              <div key={d.date} className="flex flex-1 flex-col items-center gap-2">
-                <div className="flex h-28 w-full items-end justify-center">
-                  <div
-                    className={`w-7 rounded-t-md transition-all ${
-                      isFuture ? "bg-[#2e3134]" : "bg-[#b8422e]"
-                    }`}
-                    style={{ height: `${Math.max(d.focus_minutes > 0 ? 6 : 2, h)}%` }}
-                    title={`${d.focus_minutes} min focus · ${d.sessions} sessions`}
-                  />
-                </div>
+              <div className="flex flex-col items-center gap-0.5 pt-0.5">
                 {d.focus_score > 0 ? (
                   <span
-                    className="text-[10px] font-semibold tabular-nums"
+                    className="hud-num text-[10px] font-semibold"
                     style={{ color: scoreColor(d.focus_score) }}
-                    title="Focus score (work vs distraction)"
                   >
                     {d.focus_score}
                   </span>
                 ) : (
                   <span className="text-[10px] pp-faint">·</span>
                 )}
-                <span
-                  className={`text-[11px] ${
-                    isToday ? "font-semibold text-[#f4f4f5]" : "pp-muted"
-                  }`}
-                >
-                  {d.weekday}
-                </span>
+                <span className="text-[11px]">{d.weekday}</span>
               </div>
             );
-          })}
-        </div>
+          }}
+          emptyLabel="No focus logged this week yet."
+        />
         <p className="mt-2 text-[11px] pp-muted">
           Bars = focus minutes · number = daily focus score (green ≥70, amber ≥40, red below).
         </p>

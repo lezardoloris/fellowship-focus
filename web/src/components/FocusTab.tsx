@@ -14,7 +14,9 @@ import { MoneyPanel } from "@/components/MoneyPanel";
 import { TaskList } from "@/components/TaskList";
 import { RitualWizard } from "@/components/RitualWizard";
 import { WeeklyDigestPanel } from "@/components/WeeklyDigestPanel";
+import { TemptationsPanel } from "@/components/TemptationsPanel";
 import { BarSeries } from "@/components/Charts";
+import { StatTile } from "@/components/Panel";
 
 const GITHUB_KEY = "ff-github-user";
 
@@ -40,7 +42,7 @@ function rangeLabel(weekStart: string): string {
   const end = new Date(start);
   end.setDate(start.getDate() + 6);
   const fmt = (d: Date) => d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-  return `${fmt(start)} – ${fmt(end)}`;
+  return `${fmt(start)} - ${fmt(end)}`;
 }
 
 type GitHubStats = {
@@ -147,9 +149,14 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
         </div>
       )}
 
+      {/* [HUD-H2] Mock order: score + weekly side by side, money full width,
+          then week/ladder, temptations, habits. */}
       {token && (
         <div className="grid gap-4 lg:grid-cols-2">
-          <FocusScoreHero token={token} />
+          <FocusScoreHero
+            token={token}
+            sparkline={stats.days.map((d) => d.focus_score)}
+          />
           <WeeklyDigestPanel token={token} />
         </div>
       )}
@@ -163,6 +170,8 @@ export function FocusTab({ token = null, fellowshipCode = null }: FocusTabProps)
           <GitHubCard token={token} onSynced={onGhSynced} />
         </div>
       </div>
+
+      {token && <TemptationsPanel token={token} />}
 
       {token && (
         <>
@@ -200,19 +209,11 @@ function WeekPanel({
 }) {
   const { days, kpis, okr } = stats;
 
-  const kpiCards = [
-    { label: "Focus this week", value: `${kpis.focus_hours} h`, sub: `target ${okr.focus_hours.target} h` },
-    { label: "Avg focus score", value: `${kpis.avg_focus_score}`, sub: "work vs distraction" },
-    { label: "Streak", value: `${kpis.streak} d`, sub: `${kpis.focus_days} focus days` },
-    {
-      label: "GitHub · 7d",
-      value: githubWeek ? `${githubWeek.commits}` : "—",
-      sub: githubWeek
-        ? `${githubWeek.prs} PRs · ${githubWeek.reviews} reviews` +
-          (githubWeek.xp > 0 ? ` · +${githubWeek.xp} XP` : "")
-        : "connect coding track",
-    },
-  ];
+  // [HUD-H2] Streak KPI removed — StreakBadge at the top owns it (1× only).
+  // Sparklines use 8-week history so the tiles stop looking empty under the numeral.
+  const hoursSpark = stats.history.map((w) => w.work_minutes);
+  const scoreSpark = stats.history.map((w) => w.avg_focus_score);
+  const daysSpark = stats.days.map((d) => (d.focus_minutes > 0 ? 1 : 0));
 
   return (
     <div className="hud-panel p-6" data-augmented-ui="tl-clip br-clip both">
@@ -222,13 +223,43 @@ function WeekPanel({
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {kpiCards.map((k) => (
-          <div key={k.label} className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-4">
-            <p className="text-[10px] font-medium uppercase tracking-wider pp-muted">{k.label}</p>
-            <p className="mt-1 text-2xl font-semibold text-[#f4f4f5]">{k.value}</p>
-            <p className="mt-0.5 text-[11px] pp-muted">{k.sub}</p>
-          </div>
-        ))}
+        <div className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-4">
+          <StatTile
+            label="Focus this week"
+            value={`${kpis.focus_hours} h`}
+            sub={`target ${okr.focus_hours.target} h`}
+            history={hoursSpark}
+          />
+        </div>
+        <div className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-4">
+          <StatTile
+            label="Avg focus score"
+            value={`${kpis.avg_focus_score}`}
+            sub="work vs distraction"
+            history={scoreSpark}
+            sparkTone={kpis.avg_focus_score >= 70 ? "success" : kpis.avg_focus_score >= 40 ? "warning" : "danger"}
+          />
+        </div>
+        <div className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-4">
+          <StatTile
+            label="Focus days"
+            value={`${kpis.focus_days}`}
+            sub="days with ≥25 min"
+            history={daysSpark}
+          />
+        </div>
+        <div className="rounded-lg border border-[#3a3d40] bg-[#2e3134]/40 p-4">
+          <StatTile
+            label="GitHub · 7d"
+            value={githubWeek ? `${githubWeek.commits}` : "—"}
+            sub={
+              githubWeek
+                ? `${githubWeek.prs} PRs · ${githubWeek.reviews} reviews` +
+                  (githubWeek.xp > 0 ? ` · +${githubWeek.xp} XP` : "")
+                : "connect coding track"
+            }
+          />
+        </div>
       </div>
 
       <div className="mb-6">
@@ -334,7 +365,7 @@ function LadderCard({ stats }: { stats: WeeklyStats }) {
           data={history.map((w) => ({ label: w.weekStart, value: w.work_minutes }))}
           highlightIndex={history.length - 1}
           formatter={(v) => `${(v / 60).toFixed(1)} h`}
-          emptyLabel="No history yet — finish a week to fill this."
+          emptyLabel="No history yet. Finish a week to fill this."
         />
       </div>
     </div>
