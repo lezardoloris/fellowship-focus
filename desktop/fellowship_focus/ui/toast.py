@@ -2,15 +2,17 @@
 
 from PySide6.QtGui import QFont
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
-from PySide6.QtWidgets import QFrame, QGraphicsOpacityEffect, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGraphicsOpacityEffect, QLabel, QVBoxLayout, QWidget
 
-from fellowship_focus.ui.theme import ACCENT, BG_ELEVATED, EMBER, GREEN, font_sans
+from fellowship_focus.ui.hud_card import HudCard
+from fellowship_focus.ui.theme import ACCENT, EMBER, GREEN, font_sans
 
 
-class Toast(QFrame):
+class Toast(HudCard):
+  # [HUD-H5] Was a rounded QFrame; HudCard paints the clipped-corner HUD
+  # shape. The per-kind colour moves from the stylesheet to the painted
+  # border, and the title keeps the same tint.
   def __init__(self, parent: QWidget, title: str, message: str, kind: str = "info") -> None:
-    super().__init__(parent)
-    self.setObjectName("toast")
     border = ACCENT
     if kind == "success":
       border = GREEN
@@ -18,17 +20,10 @@ class Toast(QFrame):
       border = EMBER
     elif kind == "danger":
       border = "#9b2226"
-
-    self.setStyleSheet(f"""
-      QFrame#toast {{
-        background: {BG_ELEVATED};
-        border: 1px solid {border};
-        border-left: 4px solid {border};
-        border-radius: 14px;
-        min-width: 300px;
-        max-width: 380px;
-      }}
-    """)
+    super().__init__(parent, border=border)
+    self.setObjectName("toast")
+    self.setMinimumWidth(300)
+    self.setMaximumWidth(380)
 
     layout = QVBoxLayout(self)
     layout.setContentsMargins(14, 12, 14, 12)
@@ -103,6 +98,8 @@ class ToastManager:
         | _Qt.WindowType.WindowDoesNotAcceptFocus
     )
     toast.setAttribute(_Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+    # [HUD-H5] Clipped corners need a translucent window to be see-through.
+    toast.setAttribute(_Qt.WidgetAttribute.WA_TranslucentBackground, True)
     toast.move(max(margin, x), max(margin, y))
     self._toasts.append(toast)
     toast.destroyed.connect(lambda: self._toasts.remove(toast) if toast in self._toasts else None)

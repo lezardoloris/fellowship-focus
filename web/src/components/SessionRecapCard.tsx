@@ -37,7 +37,12 @@ export function SessionRecapCard({
       : `${recap.minutes} min`;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[80] w-[min(360px,calc(100vw-2rem))] rounded-xl border border-white/10 bg-[#16181a] p-4 shadow-2xl">
+    // [HUD-H5] Same geometry as the desktop recap card (clipped corners,
+    // corner ticks), so the two read as the same product.
+    <div
+      className="hud-panel fixed bottom-4 right-4 z-[80] w-[min(360px,calc(100vw-2rem))] p-4"
+      data-augmented-ui="tl-clip br-clip both"
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-[0.14em] text-[#c4653a]">Session complete</p>

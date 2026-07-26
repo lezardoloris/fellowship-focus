@@ -108,19 +108,23 @@ function ToastCard({
     return () => clearTimeout(timer);
   }, [item.id, item.kind, onDismiss]);
 
+  // [HUD-H5] The clipped border comes from augmented-ui; per-kind tint goes
+  // through --aug-border-bg instead of a border-* class.
   const tone =
     item.kind === "error"
-      ? "border-[#b8422e]/50 bg-[#1a1010]/95 text-[#fecaca]"
+      ? { className: "bg-[#1a1010]/95 text-[#fecaca]", border: "rgba(184, 66, 46, 0.5)" }
       : item.kind === "ok"
-        ? "border-emerald-500/40 bg-[#0f1a14]/95 text-emerald-100"
-        : "border-white/15 bg-[#141618]/95 text-white/90";
+        ? { className: "bg-[#0f1a14]/95 text-emerald-100", border: "rgba(16, 185, 129, 0.4)" }
+        : { className: "bg-[#141618]/95 text-white/90", border: "rgba(255, 255, 255, 0.15)" };
 
   const label = item.kind === "error" ? "Error" : item.kind === "ok" ? "Success" : "Info";
 
   return (
     <div
       // [UX-DR11] Toasts used to appear and vanish instantly.
-      className={`toast-enter pointer-events-auto rounded-xl border px-3.5 py-3 shadow-2xl backdrop-blur-md ${tone}`}
+      className={`toast-enter hud-toast pointer-events-auto px-3.5 py-3 shadow-2xl backdrop-blur-md ${tone.className}`}
+      data-augmented-ui="tl-clip br-clip both"
+      style={{ "--aug-border-bg": tone.border } as React.CSSProperties}
       role={item.kind === "error" ? "alert" : "status"}
     >
       <div className="flex items-start gap-2">

@@ -14,6 +14,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QFont
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from fellowship_focus.ui.hud_card import HudCard
 from fellowship_focus.ui.theme import FG, MUTED
 
 
@@ -32,15 +33,12 @@ class SessionNudge(QWidget):
         )
         super().__init__(parent, flags)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        # [HUD-H5] HudCard paints the clipped-corner shape.
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedHeight(56)
 
         self.setStyleSheet(
             f"""
-            QWidget#nudgeRoot {{
-                background: #16181a;
-                border: 1px solid #34383c;
-                border-radius: 12px;
-            }}
             QLabel#nudgeText {{ color: {FG}; font-size: 13px; }}
             QLabel#nudgeSub {{ color: {MUTED}; font-size: 10px; }}
             QPushButton#accept, QPushButton#decline {{
@@ -55,7 +53,7 @@ class SessionNudge(QWidget):
             """
         )
 
-        root = QWidget(self)
+        root = HudCard(self)
         root.setObjectName("nudgeRoot")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)

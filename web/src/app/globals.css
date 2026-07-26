@@ -249,6 +249,18 @@ html {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
+/* [HUD-H5] Notification variant: same silhouette as .hud-panel but smaller
+   clips, no hover state, and the border tone is left to the caller (error
+   and success toasts tint it via --aug-border-bg inline). */
+.hud-toast {
+  --aug-border-bg: var(--hairline);
+  --aug-border-all: 1px;
+  --aug-tl: 10px;
+  --aug-tr: 0px;
+  --aug-bl: 0px;
+  --aug-br: 10px;
+  position: relative;
+}
 /* Reduced motion: the corner ticks stop reacting to hover entirely. */
 @media (prefers-reduced-motion: reduce) {
   .hud-panel[data-augmented-ui]::after {
