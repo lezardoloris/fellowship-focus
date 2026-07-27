@@ -324,13 +324,26 @@ class MainWindow(QMainWindow):
                 pass
             residue_cleared = True
             try:
-                from fellowship_focus.blocker.layers import clear_layers, residue_present
+                from fellowship_focus.blocker.layers import (
+                    anything_blocking,
+                    journal_close,
+                    journal_open_from_previous_run,
+                    release_all,
+                )
 
                 # Was `any(layers_status().values())`, which includes the
                 # `admin` key — running elevated made it fire every launch.
                 # Ask the only question that matters: is anything still blocked?
-                if residue_present():
-                    residue_cleared = clear_layers()
+                # [REL-2] anything_blocking() also covers the DisableQuic values,
+                # which nothing used to remove.
+                # [REL-6] A journal left open by a killed run means a cleanup is
+                # owed even when nothing looks blocked right now — the residue
+                # check cannot see a layer that failed halfway through applying.
+                stale_journal = journal_open_from_previous_run()
+                if anything_blocking() or stale_journal:
+                    residue_cleared = bool(release_all().get("ok"))
+                    if residue_cleared:
+                        journal_close()
             except Exception:
                 pass
             return {"cert_ok": cert_ok, "residue_cleared": residue_cleared}
@@ -1039,6 +1052,29 @@ class MainWindow(QMainWindow):
         self.setup_help_btn.clicked.connect(lambda: webbrowser.open("https://mitmproxy.org/downloads/"))
         setup_row.addWidget(self.setup_btn)
         setup_row.addWidget(self.setup_help_btn)
+        # [REL-4] The escape hatch. Deliberately always visible, and deliberately
+        # works when the shield believes it is already off — that is exactly the
+        # state that strands someone with no network and no way to act.
+        self.release_all_btn = QPushButton("Unblock everything")
+        self.release_all_btn.setObjectName("ghostBtn")
+        self.release_all_btn.setToolTip(
+            "Remove every block this app can apply: proxy, hosts file, firewall "
+            "rule and browser QUIC policy. Use it if a site or a desktop app "
+            "stays unreachable after the shield is off."
+        )
+        self.release_all_btn.clicked.connect(self._release_everything)
+        setup_row.addWidget(self.release_all_btn)
+        # [REL-5] Kept separate from "Unblock everything" on purpose: removing
+        # the root certificate disables the shield until it is reinstalled, so
+        # it must never be a side effect of asking for your sites back.
+        self.remove_cert_btn = QPushButton("Remove certificate")
+        self.remove_cert_btn.setObjectName("ghostBtn")
+        self.remove_cert_btn.setToolTip(
+            "Remove the mitmproxy root certificate from the Windows trust store. "
+            "The shield stops working until you activate it again."
+        )
+        self.remove_cert_btn.clicked.connect(self._remove_certificate)
+        setup_row.addWidget(self.remove_cert_btn)
         setup_row.addStretch()
         setup_layout.addLayout(setup_row)
         scaffold.add(self.setup_card)
@@ -1124,6 +1160,90 @@ class MainWindow(QMainWindow):
                 "Windows asks you to confirm once — after that it's permanent."
             )
             self.setup_help_btn.setVisible(False)
+
+    def _remove_certificate(self) -> None:
+        """[REL-5] uninstall_cert_windows() existed and was called from nowhere,
+        so an interception root stayed trusted forever. Confirmed, because it
+        turns the shield off until it is set up again."""
+        ans = QMessageBox.question(
+            self,
+            "Remove the certificate?",
+            "The shield stops working until you activate it again. Your sites "
+            "and apps are unaffected.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if ans != QMessageBox.StandardButton.Yes:
+            return
+        self.remove_cert_btn.setEnabled(False)
+
+        def work() -> tuple:
+            from fellowship_focus.cert_setup import uninstall_cert_windows
+
+            return uninstall_cert_windows()
+
+        def done(result: object) -> None:
+            self.remove_cert_btn.setEnabled(True)
+            ok, msg = result if isinstance(result, tuple) else (False, "failed")
+            self._cert_ok = False
+            self.config["cert_setup_done"] = False
+            save_config(self.config)
+            self.toasts.show(
+                "Certificate" if ok else "Certificate not removed",
+                msg,
+                "success" if ok else "warning",
+                6000,
+            )
+            self._update_chrome_status()
+
+        run_in_thread(work, on_success=done, parent=self)
+
+    def _release_everything(self) -> None:
+        """[REL-4] Remove every block, then report layer by layer.
+
+        Never a bare "done": the whole reason this button exists is that a
+        release could fail silently and leave sites and native apps dead with
+        nothing on screen to explain it.
+        """
+        self.release_all_btn.setEnabled(False)
+        self.release_all_btn.setText("Unblocking…")
+
+        def work() -> dict:
+            from fellowship_focus.blocker.layers import release_all
+
+            return release_all()
+
+        def done(result: object) -> None:
+            self.release_all_btn.setEnabled(True)
+            self.release_all_btn.setText("Unblock everything")
+            data = result if isinstance(result, dict) else {}
+            names = {
+                "proxy": "Proxy and engine",
+                "hosts_quic": "Hosts file and firewall",
+                "browser_quic": "Browser QUIC policy",
+            }
+            layers = data.get("layers") or {}
+            lines = [
+                f"{'OK' if ok else 'STUCK'} · {names.get(k, k)}" for k, ok in layers.items()
+            ]
+            if data.get("ok"):
+                self.toasts.show(
+                    "Everything unblocked",
+                    " · ".join(lines) + ". Sites and desktop apps are reachable again.",
+                    "success",
+                    7000,
+                )
+            else:
+                stuck = ", ".join(names.get(k, k) for k in (data.get("stuck") or []))
+                self.toasts.show(
+                    "Some layers resisted",
+                    f"Still blocking: {stuck}. Accept the Windows prompt and try "
+                    "again, or run the app as administrator once.",
+                    "warning",
+                    14000,
+                )
+            self._update_chrome_status()
+
+        run_in_thread(work, on_success=done, parent=self)
 
     def _activate_shield_wizard(self) -> None:
         if not proxy_engine_available():

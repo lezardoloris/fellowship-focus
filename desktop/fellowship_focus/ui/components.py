@@ -289,7 +289,10 @@ class ShieldHeroCard(GlassCard):
             self.setStyleSheet("")
         elif in_focus and active:
             # E0-S2: tell the truth about how strong the shield really is.
-            level = (strength or {}).get("level", "full")
+            # [REL-7] Defaulted to "full" — so a failed measurement claimed a
+            # complete shield. Not knowing is not the same as being fine, and
+            # this card's whole job is to be honest about coverage.
+            level = (strength or {}).get("level", "unknown")
             missing = (strength or {}).get("missing", [])
             if level == "full":
                 self._status.setText("● Shield active · full strength")

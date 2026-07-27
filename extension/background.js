@@ -121,9 +121,28 @@ function scheduleForcesOn(prefs) {
   return { on: false, locked: false };
 }
 
+// [REL-3] How long a stale focus state may keep blocking. Blocking must expire
+// on its own; it must never wait for a "stop" that may never arrive — the
+// desktop app can be killed, and an alarm can be lost across an update or a
+// browser restart. Both leave storage saying "in session" forever.
+const FOCUS_GRACE_MS = 5 * 60 * 1000; // running session: clock skew + alarm lag
+const PAUSE_MAX_MS = 12 * 60 * 60 * 1000; // paused session: a work day, then give up
+
+function focusStillValid(focus) {
+  if (!focus) return false;
+  const now = Date.now();
+  if (focus.paused) {
+    // Pausing clears the alarm, so nothing else would ever end this.
+    return now - (focus.pausedAt || now) < PAUSE_MAX_MS;
+  }
+  return now < (focus.endsAt || 0) + FOCUS_GRACE_MS;
+}
+
 function effectiveShield(cfg) {
   const sched = scheduleForcesOn(cfg.prefs || {});
-  return cfg.manualShield || !!cfg.focus || sched.on || !!cfg.desktopShieldOn;
+  return (
+    cfg.manualShield || focusStillValid(cfg.focus) || sched.on || !!cfg.desktopShieldOn
+  );
 }
 
 function isAllowlisted(domain, allowlist) {
@@ -597,7 +616,15 @@ async function pauseFocus() {
   await chrome.alarms.clear("focus");
   const remainingMs = Math.max(0, (cfg.focus.endsAt || 0) - Date.now());
   await setConfig({
-    focus: { ...cfg.focus, paused: true, remainingMs, endsAt: Date.now() + remainingMs },
+    focus: {
+      ...cfg.focus,
+      paused: true,
+      remainingMs,
+      endsAt: Date.now() + remainingMs,
+      // [REL-3] Stamped so a pause cannot block forever. Pausing clears the
+      // alarm, so without this a paused session has nothing left to end it.
+      pausedAt: Date.now(),
+    },
   });
 }
 

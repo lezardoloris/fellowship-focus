@@ -291,6 +291,114 @@ def set_system_proxy(enable: bool) -> bool:
         return False
 
 
+# [REL-2] Which DisableQuic values we created ourselves. Persisted, because the
+# process that wrote them is rarely the process that has to remove them.
+_QUIC_OWNED_PATH = Path.home() / ".fellowship-focus" / "quic-owned.json"
+
+
+def _quic_targets(winreg):
+    """(root, path, value_name) for every place we may write DisableQuic."""
+    return (
+        (winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome", "DisableQuic"),
+        (winreg.HKEY_CURRENT_USER, r"Software\Policies\Microsoft\Edge", "DisableQuic"),
+        # Fallback when the Policies hive is locked by MDM/GPO (WinError 5).
+        (winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\ExperimentalSettings", "DisableQuic"),
+        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Edge\ExperimentalSettings", "DisableQuic"),
+    )
+
+
+def _quic_prior_state(winreg, root, path: str, name: str):
+    """The value already there, or None if absent. None means it is ours to undo."""
+    try:
+        key = winreg.OpenKey(root, path, 0, winreg.KEY_READ)
+        try:
+            value, _ = winreg.QueryValueEx(key, name)
+            return value
+        finally:
+            winreg.CloseKey(key)
+    except OSError:
+        return None
+
+
+def _quic_owned() -> set[str]:
+    try:
+        return set(json.loads(_QUIC_OWNED_PATH.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
+
+
+def _quic_mark_ours(path: str, name: str) -> None:
+    owned = _quic_owned()
+    owned.add(f"{path}\\{name}")
+    try:
+        _QUIC_OWNED_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _QUIC_OWNED_PATH.write_text(json.dumps(sorted(owned)), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def restore_browser_quic() -> bool:
+    """[REL-2] Undo disable_browser_quic. Returns True when nothing of ours remains.
+
+    This had no counterpart at all: running the app once left HTTP/3 disabled in
+    Chrome and Edge permanently, surviving uninstall, with nothing to indicate
+    it. Slower browsing forever as a side effect of one focus session.
+
+    Only removes values we created. A DisableQuic that predates us belongs to
+    the user or their IT policy and is left alone.
+    """
+    if os.name != "nt":
+        return True
+    try:
+        import winreg
+    except ImportError:
+        return True
+
+    owned = _quic_owned()
+    if not owned:
+        return True
+    still: list[str] = []
+    for root, path, name in _quic_targets(winreg):
+        if f"{path}\\{name}" not in owned:
+            continue
+        try:
+            key = winreg.OpenKey(root, path, 0, winreg.KEY_SET_VALUE)
+            try:
+                winreg.DeleteValue(key, name)
+                blocker_log(f"QUIC restored: {path}\\{name}")
+            finally:
+                winreg.CloseKey(key)
+        except FileNotFoundError:
+            pass  # already gone, which is the goal
+        except OSError as e:
+            still.append(f"{path}: {e}")
+    if still:
+        blocker_log("QUIC restore incomplete: " + "; ".join(still[:2]))
+        return False
+    try:
+        _QUIC_OWNED_PATH.unlink(missing_ok=True)
+    except Exception:
+        pass
+    return True
+
+
+def quic_residue_present() -> bool:
+    """True if a DisableQuic value we wrote is still live."""
+    if os.name != "nt":
+        return False
+    try:
+        import winreg
+    except ImportError:
+        return False
+    owned = _quic_owned()
+    if not owned:
+        return False
+    for root, path, name in _quic_targets(winreg):
+        if f"{path}\\{name}" in owned and _quic_prior_state(winreg, root, path, name) is not None:
+            return True
+    return False
+
+
 def disable_browser_quic() -> bool:
     """Best-effort: disable Chromium QUIC so HTTPS goes through the system proxy.
 
@@ -307,18 +415,15 @@ def disable_browser_quic() -> bool:
     except ImportError:
         return False
 
-    # (root, path, value_name)
-    targets = (
-        (winreg.HKEY_CURRENT_USER, r"Software\Policies\Google\Chrome", "DisableQuic"),
-        (winreg.HKEY_CURRENT_USER, r"Software\Policies\Microsoft\Edge", "DisableQuic"),
-        # Fallback when Policies hive is locked by MDM/GPO (WinError 5).
-        (winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\ExperimentalSettings", "DisableQuic"),
-        (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Edge\ExperimentalSettings", "DisableQuic"),
-    )
     wrote = False
     fails: list[str] = []
-    for root, path, name in targets:
+    for root, path, name in _quic_targets(winreg):
         try:
+            # [REL-2] Remember whether this value existed BEFORE we touched it.
+            # Without this, release cannot tell "we set it" from "the user's IT
+            # department set it", and would silently undo someone else's policy.
+            if _quic_prior_state(winreg, root, path, name) is None:
+                _quic_mark_ours(path, name)
             key = winreg.CreateKeyEx(root, path, 0, winreg.KEY_SET_VALUE)
             try:
                 winreg.SetValueEx(key, name, 0, winreg.REG_DWORD, 1)

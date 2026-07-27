@@ -48,6 +48,11 @@ def apply_layers(domains: list[str]) -> dict:
     result = {"hosts": False, "quic": False, "admin": elevate.is_admin()}
     if os.name != "nt" or not domains:
         return result
+    # [REL-6] Before the first write, never after: a crash between here and the
+    # hosts file must still leave a trace that this machine owes a cleanup.
+    # After the guard above, so a no-op call cannot open a journal that nothing
+    # will ever close.
+    journal_open(["hosts", "quic"])
 
     if elevate.is_admin():
         # Already elevated — just do it.
@@ -102,6 +107,44 @@ def apply_layers(domains: list[str]) -> dict:
     return result
 
 
+# [REL-6] Written BEFORE anything is applied, deleted only after a verified
+# release. atexit does not run on a kill, so the file is the only thing that
+# survives to say "this machine still owes a cleanup".
+_JOURNAL_PATH = Path.home() / ".fellowship-focus" / "armed.json"
+
+
+def journal_open(layers: list[str]) -> None:
+    try:
+        import json
+        import time
+
+        _JOURNAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _JOURNAL_PATH.write_text(
+            json.dumps({"at": time.time(), "pid": os.getpid(), "layers": layers}),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def journal_close() -> None:
+    try:
+        _JOURNAL_PATH.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def journal_open_from_previous_run() -> bool:
+    """True if a previous run armed and never closed its journal."""
+    try:
+        import json
+
+        data = json.loads(_JOURNAL_PATH.read_text(encoding="utf-8"))
+        return int(data.get("pid", 0)) != os.getpid()
+    except Exception:
+        return False
+
+
 def residue_present() -> bool:
     """Is anything still blocking at the OS level, whatever this process did?
 
@@ -133,6 +176,7 @@ def clear_layers() -> bool:
         return True
     if not residue_present():
         _applied = False
+        journal_close()
         return True
 
     import time
@@ -156,6 +200,7 @@ def clear_layers() -> bool:
     for _ in range(24):
         if not residue_present():
             _applied = False
+            journal_close()
             blocker_log("layers cleared (verified)")
             return True
         time.sleep(0.25)
@@ -166,6 +211,59 @@ def clear_layers() -> bool:
         f"(hosts={_hosts_block_present()}, quic={_quic_rule_present()})"
     )
     return False
+
+
+def release_all() -> dict:
+    """[REL-4] Undo every machine-level change the blocker can make, and prove it.
+
+    One entry point, because the layers were applied from four places and
+    removed from three others, which is how four of them ended up with no
+    reliable undo at all.
+
+    Returns {"ok": bool, "layers": {name: cleared_bool}, "stuck": [names]} so
+    the UI can name exactly what resisted instead of showing a vague failure.
+    Deliberately usable when the shield believes it is already off: that case
+    is precisely the one that strands a user with no network access.
+    """
+    from fellowship_focus.blocker.manager import (
+        force_release_blocker,
+        quic_residue_present,
+        restore_browser_quic,
+    )
+
+    results: dict[str, bool] = {}
+
+    try:
+        force_release_blocker()
+        results["proxy"] = True
+    except Exception as e:
+        blocker_log(f"release_all proxy error: {e}")
+        results["proxy"] = False
+
+    results["hosts_quic"] = clear_layers()
+
+    try:
+        restore_browser_quic()
+        results["browser_quic"] = not quic_residue_present()
+    except Exception as e:
+        blocker_log(f"release_all quic error: {e}")
+        results["browser_quic"] = False
+
+    stuck = [k for k, v in results.items() if not v]
+    blocker_log(f"release_all: {results}")
+    return {"ok": not stuck, "layers": results, "stuck": stuck}
+
+
+def anything_blocking() -> bool:
+    """Any machine-level residue at all, across every layer. Drives the repair UI."""
+    if os.name != "nt":
+        return False
+    from fellowship_focus.blocker.manager import quic_residue_present
+
+    try:
+        return residue_present() or quic_residue_present()
+    except Exception:
+        return residue_present()
 
 
 def _hosts_block_present() -> bool:
