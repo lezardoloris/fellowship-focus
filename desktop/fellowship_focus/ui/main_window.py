@@ -130,6 +130,8 @@ class MainWindow(QMainWindow):
         self.pomodoro.tick.connect(self._on_pomo_tick)
         self.pomodoro.phase_changed.connect(self._on_pomo_phase)
         self.pomodoro.session_finished.connect(self._on_pomo_finished)
+        # [FLW-1] The break ended; nothing starts until the user says so.
+        self.pomodoro.awaiting_resume.connect(self._on_awaiting_resume)
 
         self.setWindowTitle("Fellowship Focus")
         # Compact three-panel shell (Block · Focus · Music) — fixed default every launch.
@@ -217,6 +219,7 @@ class MainWindow(QMainWindow):
         self._float_timer = FloatTimerWindow()
         self._float_timer.closed_by_user.connect(self._on_float_timer_closed)
         self._float_timer.dismissed_by_user.connect(self._refresh_tray_menu)
+        self._float_timer.dismissed_by_user.connect(self._sync_show_float_btn)
         self._float_timer.open_app_requested.connect(self._show_from_tray)
         self._float_timer.remaining_changed.connect(self._on_float_remaining)
         self._float_timer.add_time_requested.connect(self._on_float_add_time)
@@ -657,6 +660,16 @@ class MainWindow(QMainWindow):
             btn_row.addWidget(b)
         left.addLayout(btn_row)
 
+        # [FLW-2] Bringing the floating card back existed only in the tray menu,
+        # which is a right-click on a hidden icon: in practice, closing the card
+        # with its ✕ lost it for the rest of the session. Same action, somewhere
+        # it can be found.
+        self.show_float_btn = QPushButton("Show floating timer")
+        self.show_float_btn.setObjectName("ghostBtn")
+        self.show_float_btn.clicked.connect(self._reshow_float_timer)
+        self.show_float_btn.setVisible(False)
+        left.addWidget(self.show_float_btn)
+
         self.focus_shield = MiniShieldToggle()
         self.focus_shield.setting_changed.connect(self._on_shield_setting_changed)
         self.focus_shield.arm_requested.connect(self._on_shield_arm)
@@ -766,9 +779,13 @@ class MainWindow(QMainWindow):
             self.music_player.on_resume()
 
     def _stop_pomodoro(self) -> None:
+        # [FLW-3] The recap only ever fired when a block ran to its natural end,
+        # so stopping deliberately — the common case when the work is done —
+        # gave no feedback at all. Capture the elapsed minutes before stop()
+        # zeroes the counters, and show the same card.
+        elapsed_min = max(0, round(getattr(self.pomodoro, "total_work_seconds", 0) / 60))
         self.proof_worker.stop()
         self.activity.stop()
-        self._active_session_id = None
         self.task_tick.stop()
         if self.selected_task_id and self.task_timer_seconds > 0:
             task = get_task(self.selected_task_id)
@@ -783,7 +800,12 @@ class MainWindow(QMainWindow):
         self._disable_blocker()
         self.music_player.on_session_end()
         self._set_pomo_buttons(running=False)
+        self._sync_show_float_btn()
         self._sync_focus_ring(f"{self.work_spin.value():02d}:00", "Ready", 1.0, False)
+        # [FLW-3] Under a minute is a false start, not a session worth a recap.
+        if elapsed_min >= 1 and bool(self.config.get("session_recap_enabled", True)):
+            self._show_session_recap(elapsed_min)
+        self._active_session_id = None
 
     def _sync_focus_ring(self, time_text: str, phase: str, progress: float, active: bool) -> None:
         if hasattr(self, "focus_ring"):
@@ -943,15 +965,30 @@ class MainWindow(QMainWindow):
         # "break" keeps the engine's own break phase
 
     def _show_break_end_nudge(self) -> None:
-        if not self.isVisible() or self.isMinimized():
-            self._action_nudge.show_actions(
-                "Break over",
-                "Back to deep work",
-                [("focus", "Focus now", True), ("stop", "Stop", False)],
-            )
+        # [FLW-1] Was gated on the window being hidden, which made sense only
+        # while the engine restarted by itself. Now the next block is *waiting*
+        # on this card, so it has to appear whatever the window is doing.
+        self._action_nudge.show_actions(
+            "Break over",
+            "Nothing is running — start when you are back",
+            [("focus", "Focus now", True), ("stop", "Stop", False)],
+        )
+
+    def _on_awaiting_resume(self) -> None:
+        """[FLW-1] The break ended and the engine is holding. Ask, do not start."""
+        self.music_player.on_break()
+        self._show_break_end_nudge()
+        self._set_pomo_buttons(running=True)
 
     def _on_action_nudge(self, key: str) -> None:
-        if key == "stop":
+        if key == "focus":
+            # [FLW-1] Used to be a no-op because the engine had already started
+            # the block on its own. It is now the thing that starts it.
+            self.pomodoro.resume_after_break()
+            if self.config.get("enable_website_blocker", True):
+                self._enable_blocker()
+            self.music_player.on_focus_start()
+        elif key == "stop":
             self._stop_pomodoro()
         elif key == "extend":
             # Jump straight back into a 10-minute focus block.
@@ -961,7 +998,7 @@ class MainWindow(QMainWindow):
             if self.config.get("enable_website_blocker", True):
                 self._enable_blocker()
             self.music_player.on_focus_start()
-        # "break" and "focus" keep the engine's own flow — nothing to force.
+        # "break" keeps the engine's own break phase.
 
     def _on_pomo_finished(self, completed: bool, work_minutes: int) -> None:
         self.proof_worker.stop()
@@ -3122,6 +3159,14 @@ class MainWindow(QMainWindow):
             pass
         self._refresh_tray_menu()
 
+    def _sync_show_float_btn(self) -> None:
+        """[FLW-2] Only offer it when there is a session and the card is gone."""
+        btn = getattr(self, "show_float_btn", None)
+        if btn is None:
+            return
+        ft = self._float_timer
+        btn.setVisible(bool(ft.is_session_active()) and (ft.is_dismissed() or not ft.isVisible()))
+
     def _reshow_float_timer(self) -> None:
         # Manual re-display from the tray. If the card was globally disabled,
         # asking to show it re-enables it (the user clearly wants it back).
@@ -3130,6 +3175,7 @@ class MainWindow(QMainWindow):
             save_config(self.config)
         self._float_timer.reshow()
         self._refresh_tray_menu()
+        self._sync_show_float_btn()
 
     def _tray_end_session(self) -> None:
         self._float_timer.hide_timer()

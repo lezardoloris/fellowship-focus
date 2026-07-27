@@ -33,10 +33,25 @@ export function ImmersiveScene({
   }, []);
 
   useEffect(() => {
-    const onVis = () => setVisible(document.visibilityState === "visible");
-    onVis();
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
+    // [PRF-1] visibilityState alone is not enough inside the desktop shell.
+    // A QWebEngineView stays "visible" while its window sits behind another
+    // one, so the HD loop kept decoding the entire time you were working in
+    // an editor: measured at ~1900s of CPU over 62 minutes of wall time, about
+    // half a core, for a background nobody was looking at.
+    //
+    // Window focus is the honest signal. Looking at the app: it plays. Working
+    // elsewhere: the poster frame stays, and nothing decodes.
+    const sync = () =>
+      setVisible(document.visibilityState === "visible" && document.hasFocus());
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    window.addEventListener("focus", sync);
+    window.addEventListener("blur", sync);
+    return () => {
+      document.removeEventListener("visibilitychange", sync);
+      window.removeEventListener("focus", sync);
+      window.removeEventListener("blur", sync);
+    };
   }, []);
 
   useEffect(() => {

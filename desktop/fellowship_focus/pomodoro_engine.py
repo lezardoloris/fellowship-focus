@@ -5,6 +5,8 @@ class PomodoroEngine(QObject):
     tick = Signal(int, str)  # remaining_seconds, phase label
     phase_changed = Signal(str)
     session_finished = Signal(bool, int)  # completed, work_minutes
+    #: [FLW-1] The break ended and the next focus block is waiting for a yes.
+    awaiting_resume = Signal()
 
     PHASE_WORK = "work"
     PHASE_BREAK = "break"
@@ -24,6 +26,11 @@ class PomodoroEngine(QObject):
         self.completed_work_intervals = 0
         self.total_work_seconds = 0
         self._paused = False
+        # [FLW-1] Whether the next focus block starts by itself when a break
+        # ends. Off, because the old behaviour started a 50-minute block while
+        # you were away from the desk, then counted it as focus.
+        self.auto_start_next = False
+        self._awaiting_resume = False
 
     def configure(self, work: int, brk: int, long_brk: int, intervals: int) -> None:
         self.work_minutes = work
@@ -35,12 +42,14 @@ class PomodoroEngine(QObject):
         self.phase = self.PHASE_WORK
         self.remaining = self.work_minutes * 60
         self._paused = False
+        self._awaiting_resume = False
         self.timer.start(1000)
         self.phase_changed.emit(self.phase)
         self.tick.emit(self.remaining, self._label())
 
     def stop(self) -> None:
         self.timer.stop()
+        self._awaiting_resume = False
         work_mins = max(0, round(self.total_work_seconds / 60))
         was_work = self.phase == self.PHASE_WORK and self.remaining < self.work_minutes * 60
         completed = self.phase == self.PHASE_IDLE and self.completed_work_intervals > 0
@@ -52,7 +61,7 @@ class PomodoroEngine(QObject):
         self.session_finished.emit(was_work or completed, work_mins)
 
     def pause_resume(self) -> bool:
-        if self.phase == self.PHASE_IDLE:
+        if self.phase == self.PHASE_IDLE or self._awaiting_resume:
             return False
         self._paused = not self._paused
         if self._paused:
@@ -67,6 +76,11 @@ class PomodoroEngine(QObject):
         self._advance_phase()
 
     def _on_tick(self) -> None:
+        # [FLW-1] Stopping the timer is the primary guard; this is the second
+        # one. A stray tick while a block is waiting would credit minutes to
+        # focus nobody started, which is the exact failure being fixed.
+        if self._awaiting_resume:
+            return
         if self.remaining <= 0:
             self._advance_phase()
             return
@@ -87,10 +101,33 @@ class PomodoroEngine(QObject):
         elif self.phase in (self.PHASE_BREAK, self.PHASE_LONG_BREAK):
             self.phase = self.PHASE_WORK
             self.remaining = self.work_minutes * 60
+            if not self.auto_start_next:
+                # [FLW-1] Hold at the boundary instead of running. Coming back
+                # to "23 minutes of focus" you never did is worse than no
+                # measurement at all, and it silently inflates the day.
+                self.timer.stop()
+                self._awaiting_resume = True
+                self.phase_changed.emit(self.phase)
+                self.tick.emit(self.remaining, self._label())
+                self.awaiting_resume.emit()
+                return
         else:
             return
         self.phase_changed.emit(self.phase)
         self.tick.emit(self.remaining, self._label())
+
+    def resume_after_break(self) -> None:
+        """Start the focus block that has been waiting since the break ended."""
+        if not self._awaiting_resume:
+            return
+        self._awaiting_resume = False
+        self._paused = False
+        self.timer.start(1000)
+        self.tick.emit(self.remaining, self._label())
+
+    @property
+    def awaiting_resume_now(self) -> bool:
+        return self._awaiting_resume
 
     def _label(self) -> str:
         labels = {
