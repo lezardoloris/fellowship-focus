@@ -171,3 +171,38 @@ Prix relevés le 27/07/2026.
 - **La différence à marteler face à Memtime** : eux observent, toi tu empêches.
 
 Sources : [Cold Turkey](https://getcoldturkey.com/), [RescueTime tarifs](https://www.saasworthy.com/product/rescuetime), [Rize](https://rize.io/best/best-time-tracking-app-2026), [Memtime freelances](https://www.memtime.com/freelancers), [Memtime tarifs](https://www.memtime.com/pricing), [Harvest après rachat](https://www.jobbers.io/best-time-tracking-apps-for-freelancers-2026-toggl-vs-harvest-vs-clockify-compared/).
+
+---
+
+## 10. Memtime marche-t-il, et gagne-t-il de l'argent ?
+
+Vérifié le 27/07/2026.
+
+| | |
+|---|---|
+| Chiffre d'affaires | **4 M$** (septembre 2025) |
+| Effectif | **36 personnes** |
+| Fondé | **2015** (ex-timeBro, Munich) |
+| Levée | **1,59 M$**, Série A en 2023 (BayBG, Bayern Kapital) |
+| Portée | utilisateurs dans plus de 90 pays |
+| Clients cités | agences de pub, cabinets de conseil, équipes IT, **comptables, cabinets d'avocats** |
+
+**Oui, ça marche.** C'est une vraie entreprise, rentable ou proche, peu financée (1,59 M$ levés pour 4 M$ de CA, ce qui est sain).
+
+**Mais lis les ratios avant de te réjouir.**
+
+- **4 M$ / 36 personnes = ~111 k$ par salarié.** Le repère sain en SaaS est 150 à 200 k$. Ils sont en dessous : ce n'est pas une machine à cash, c'est une PME qui tourne.
+- **Onze ans pour atteindre 4 M$.** Le marché est réel mais **lent**. Personne ne devient riche vite ici.
+
+**Et le détail qui change ta stratégie : regarde leur liste de clients.** Agences, cabinets de conseil, équipes IT, comptables, avocats. Ce sont des **entreprises**, pas des indépendants. La page « freelances » est du haut de tunnel ; **l'argent est au siège, en par-utilisateur, dans des cabinets.**
+
+C'est cohérent avec toute la catégorie : le solo plafonne à 12-15 €/mois et churne, l'équipe paie 5 à 20 sièges et reste.
+
+### Ce que ça implique pour toi
+
+1. **Le marché est validé, mais il est lent.** Ne construis pas un plan qui suppose une croissance rapide.
+2. **Ton barème n'est pas le leur.** 4 M$ à 36 personnes est un business médiocre. **200 à 300 k$ en solo serait excellent pour toi.** Tu n'as pas besoin de battre Memtime, tu as besoin d'une tranche.
+3. **La question à trancher devient : solo ou cabinet ?** Memtime prouve que l'argent est côté cabinet. Mais un cabinet achète après une démo, un contrat et un DPO, ce qui est un métier différent de vendre à des indépendants.
+4. **Ton angle blocage a plus de valeur en solo qu'en cabinet.** Un cabinet ne veut pas bloquer les sites de ses salariés (c'est un sujet social explosif) ; un indépendant le veut pour lui-même. **Ton moat pointe vers le solo, l'argent pointe vers les cabinets.** C'est la tension à résoudre avant d'écrire une ligne de landing page.
+
+Sources : [getlatka](https://getlatka.com/companies/memtime.com), [levée Série A](https://www.memtime.com/blog/press-release-series-a-memtime), [Crunchbase](https://www.crunchbase.com/organization/timebro), [northdata](https://www.northdata.com/timeBro+GmbH,+M%C3%BCnchen/HRB+220442).
