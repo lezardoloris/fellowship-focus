@@ -143,10 +143,6 @@ export function scenePoster(id: SceneId): string {
   return SCENES[id]?.poster || SCENES.fellowship.poster;
 }
 
-export function sceneVideo(id: SceneId): string | null {
-  return SCENES[id]?.video ?? null;
-}
-
 /** @deprecated use scenePoster — kept for any leftover imports */
 export function sceneSrc(id: SceneId): string {
   return scenePoster(id);

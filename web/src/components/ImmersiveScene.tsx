@@ -1,17 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { BackgroundQuality } from "@/lib/backgroundPrefs";
-import { scenePoster, sceneVideo, type SceneId } from "@/lib/scenes";
+import { scenePoster, type SceneId } from "@/lib/scenes";
 
 /**
- * Full-bleed HD looping video behind the app.
- * Poster paints immediately; video fades in once it can play.
- * On error, poster stays (no stuck opacity-0 layer).
+ * Full-bleed still backdrop behind the app.
+ *
+ * [PRF-2] This used to be an HD looping video. Measured cost inside the desktop
+ * shell: 1916 seconds of CPU over 62 minutes of wall time, roughly half a core,
+ * sustained, for a background nobody looks at while they work. Pausing it when
+ * the window lost focus took that to under 5%, which proved where the cost was
+ * but still left a decoder running whenever the app was in front.
+ *
+ * So the video is gone rather than merely throttled. A focus tool that heats
+ * the machine it is supposed to make you productive on has its priorities
+ * backwards, and the poster frame was carrying the whole look anyway.
+ *
+ * `quality` is kept in the signature: callers and the settings panel still pass
+ * it, and it is the hook a future opt-in would use. It no longer selects a
+ * codec path because there is none.
  */
 export function ImmersiveScene({
   scene,
-  quality = "balanced",
+  quality: _quality = "balanced",
   className = "",
 }: {
   scene: SceneId;
@@ -21,38 +33,6 @@ export function ImmersiveScene({
   const [current, setCurrent] = useState(scene);
   const [prev, setPrev] = useState<SceneId | null>(null);
   const [fading, setFading] = useState(false);
-  const [reduceMotion, setReduceMotion] = useState(false);
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => setReduceMotion(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, []);
-
-  useEffect(() => {
-    // [PRF-1] visibilityState alone is not enough inside the desktop shell.
-    // A QWebEngineView stays "visible" while its window sits behind another
-    // one, so the HD loop kept decoding the entire time you were working in
-    // an editor: measured at ~1900s of CPU over 62 minutes of wall time, about
-    // half a core, for a background nobody was looking at.
-    //
-    // Window focus is the honest signal. Looking at the app: it plays. Working
-    // elsewhere: the poster frame stays, and nothing decodes.
-    const sync = () =>
-      setVisible(document.visibilityState === "visible" && document.hasFocus());
-    sync();
-    document.addEventListener("visibilitychange", sync);
-    window.addEventListener("focus", sync);
-    window.addEventListener("blur", sync);
-    return () => {
-      document.removeEventListener("visibilitychange", sync);
-      window.removeEventListener("focus", sync);
-      window.removeEventListener("blur", sync);
-    };
-  }, []);
 
   useEffect(() => {
     if (scene === current) return;
@@ -67,11 +47,10 @@ export function ImmersiveScene({
   }, [scene, current]);
 
   useEffect(() => {
+    // Warm the next poster so a scene change does not flash the ground colour.
     const img = new Image();
     img.src = scenePoster(scene);
   }, [scene]);
-
-  const stillOnly = quality === "still" || reduceMotion;
 
   return (
     <div
@@ -82,106 +61,19 @@ export function ImmersiveScene({
         <SceneLayer
           scene={prev}
           className={`transition-opacity duration-500 ${fading ? "opacity-0" : "opacity-100"}`}
-          play={false}
-          quality={quality}
-          stillOnly={stillOnly}
         />
       )}
-      <SceneLayer
-        key={current}
-        scene={current}
-        className="opacity-100"
-        play={visible && !stillOnly}
-        quality={quality}
-        stillOnly={stillOnly}
-      />
+      <SceneLayer key={current} scene={current} className="opacity-100" />
       <div className="immersive-scrim absolute inset-0" />
     </div>
   );
 }
 
-function SceneLayer({
-  scene,
-  className,
-  play,
-  quality,
-  stillOnly,
-}: {
-  scene: SceneId;
-  className?: string;
-  play: boolean;
-  quality: BackgroundQuality;
-  stillOnly: boolean;
-}) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [ready, setReady] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const poster = scenePoster(scene);
-  const video = sceneVideo(scene);
-  const useVideo = Boolean(video) && !stillOnly && !failed;
-  const preload = quality === "high" ? "auto" : "metadata";
-
-  const tryPlay = useCallback(() => {
-    const el = videoRef.current;
-    if (!el || !play) return;
-    el.muted = true;
-    el.defaultMuted = true;
-    el.setAttribute("muted", "");
-    el.playsInline = true;
-    const p = el.play();
-    if (p) {
-      p.then(() => setReady(true)).catch(() => {
-        /* Autoplay blocked or not ready yet — onCanPlay will retry. */
-      });
-    }
-  }, [play]);
-
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el || !useVideo) return;
-    if (play) {
-      tryPlay();
-    } else {
-      el.pause();
-    }
-  }, [play, useVideo, scene, tryPlay]);
-
+function SceneLayer({ scene, className }: { scene: SceneId; className?: string }) {
   return (
-    <div className={`absolute inset-0 ${className || ""}`}>
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: `url('${poster}')` }}
-      />
-      {useVideo && video && (
-        <video
-          ref={videoRef}
-          className={`immersive-video absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${
-            ready ? "opacity-100" : "opacity-0"
-          }`}
-          src={video}
-          poster={poster}
-          muted
-          autoPlay={play}
-          loop
-          playsInline
-          preload={play ? preload : "none"}
-          disablePictureInPicture
-          disableRemotePlayback
-          onLoadedData={() => {
-            setReady(true);
-            tryPlay();
-          }}
-          onCanPlay={() => {
-            setReady(true);
-            tryPlay();
-          }}
-          onPlaying={() => setReady(true)}
-          onError={() => {
-            setFailed(true);
-            setReady(false);
-          }}
-        />
-      )}
-    </div>
+    <div
+      className={`absolute inset-0 bg-cover bg-center ${className || ""}`}
+      style={{ backgroundImage: `url('${scenePoster(scene)}')` }}
+    />
   );
 }

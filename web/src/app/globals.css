@@ -455,12 +455,6 @@ html {
     );
 }
 
-/* Full-bleed HD loop — GPU-composited, no kenburns (video already moves). */
-.immersive-video {
-  transform: translateZ(0);
-  backface-visibility: hidden;
-}
-
 .immersive-kenburns {
   animation: immersive-kenburns 48s ease-in-out infinite alternate;
   will-change: transform;
