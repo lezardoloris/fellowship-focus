@@ -1216,11 +1216,9 @@ class MainWindow(QMainWindow):
             self.release_all_btn.setEnabled(True)
             self.release_all_btn.setText("Unblock everything")
             data = result if isinstance(result, dict) else {}
-            names = {
-                "proxy": "Proxy and engine",
-                "hosts_quic": "Hosts file and firewall",
-                "browser_quic": "Browser QUIC policy",
-            }
+            # [REL-1] Labels come from the registry, so a new layer names itself
+            # here instead of being reported as a raw key nobody recognises.
+            names = data.get("labels") or {}
             layers = data.get("layers") or {}
             lines = [
                 f"{'OK' if ok else 'STUCK'} · {names.get(k, k)}" for k, ok in layers.items()

@@ -58,7 +58,9 @@ Il n'existe aucune commande « tout relâcher ». Si un retrait échoue, l'utili
 
 ## 4. Epics
 
-### REL-1 · Un registre des mutations, une seule vérité · P0
+### REL-1 · Un registre des mutations, une seule vérité · P0 · **partiel**
+
+> *Fait : `registry.py`, et `release_all()` le parcourt en sens inverse avec revérification. Reste : REL-1.2, l'armement passe encore par l'ancien chemin et ne parcourt pas le registre. Le désarmement était le côté qui cassait, donc il est traité en premier.*
 Aujourd'hui les couches sont appliquées à quatre endroits et retirées à trois autres. Tant que ce n'est pas centralisé, chaque nouvelle couche recréera un trou.
 
 - **REL-1.1** Un module `registry.py` qui déclare chaque mutation avec trois fonctions : `apply()`, `release()`, `present()`.
@@ -66,12 +68,14 @@ Aujourd'hui les couches sont appliquées à quatre endroits et retirées à troi
 - **REL-1.3** `release_all()` parcourt le registre **en sens inverse**, retire tout, puis **revérifie chaque `present()`** et renvoie la liste de ce qui résiste.
 - *Critère* : ajouter une couche sans écrire son `release()` fait échouer un test, pas la machine de l'utilisateur.
 
-### REL-2 · Restaurer QUIC · P0
+### REL-2 · Restaurer QUIC · P0 · **fait**
 - **REL-2.1** `restore_browser_quic()` supprime les quatre valeurs, en distinguant « valeur absente avant nous » de « valeur posée par nous ». Mémoriser l'état antérieur à l'écriture.
 - **REL-2.2** Appelée par `release_all()`, et une fois au démarrage si un résidu est détecté.
 - *Critère* : après un cycle armer/désarmer, `reg query` ne renvoie aucune des quatre valeurs, sauf si elles préexistaient.
 
-### REL-3 · L'extension ne peut pas bloquer plus longtemps que l'app ne vit · P0
+### REL-3 · L'extension ne peut pas bloquer plus longtemps que l'app ne vit · P0 · **partiel**
+
+> *Fait : REL-3.1, l'état de session porte une échéance et une pause expire après 12 h. REL-3.2 était déjà satisfait autrement que prévu, `desktopShieldOn` venant d'une sonde du proxy local et non de l'état serveur, il retombe donc seul. Reste : REL-3.3, l'expiration côté API.*
 Le principe : **le blocage doit expirer tout seul.** Une extension qui dépend d'un signal « arrête-toi » bloquera pour toujours le jour où ce signal ne vient pas.
 
 - **REL-3.1** L'état armé porte une **échéance** (fin de session plus une marge courte), pas un booléen.
@@ -79,25 +83,25 @@ Le principe : **le blocage doit expirer tout seul.** Une extension qui dépend d
 - **REL-3.3** Le serveur expire l'état armé côté API, pour que le web soit cohérent avec l'extension.
 - *Critère* : app tuée, machine redémarrée, l'extension ne bloque plus au bout de N minutes sans intervention.
 
-### REL-4 · Réparer, visiblement · P0
+### REL-4 · Réparer, visiblement · P0 · **fait**
 - **REL-4.1** Un bouton **« Tout débloquer »** dans les réglages : lance `release_all()`, affiche le résultat couche par couche, avec des coches, pas un toast.
 - **REL-4.2** Si une couche résiste, dire **laquelle** et proposer l'action (accepter l'UAC, ou la commande exacte à coller).
 - **REL-4.3** Ce bouton marche même si le bouclier se croit déjà désarmé, puisque c'est précisément ce cas qui pose problème.
 - *Critère* : depuis une machine avec résidu, deux clics rendent l'accès, et l'écran le prouve.
 
-### REL-5 · Retirer le certificat · P1
+### REL-5 · Retirer le certificat · P1 · **fait** *(REL-5.1 volontairement écarté : retirer la racine depuis « Tout débloquer » couperait le bouclier en réclamant ses sites)*
 - **REL-5.1** Appeler `uninstall_cert_windows()` au désarmement définitif (désinstallation, ou « Tout débloquer » avec l'option cochée), pas à chaque session.
 - **REL-5.2** L'écran des réglages montre si la racine est installée et permet de la retirer.
 - *Critère* : après retrait, `certutil -store Root` ne renvoie plus la racine.
 
-### REL-6 · Le filet de sécurité ne dépend pas d'une sortie propre · P0
+### REL-6 · Le filet de sécurité ne dépend pas d'une sortie propre · P0 · **fait**
 `atexit` ne s'exécute pas sur un kill, et la réconciliation au démarrage ne sert à rien si l'app n'est jamais relancée.
 
 - **REL-6.1** Écrire un **journal d'armement** sur disque (quelles couches, quand, pour quelle session) avant d'appliquer, pas après.
 - **REL-6.2** Au démarrage, si le journal dit « armé » alors qu'aucune session ne tourne, tout relâcher.
 - **REL-6.3** *À trancher* : une tâche planifiée Windows qui relâche tout au démarrage de la machine si le journal est resté ouvert. Elle règle le cas « l'app n'est jamais relancée », mais elle ajoute une tâche persistante à nettoyer. **Ne pas faire sans arbitrage explicite** : ce serait ajouter une onzième mutation pour en réparer une autre.
 
-### REL-7 · Armer dit la vérité sur ce qui manque · P1
+### REL-7 · Armer dit la vérité sur ce qui manque · P1 · **fait**
 `shield_strength()` existe déjà et compte les couches. À finir de câbler :
 
 - **REL-7.1** Refuser d'afficher « bouclier complet » quand une couche manque, quelle qu'elle soit.

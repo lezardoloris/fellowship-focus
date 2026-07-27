@@ -224,46 +224,26 @@ def release_all() -> dict:
     the UI can name exactly what resisted instead of showing a vague failure.
     Deliberately usable when the shield believes it is already off: that case
     is precisely the one that strands a user with no network access.
+
+    [REL-1] The layer list now lives in registry.py rather than being spelled
+    out here. This function used to hard-code three releases in a fixed order,
+    which is how a fourth layer could be added upstream and silently never be
+    released. Adding one to the registry without its undo now fails a test.
     """
-    from fellowship_focus.blocker.manager import (
-        force_release_blocker,
-        quic_residue_present,
-        restore_browser_quic,
-    )
+    from fellowship_focus.blocker.registry import release_every_mutation
 
-    results: dict[str, bool] = {}
-
-    try:
-        force_release_blocker()
-        results["proxy"] = True
-    except Exception as e:
-        blocker_log(f"release_all proxy error: {e}")
-        results["proxy"] = False
-
-    results["hosts_quic"] = clear_layers()
-
-    try:
-        restore_browser_quic()
-        results["browser_quic"] = not quic_residue_present()
-    except Exception as e:
-        blocker_log(f"release_all quic error: {e}")
-        results["browser_quic"] = False
-
-    stuck = [k for k, v in results.items() if not v]
-    blocker_log(f"release_all: {results}")
-    return {"ok": not stuck, "layers": results, "stuck": stuck}
+    res = release_every_mutation()
+    blocker_log(f"release_all: {res['layers']}")
+    return res
 
 
 def anything_blocking() -> bool:
     """Any machine-level residue at all, across every layer. Drives the repair UI."""
     if os.name != "nt":
         return False
-    from fellowship_focus.blocker.manager import quic_residue_present
+    from fellowship_focus.blocker.registry import anything_present
 
-    try:
-        return residue_present() or quic_residue_present()
-    except Exception:
-        return residue_present()
+    return anything_present()
 
 
 def _hosts_block_present() -> bool:
