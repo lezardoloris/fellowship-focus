@@ -350,26 +350,11 @@ export function FocusApp() {
               {authBusy ? "…" : "Sign in"}
             </button>
           )}
-          {joined && (
-            <button
-              type="button"
-              onClick={share}
-              className="min-h-9 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85"
-              title={code || undefined}
-            >
-              {shared ? "Copied" : "Share"}
-            </button>
-          )}
-          {joined && (
-            <button
-              type="button"
-              onClick={leaveGuild}
-              className="min-h-9 rounded-full border border-white/15 bg-transparent px-2.5 py-1.5 text-[11px] text-white/70 hover:text-white/90"
-              title={`Leave ${code}`}
-            >
-              Leave
-            </button>
-          )}
+          {/* [UX-H1] Share and Leave used to sit here. They are guild actions,
+              and a global header is the wrong place for them: they were on
+              screen during every focus session, where neither is ever the next
+              thing you want to do. Moved into the Guild tab, which is where you
+              are when you need them. */}
           <button
             type="button"
             onClick={() => setSettingsOpen(true)}
@@ -398,6 +383,25 @@ export function FocusApp() {
         {tab === "guild" &&
           (joined ? (
             <ErrorBoundary fallbackTitle="Guild panel crashed">
+              {/* [UX-H1] The two guild actions, next to the guild. */}
+              <div className="mb-3 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={share}
+                  className="min-h-9 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-xs text-white/85"
+                  title={code || undefined}
+                >
+                  {shared ? "Copied" : "Share invite"}
+                </button>
+                <button
+                  type="button"
+                  onClick={leaveGuild}
+                  className="min-h-9 rounded-full border border-white/15 bg-transparent px-2.5 py-1.5 text-[11px] pp-muted hover:text-white/90"
+                  title={`Leave ${code}`}
+                >
+                  Leave
+                </button>
+              </div>
               <FellowshipDashboard
                 code={code!}
                 onCodeResolved={(canonical) => {
