@@ -322,14 +322,18 @@ class MainWindow(QMainWindow):
                 force_release_blocker()
             except Exception:
                 pass
+            residue_cleared = True
             try:
-                from fellowship_focus.blocker.layers import clear_layers, layers_status
+                from fellowship_focus.blocker.layers import clear_layers, residue_present
 
-                if any(layers_status().values()):
-                    clear_layers()
+                # Was `any(layers_status().values())`, which includes the
+                # `admin` key — running elevated made it fire every launch.
+                # Ask the only question that matters: is anything still blocked?
+                if residue_present():
+                    residue_cleared = clear_layers()
             except Exception:
                 pass
-            return {"cert_ok": cert_ok}
+            return {"cert_ok": cert_ok, "residue_cleared": residue_cleared}
 
         def on_ok(result: object) -> None:
             data = result if isinstance(result, dict) else {}
@@ -339,6 +343,17 @@ class MainWindow(QMainWindow):
                 save_config(self.config)
             elif not self._cert_ok:
                 self.sidebar.set_current(4)
+            if data.get("residue_cleared") is False:
+                # Never fail silently here. Leftover hosts entries take down
+                # native apps (WhatsApp Desktop, Spotify) with no visible cause,
+                # and the user has no reason to suspect a focus app.
+                self.toasts.show(
+                    "Sites still blocked",
+                    "Leftover block rules could not be removed. Some sites and "
+                    "apps stay unreachable until this is repaired.",
+                    "warning",
+                    12000,
+                )
             self._update_chrome_status()
             self._refresh_journey()
             # Default tab is Fellowship — create WebEngine after paint.

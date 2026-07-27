@@ -102,27 +102,70 @@ def apply_layers(domains: list[str]) -> dict:
     return result
 
 
-def clear_layers() -> None:
+def residue_present() -> bool:
+    """Is anything still blocking at the OS level, whatever this process did?
+
+    Deliberately reads the machine, not our own state. A hosts block written by
+    a run that was killed from Task Manager outlives the process that made it,
+    and it takes down NATIVE apps too — WhatsApp Desktop resolves the same
+    whatsapp.net that the browser does. Trusting an in-process flag here is how
+    a stale block survives forever.
+    """
+    if os.name != "nt":
+        return False
+    return _hosts_block_present() or _quic_rule_present()
+
+
+def clear_layers() -> bool:
+    """Remove the hosts block and the QUIC rule. Returns True once verified gone.
+
+    Two rules learned the hard way:
+
+    1. Never gate on `_applied`. That module global is False in every fresh
+       process, so after a kill-and-relaunch the old code took no branch at all
+       and still logged "layers cleared" — leaving every blocked domain dead,
+       native apps included, with the log saying otherwise.
+    2. Always re-read the machine afterwards. Firing a command at the elevated
+       agent is not the same as the block being gone.
+    """
     global _applied
     if os.name != "nt":
-        return
+        return True
+    if not residue_present():
+        _applied = False
+        return True
+
+    import time
+
     try:
         if elevate.is_admin():
             elevate.clear_hosts()
             elevate.clear_quic_block()
-        elif elevate.agent_alive():
-            # Silent — the running agent clears without any prompt.
-            elevate.send_agent_command("clear")
-        elif _applied:
+        elif elevate.agent_alive() and elevate.send_agent_command("clear"):
+            pass
+        else:
+            # No agent (declined UAC, or it died with us). Escalate anyway:
+            # residue is present, so this is worth one prompt.
             if _frozen():
                 _run_frozen_elevated("clear", None)
             else:
                 elevate.run_elevated("clear")
     except Exception as e:
         blocker_log(f"layers clear error: {e}")
-    finally:
-        _applied = False
-        blocker_log("layers cleared")
+
+    for _ in range(24):
+        if not residue_present():
+            _applied = False
+            blocker_log("layers cleared (verified)")
+            return True
+        time.sleep(0.25)
+
+    _applied = True
+    blocker_log(
+        "layers clear FAILED — residue still present "
+        f"(hosts={_hosts_block_present()}, quic={_quic_rule_present()})"
+    )
+    return False
 
 
 def _hosts_block_present() -> bool:
