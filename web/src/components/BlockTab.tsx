@@ -26,6 +26,7 @@ import {
   mergeBlockerSettings,
   type BlockerSettings,
 } from "@/lib/blockerSettings";
+import { TodayStrip } from "@/components/TodayStrip";
 import {
   DEFAULT_BLOCK_LAYOUT,
   LAYOUT_LABELS,
@@ -155,7 +156,10 @@ export function BlockTab({
   const [custom, setCustom] = useState("");
   // The full URL grid is useful at first, but once you always block everything
   // it's just noise — let it fold away, remembering the choice.
-  const [listCollapsed, setListCollapsed] = useState(false);
+  // [FOC-1] Collapsed by default. The list is a monthly decision shown on the
+  // screen you open to start work, and it measured 0.45 ink density: a wall of
+  // 25 domain chips with no hierarchy, in the app's most valuable position.
+  const [listCollapsed, setListCollapsed] = useState(true);
   useEffect(() => {
     try {
       setListCollapsed(localStorage.getItem("ff-blocklist-collapsed") === "1");
@@ -1789,6 +1793,15 @@ export function BlockTab({
 
         {/* Blocker Mode lives in the sticky header on every tab (product moat). */}
 
+        {/* [FOC-1] Three lines in euros and hours, above everything else. The
+            first question of a freelancer's day is what they owe themselves,
+            not what their score is. Hidden mid-session: once you are working,
+            the answer is "keep going". */}
+        {!inSession && (
+          <div className="mx-auto w-full max-w-6xl">
+            <TodayStrip token={token} />
+          </div>
+        )}
         {/* Layout chrome — setup-only, visually subordinate; hidden while focusing. */}
         {!inSession && (
           <div className="mx-auto flex w-full max-w-6xl justify-end">
