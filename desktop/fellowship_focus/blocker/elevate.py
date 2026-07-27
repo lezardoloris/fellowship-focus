@@ -75,14 +75,37 @@ def apply_hosts(domains: list[str]) -> bool:
     block = "\n".join(lines) + "\n"
     try:
         HOSTS_PATH.write_text(base + block, encoding="utf-8")
+        # Symmetric with clear_hosts: a cached pre-block answer would otherwise
+        # let a site stay reachable for the first minutes of a session.
+        flush_dns()
         return True
     except Exception:
         return False
 
 
+def flush_dns() -> None:
+    """Drop cached resolutions after touching the hosts file.
+
+    Windows' DNS Client caches what the hosts file said. Removing the block
+    without this leaves the 0.0.0.0 answers live, so the user turns the shield
+    off and the site is *still* unreachable — for native apps as much as for
+    browsers. Elevated-only path, which is where this always runs.
+    """
+    try:
+        subprocess.run(
+            ["ipconfig", "/flushdns"],
+            capture_output=True,
+            timeout=15,
+            creationflags=CREATE_NO_WINDOW,
+        )
+    except Exception:
+        pass
+
+
 def clear_hosts() -> bool:
     try:
         HOSTS_PATH.write_text(_strip_block(_read_hosts()), encoding="utf-8")
+        flush_dns()
         return True
     except Exception:
         return False
