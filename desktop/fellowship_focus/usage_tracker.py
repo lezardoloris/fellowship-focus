@@ -223,6 +223,8 @@ class UsageTracker(QObject):
         self._dirty = False
         self._overrides_cache: dict | None = None
         self._overrides_key: object = None
+        # [TRK-1] The span currently open; flushed when the foreground changes.
+        self._event: dict | None = None
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._last_tick_mono = time.monotonic()
@@ -234,6 +236,9 @@ class UsageTracker(QObject):
 
     def stop(self) -> None:
         self._timer.stop()
+        if self._event is not None:
+            self._flush_event(self._event)
+            self._event = None
         self._save()
 
     def today(self) -> dict:
@@ -268,6 +273,11 @@ class UsageTracker(QObject):
         # Roll over to a new day if needed.
         today = date.today().isoformat()
         if today != self._day:
+            # Close the open span against the day it belongs to, before the
+            # filename changes underneath it.
+            if self._event is not None:
+                self._flush_event(self._event)
+                self._event = None
             self._save()
             self._day = today
             self._data = load_day(today)
@@ -292,10 +302,67 @@ class UsageTracker(QObject):
         self._data["apps"][label] = self._data["apps"].get(label, 0) + elapsed
         self._data["categories"][category] = self._data["categories"].get(category, 0) + elapsed
         self._dirty = True
+        self._record_event(label, title, category, elapsed)
 
         self._since_save += elapsed
         if self._since_save >= SAVE_EVERY_SECONDS:
             self._save()
+
+    def _record_event(self, label: str, title: str, category: str, elapsed: int) -> None:
+        """[TRK-1] Append one span per *change* of what you are looking at.
+
+        The daily rollup this file has always written is a dead end for the
+        money view. It keeps `chrome: 45360` and nothing else, so the single
+        biggest bucket on this machine (12.6h over 7 days, 45% of all tracked
+        time) is opaque: the client work and the doomscrolling are the same
+        number. The window title that would separate them was already being
+        read for categorisation, twelve times a minute, and thrown away.
+
+        A span is only written when the foreground changes, so a working day
+        costs a few hundred lines rather than 17k samples. That is what makes
+        per-client attribution, context-switch counts and time-of-day analysis
+        possible at all.
+
+        Local file, never uploaded. Titles can name clients and documents, so
+        `screen_time_titles` (default on) turns the title field off without
+        stopping the timing.
+        """
+        keep_titles = True
+        try:
+            if self._config_getter:
+                keep_titles = bool((self._config_getter() or {}).get("screen_time_titles", True))
+        except Exception:
+            pass
+
+        prev = self._event
+        same = prev is not None and prev["app"] == label and prev.get("raw") == title
+        if same:
+            prev["sec"] += elapsed
+            return
+        if prev is not None:
+            self._flush_event(prev)
+        self._event = {
+            "at": int(time.time()) - elapsed,
+            "app": label,
+            "title": (title[:180] if keep_titles else ""),
+            "cat": category,
+            "sec": elapsed,
+            "raw": title,
+        }
+
+    def _flush_event(self, ev: dict) -> None:
+        """Write one finished span. Spans under 10s are dropped: alt-tabbing
+        through five windows should not read as five pieces of work."""
+        if ev.get("sec", 0) < 10:
+            return
+        try:
+            USAGE_DIR.mkdir(parents=True, exist_ok=True)
+            path = USAGE_DIR / f"{self._day}.events.jsonl"
+            row = {k: v for k, v in ev.items() if k != "raw"}
+            with path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
 
     def _save(self) -> None:
         self._since_save = 0
