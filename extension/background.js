@@ -3,6 +3,8 @@
    syncs the block list from the web app, and logs blocks/sessions to the guild. */
 
 importScripts("history.js");
+// [TRK-6] Per-site dwell time. The desktop half only ever sees "chrome".
+importScripts("sitetime.js");
 
 const DEFAULT_SITES = [
   "x.com", "twitter.com", "facebook.com", "instagram.com", "reddit.com",
@@ -1380,13 +1382,49 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(onHistoryStateUpdated);
 chrome.tabs.onActivated.addListener((info) => {
   probeDesktopShield();
   checkActiveTab(info.tabId);
+  noteTabForSiteTime(info.tabId);
+});
+
+// [TRK-6] One funnel for every event that can change what you are looking at:
+// switching tab, navigating in place, or focusing another window.
+async function noteTabForSiteTime(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const win = await chrome.windows.get(tab.windowId);
+    await noteActiveTab({
+      url: tab.url || "",
+      active: Boolean(tab.active),
+      windowFocused: Boolean(win.focused),
+    });
+  } catch {
+    // Tab or window gone between the event and the lookup: close the span
+    // rather than letting it run on against a window that no longer exists.
+    await flushOpenSpan();
+  }
+}
+
+chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+  // A single-page app changes the path without ever firing onActivated, and the
+  // path is exactly what separates x.com/messages from x.com/home.
+  if (change.url && tab.active) noteTabForSiteTime(tabId);
+});
+
+chrome.tabs.onRemoved.addListener(() => {
+  flushOpenSpan();
 });
 
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    // Browser lost focus entirely: you are somewhere else, so the span stops.
+    await flushOpenSpan();
+    return;
+  }
   try {
     const [tab] = await chrome.tabs.query({ active: true, windowId });
-    if (tab?.id) checkActiveTab(tab.id);
+    if (tab?.id) {
+      checkActiveTab(tab.id);
+      noteTabForSiteTime(tab.id);
+    }
   } catch {
     /* window gone */
   }
