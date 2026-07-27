@@ -32,6 +32,23 @@ Fellowship a les trois dans **une seule base, sur une seule machine, horodatés*
 
 **La limite, dite franchement** : c'est un moat **produit** (intégration), pas un moat **technique**. N'importe lequel des trois pourrait le construire. Ce qui le protège vraiment, c'est le temps : la donnée s'accumule et devient un coût de sortie, et les règles de catégorisation que tu as répondues une fois ne se re-répondent pas ailleurs.
 
+### ⚠️ Correction du 27/07, après vérification : ce moat est plus étroit que je ne l'ai écrit
+
+J'ai affirmé que personne ne pouvait faire la soustraction. **C'est faux, et il fallait chercher avant de l'affirmer.**
+
+**[Memtime](https://www.memtime.com/freelancers)** fait déjà l'essentiel : suivi automatique du bureau, démarrage sans geste, données **100 % locales**, ciblage explicite des freelances. Et sa promesse est exactement celle que je t'avais recommandée, formulée mieux : **« +20 % d'heures facturables en moyenne »**, « récupère au moins 10 % du temps facturable perdu ». 12 à 15 €/mois, sans palier gratuit.
+
+Ce qui reste réellement différenciant, et c'est plus mince mais plus solide :
+
+1. **Memtime ne bloque rien.** Aucune couche d'exécution. C'est un observateur.
+2. **Memtime ne facture pas**, il exporte vers FreshBooks, Toggl, Clockify. La soustraction « travaillé moins facturé » traverse donc **deux outils** chez eux, et un seul chez toi.
+
+La formulation juste n'est donc pas « la soustraction que personne ne peut faire », mais :
+
+> **Le seul outil où la mesure et l'exécution sont le même produit.**
+
+C'est ce qui fait tourner la boucle du §3, et c'est ça qui n'existe nulle part ailleurs.
+
 ---
 
 ## 3. Pourquoi les trois couches sont nécessaires (le vrai mécanisme)
@@ -115,3 +132,42 @@ Le contre-argument honnête : **la garantie est plus faible.** On ne peut pas pr
 - **Le premier écran** est déjà bon : trois lignes en euros et en heures. Il manque **le taux horaire réel par client**, qui est LE chiffre du persona retenu.
 - **L'onboarding** doit demander une seule chose : combien te paie chaque client, et par mois ou par heure. Sans ça, rien de tout cela n'est calculable.
 - **La couche guilde** garde son sens ici, mais recadrée : des pairs qui parient sur des objectifs, entre freelances, avec de l'argent réel. Ce n'est pas de la gamification étudiante, c'est de la responsabilité entre pairs. L'habillage Tolkien, lui, brouille le message.
+
+---
+
+## 9. Ce qui marche chez les concurrents (vérifié, pas de mémoire)
+
+Prix relevés le 27/07/2026.
+
+| Outil | Prix | Modèle | Ce qu'il vend |
+|---|---|---|---|
+| Cold Turkey | **39 $ une fois**, mises à jour à vie | achat unique | bloquer, très fort |
+| Freedom | **39,99 $/an** | abonnement | bloquer, multi-appareils |
+| RescueTime | gratuit, puis **7-9 $** (Focus), **12-15 $** (Solo+) | freemium | mesurer + focus |
+| Rize | **9,99 $/mois** | abonnement | mesurer automatiquement |
+| Memtime | **12-15 €/mois**, pas de gratuit | abonnement | **récupérer des heures facturables** |
+| Toggl Track | gratuit jusqu'à 5 users | freemium | chrono en un clic |
+| Harvest | en hausse forte après rachat Bending Spoons (×3 à ×4 rapportés) | abonnement | temps + facture |
+
+### Les six choses qui marchent
+
+**a. Chacun vend UN geste, jamais une suite.** Cold Turkey bloque. Toggl fait un clic. Memtime en fait zéro. Aucun ne vend « focus + tracking + facture ». C'est autant une opportunité qu'un avertissement : une suite est plus dure à expliquer en une phrase.
+
+**b. Le plafond du marché solo est 10-15 €/mois.** Toute la catégorie s'y tient. Le seul écart est Cold Turkey à 39 $ une fois, et c'est précisément le modèle qui ne finance pas de développement continu.
+
+**c. Ce qui fait payer n'est jamais la mesure, c'est la récupération.** Memtime ne vend pas « on suit ton temps », il vend « +20 % d'heures facturables ». Personne n'achète un graphique.
+
+**d. Le gratuit est un choix, pas une évidence.** RescueTime et Toggl l'utilisent pour l'acquisition. Memtime n'a que 14 jours d'essai et vend quand même 12-15 €/mois. **Preuve qu'on peut se passer de gratuit si la promesse est chiffrée.**
+
+**e. Le local-first est devenu un argument commercial**, plus une contrainte technique. Memtime et Timing le mettent en avant. C'est déjà ta position.
+
+**f. Harvest perd des clients en ce moment.** Après le rachat par Bending Spoons, des utilisateurs rapportent des factures multipliées par 3 à 4. Des freelances cherchent activement à partir : c'est une fenêtre, et elle est datée.
+
+### Ce que ça impose
+
+- **Une seule phrase de promesse**, chiffrée, orientée récupération. Pas « bloque et suis ton temps ».
+- **12 €/mois** est le prix naturel. Au-delà il faut une garantie explicite.
+- **Ne pas copier le gratuit permanent** : sans budget d'acquisition, un free tier ne fait que gonfler les coûts.
+- **La différence à marteler face à Memtime** : eux observent, toi tu empêches.
+
+Sources : [Cold Turkey](https://getcoldturkey.com/), [RescueTime tarifs](https://www.saasworthy.com/product/rescuetime), [Rize](https://rize.io/best/best-time-tracking-app-2026), [Memtime freelances](https://www.memtime.com/freelancers), [Memtime tarifs](https://www.memtime.com/pricing), [Harvest après rachat](https://www.jobbers.io/best-time-tracking-apps-for-freelancers-2026-toggl-vs-harvest-vs-clockify-compared/).
